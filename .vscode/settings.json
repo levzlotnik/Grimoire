@@ -1,0 +1,15 @@
+{
+    "nixEnvSelector.suggestion": false,
+    "nixEnvSelector.nixFile": "${workspaceFolder}/shell.nix",
+    // "terminal.integrated.profiles.linux": {
+    //     "nix-shell": {
+    //         "path": "nix",
+    //         "args": ["develop"],
+    //         "icon": "terminal-linux"
+    //     }
+    // },
+    "terminal.integrated.defaultProfile.linux": "nix-shell",
+    "files.associations": {
+        "*.pl": "prolog"
+    }
+}
