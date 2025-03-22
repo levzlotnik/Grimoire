@@ -1,5 +1,6 @@
 :- use_module(library(process)).
 :- use_module(library(strings)).
+:- use_module(library(filesex)).
 
 % Load ECS core first
 :- ensure_loaded("./ecs.pl").
@@ -27,28 +28,13 @@ docstring(transaction,
 ).
 
 docstring(command, S) :-
-    fetch_all_commands(CommandTypes),
-    maplist(docstring, CommandTypes, Docs),
-    format_command_docstrings_together(CommandTypes, Docs, OneDocstring),
-    indent_lines('  ', OneDocstring, CmdsDocs),
+    make_ctors_docstring(command, CmdsDocs),
     S = {|string(CmdsDocs)||
     Term structure for system operations.
     Available commands:
 
     {CmdsDocs}
     |}.
-
-% Helper predicates for command discovery
-fetch_all_commands(CmdTypes) :-
-    findall(CmdType, component(command, ctor, CmdType), CmdTypes).
-
-format_command_docstrings_together(Types, Docs, Formatted) :-
-    maplist(format_command_entry, Types, Docs, Entries),
-    atomic_list_concat(Entries, '\n', Formatted).
-
-format_command_entry(Type, Doc, Entry) :-
-    indent_lines('  ', Doc, IDoc),
-    format(string(Entry), "~w:\n~w", [Type, IDoc]).
 
 % Just commands as a sum type
 entity(command).
@@ -57,58 +43,6 @@ component(command, ctor, mkdir).
 component(command, ctor, mkfile).
 component(command, ctor, edit_file).
 component(command, ctor, executable_program).
-
-docstring(executable_program,
-    {|string(_)||
-    Executes a program with arguments.
-    Format: command(executable_program(Program, Args)).
-    Program is the executable path or name
-    Args is a list of arguments
-    |}
-).
-
-docstring(shell,
-    {|string(_)||
-    Executes a shell command with arguments.
-    Format: command(shell(Args)).
-    Args is a list of strings that will be properly escaped.
-    Equivalent to: executable_program(path(sh), ["-c", JoinedArgs])
-    where JoinedArgs is the properly escaped and joined argument list.
-    |}
-).
-
-% Add new command docstrings
-docstring(mkdir,
-    {|string(_)||
-    Creates a directory and initializes its semantic tracking.
-    Format: command(mkdir(Path)).
-    - Creates directory at Path
-    - Creates semantics.pl inside it
-    - Initializes directory entity in semantics.pl
-    - If parent has semantics.pl, adds this dir as a component
-    |}
-).
-
-docstring(mkfile,
-    {|string(_)||
-    Creates a file and updates semantic relationships.
-    Format: command(mkfile(Path)).
-    - Creates empty file at Path
-    - If parent dir has semantics.pl, adds file as a component
-    |}
-).
-
-docstring(edit_file,
-    {|string(_)||
-    Applies edits to a file.
-    Format: command(edit_file(file(Path), [Edit1, Edit2, ...])).
-
-    Edit terms:
-    - insert(Line, Content)          % Insert at line number
-    - delete(Start, End)             % Delete range of lines
-    - replace(Start, End, Content)    % Replace range of lines with content
-    |}
-).
 
 % Dynamic docstring for run based on command type
 docstring(run(command(Command)), Doc) :-
@@ -125,6 +59,16 @@ docstring(run(command(Command)), Doc) :-
       - ok(Output) on success
       - error(Error) on failure
     |}.
+
+
+docstring(command(executable_program),
+    {|string(_)||
+    Executes a program with arguments.
+    Format: command(executable_program(Program, Args)).
+    Program is the executable path or name
+    Args is a list of arguments
+    |}
+).
 
 run(command(executable_program(Program, Args)), RetVal) :-
     setup_call_cleanup(
@@ -146,7 +90,17 @@ run(command(executable_program(Program, Args)), RetVal) :-
         RetVal = error(Stderr)
     ).
 
-% Shell command now uses executable_program
+
+docstring(command(shell),
+    {|string(_)||
+    Executes a shell command with arguments.
+    Format: command(shell(Args)).
+    Args is a list of strings that will be properly escaped.
+    Equivalent to: executable_program(path(sh), ["-c", JoinedArgs])
+    where JoinedArgs is the properly escaped and joined argument list.
+    |}
+).
+
 run(command(shell(Args)), RetVal) :-
     join_args(Args, JoinedArgs),
     run(
@@ -162,7 +116,17 @@ join_args(Args, Cmd) :-
 shell_quote(Arg, Quoted) :-
     format(string(Quoted), "'~w'", [Arg]).
 
-% Add command implementations
+docstring(command(mkdir),
+    {|string(_)||
+    Creates a directory and initializes its semantic tracking.
+    Format: command(mkdir(Path)).
+    - Creates directory at Path
+    - Creates semantics.pl inside it
+    - Initializes directory entity in semantics.pl
+    - If parent has semantics.pl, adds this dir as a component
+    |}
+).
+
 run(command(mkdir(Path)), RetVal) :-
     % Create directory
     run(command(shell({|string(Path)||mkdir -p '{Path}'|})), RetVal),
@@ -183,10 +147,22 @@ run(command(mkdir(Path)), RetVal) :-
     directory_file_path(Parent, _, Path),
     atomic_list_concat([Parent, '/semantics.pl'], ParentSemantic),
     (exists_file(ParentSemantic) ->
-        consult(ParentSemantic),
-        entity(folder(Parent)),
-        assert(component(folder(Parent), subfolder, folder(Path)))
+        run(command(edit_file(file(ParentSemantic), [
+            append({|string(Path)||
+            entity(folder('{Parent}')).
+            component(folder('{Parent}'), subfolder, folder('{Path}')).
+            |})
+        ])), _)
     ; true).
+
+docstring(command(mkfile),
+    {|string(_)||
+    Creates a file and updates semantic relationships.
+    Format: command(mkfile(Path)).
+    - Creates empty file at Path
+    - If parent dir has semantics.pl, adds file as a component
+    |}
+).
 
 run(command(mkfile(Path)), RetVal) :-
     % Create empty file
@@ -195,17 +171,35 @@ run(command(mkfile(Path)), RetVal) :-
     directory_file_path(Parent, Name, Path),
     atomic_list_concat([Parent, '/semantics.pl'], ParentSemantic),
     (exists_file(ParentSemantic) ->
-        consult(ParentSemantic),
-        entity(folder(Parent)),
-        assert(component(folder(Parent), file, file(Name)))
+        run(command(edit_file(file(ParentSemantic), [
+            append({|string(Parent,Name)||
+            entity(folder('{Parent}')).
+            component(folder('{Parent}'), file, file('{Name}')).
+            |})
+        ])), _)
     ; true),
     RetVal = ok("").
 
+docstring(command(edit_file), S) :-
+    make_ctors_docstring(edit_file, SubCmdsDoc),
+    S = {|string(SubCmdsDoc)||
+    Applies edits to a file.
+    Format: command(edit_file(file(Path), [Edit1, Edit2, ...])).
+
+    Edit terms:
+    {SubCmdsDoc}
+    |}.
+
 run(command(edit_file(file(Path), Edits)), RetVal) :-
     read_file_to_lines(Path, Lines),
+    maplist(validate_edit, Edits),
     apply_edits(Edits, Lines, NewLines),
     write_lines_to_file(Path, NewLines),
     RetVal = ok("").
+
+validate_edit(Edit) :-
+    functor(Edit, Type, _),
+    component(edit_file, ctor, Type).
 
 % File editing helpers
 apply_edits([], Lines, Lines).
@@ -217,7 +211,8 @@ apply_edit(insert(N, Content), Lines, Result) :-
     length(Lines, Len),
     N > 0, N =< Len + 1,  % Allow insert at end
     % Split lines at insertion point
-    split_at(N-1, Lines, Before, After),
+    NSplit is N - 1,
+    split_at(NSplit, Lines, Before, After),
     % Split new content into lines
     string_lines(Content, NewLines),
     % Combine parts
@@ -228,7 +223,8 @@ apply_edit(delete(Start, End), Lines, Result) :-
     Start > 0, Start =< Len,
     End >= Start, End =< Len,
     % Split into before, [to_delete], after
-    split_at(Start-1, Lines, Before, Rest),
+    NSplit is Start - 1,
+    split_at(NSplit, Lines, Before, Rest),
     NDel is End - Start + 1,
     split_at(NDel, Rest, _, After),
     % Combine before and after
@@ -239,13 +235,18 @@ apply_edit(replace(Start, End, Content), Lines, Result) :-
     Start > 0, Start =< Len,
     End >= Start, End =< Len,
     % Split lines into before, to_replace, and after
-    split_at(Start-1, Lines, Before, Rest),
+    NSplit is Start - 1,
+    split_at(NSplit, Lines, Before, Rest),
     NDel is End - Start + 1,
     split_at(NDel, Rest, _, After),
     % Split new content into lines
     string_lines(Content, NewLines),
     % Combine parts
     append([Before, NewLines, After], Result).
+
+apply_edit(append(Content), Lines, Result) :-
+    string_lines(Content, NewLines),
+    append(Lines, NewLines, Result).
 
 % List splitting helper with proper implementation
 % split_at(+N, +List, -Before, -After)
@@ -284,33 +285,6 @@ docstring(mount_semantic,
     - Tracks the mounting in mounted_semantic/2
     |}
 ).
-
-docstring(unmount_semantic,
-    {|string(_)||
-    Unmounts a previously mounted semantics.pl file.
-    Format: unmount_semantic(Path).
-    - Unloads the module at Path
-    - Removes mounting from mounted_semantic/2
-    |}
-).
-
-% Add docstrings for query predicates
-docstring(find_entity,
-    {|string(_)||
-    Finds entities across all mounted semantic modules.
-    Format: find_entity(Thing).
-    Succeeds for each entity found in any mounted semantic module.
-    |}
-).
-
-docstring(find_component,
-    {|string(_)||
-    Finds components across all mounted semantic modules.
-    Format: find_component(Entity, Name, Value).
-    Succeeds for each component relationship found in any mounted module.
-    |}
-).
-
 % Enhanced semantic mounting predicates
 mount_semantic(Path) :-
     % Get absolute path and check file exists
@@ -333,6 +307,15 @@ mount_semantic(Path) :-
         throw(error(existence_error(source_sink, Path), _))
     ).
 
+docstring(unmount_semantic,
+    {|string(_)||
+    Unmounts a previously mounted semantics.pl file.
+    Format: unmount_semantic(Path).
+    - Unloads the module at Path
+    - Removes mounting from mounted_semantic/2
+    |}
+).
+
 unmount_semantic(Path) :-
     absolute_file_name(Path, AbsPath),
     mounted_semantic(AbsPath, _),
@@ -340,15 +323,6 @@ unmount_semantic(Path) :-
     unload_file(AbsPath),
     % Remove from mounting registry
     retractall(mounted_semantic(AbsPath, _)).
-
-% Query across all mounted semantics
-find_entity(Thing) :-
-    mounted_semantic(_, Module),
-    Module:entity(Thing).
-
-find_component(Entity, Name, Value) :-
-    mounted_semantic(_, Module),
-    Module:component(Entity, Name, Value).
 
 % Add docstrings for file operations
 docstring(write_file,
@@ -359,6 +333,16 @@ docstring(write_file,
     |}
 ).
 
+% Add directory existence checks to file operations
+write_file(Path, Content) :-
+    directory_file_path(Dir, _, Path),
+    make_directory_path(Dir),
+    setup_call_cleanup(
+        open(Path, write, Stream),
+        write(Stream, Content),
+        close(Stream)
+    ).
+
 docstring(read_file_to_lines,
     {|string(_)||
     Reads a file into a list of lines.
@@ -366,12 +350,25 @@ docstring(read_file_to_lines,
     |}
 ).
 
+read_file_to_lines(Path, Lines) :-
+    exists_file(Path),
+    setup_call_cleanup(
+        open(Path, read, Stream),
+        read_string(Stream, _, String),
+        close(Stream)
+    ),
+    string_lines(String, Lines).
+
 docstring(write_lines_to_file,
     {|string(_)||
     Writes a list of lines to a file.
     Format: write_lines_to_file(Path, Lines).
     |}
 ).
+
+write_lines_to_file(Path, Lines) :-
+    atomic_list_concat(Lines, '\n', Content),
+    write_file(Path, Content).
 
 % Add list_mounted_semantics predicate
 docstring(list_mounted_semantics,
@@ -385,26 +382,6 @@ docstring(list_mounted_semantics,
 list_mounted_semantics(Paths) :-
     findall(Path, mounted_semantic(Path, _), Paths).
 
-% Add directory existence checks to file operations
-write_file(Path, Content) :-
-    directory_file_path(Dir, _, Path),
-    make_directory_path(Dir),
-    setup_call_cleanup(
-        open(Path, write, Stream),
-        write(Stream, Content),
-        close(Stream)
-    ).
-
-read_file_to_lines(Path, Lines) :-
-    exists_file(Path),
-    setup_call_cleanup(
-        open(Path, read, Stream),
-        read_string(Stream, _, String),
-        close(Stream)
-    ),
-    string_lines(String, Lines).
-
-% Add new command type
 component(command, ctor, mkproject).
 
 docstring(mkproject,
@@ -418,7 +395,6 @@ docstring(mkproject,
     |}
 ).
 
-
 % Update mkdir/mkfile to support options
 run(command(mkdir(Path, Options)), RetVal) :-
     run(command(mkdir(Path)), RetVal),
@@ -426,8 +402,8 @@ run(command(mkdir(Path, Options)), RetVal) :-
     (option(git(false), Options) ->
         true
     ;
-        in_git_repository(Path) ->
-            run(command(git(add(Path))), _)
+        is_git_directory(Path) ->
+            run(command(git(add([Path]))), _)
         ;
         true
     ).
@@ -438,11 +414,41 @@ run(command(mkfile(Path, Options)), RetVal) :-
     (option(git(false), Options) ->
         true
     ;
-        in_git_repository(Path) ->
-            run(command(git_add(Path)), _)
+        is_git_directory(Path) ->
+            run(command(git(add([Path]))), _)
         ;
         true
     ).
+
+% Add mkproject implementation
+run(command(mkproject(Path, Options)), RetVal) :-
+    % Create project directory with semantics
+    run(command(mkdir(Path)), RetVal),
+    % Initialize git if requested
+    (option(git(false), Options) -> true
+    ;
+        run(command(git(init(Path))), _)
+    ),
+    % Apply template if specified
+    (option(template(Template), Options) ->
+        run(command(shell(["nix", "flake", "init", "-t", Template])), _)
+    ; true),
+    % Apply language setup if specified
+    (option(lang(Language), Options) ->
+        setup_language(Path, Language)
+    ; true).
+
+setup_language(Path, Lang) :-
+    % Language specific initialization - to be implemented
+    true.
+
+% Edit file is now an entity with subcommands
+entity(edit_file).
+component(edit_file, ctor, insert).
+component(edit_file, ctor, delete).
+component(edit_file, ctor, replace).
+component(edit_file, ctor, append).
+
 
 % Load extensions last
 :- ensure_loaded("./git.pl").

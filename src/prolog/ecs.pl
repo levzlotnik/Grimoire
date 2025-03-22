@@ -28,3 +28,16 @@ docstring(component,
     Format: component(Entity, ComponentName, Value)
     |}
 ).
+
+make_ctors_docstring(Entity, Docstring) :-
+    entity(Entity),
+    findall(Ctor, component(Entity, ctor, Ctor), Ctors),
+    maplist(get_ctor_docstring(Entity), Ctors, CtorsDocs),
+    atomic_list_concat(CtorsDocs, '\n\n', DocsUnindent),
+    indent_lines('  ',DocsUnindent, Docstring).
+
+get_ctor_docstring(Entity, Ctor, Doc) :-
+    format(string(Atom), "~w(~w)", [Entity, Ctor]),
+    term_to_atom(Term, Atom),
+    docstring(Term, CtorDoc),
+    format(string(Doc), "~w: ~w", [Atom, CtorDoc]).

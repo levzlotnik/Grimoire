@@ -1,11 +1,9 @@
 :- use_module(library(strings)).
 :- ensure_loaded("./ecs.pl").
 
-% Git command entity and registration
+% Git entities and components
 entity(git).
 component(command, ctor, git).
-
-% Define all supported git subcommands
 component(git, subcommand, clone).
 component(git, subcommand, init).
 component(git, subcommand, add).
@@ -15,7 +13,10 @@ component(git, subcommand, pull).
 component(git, subcommand, branch).
 component(git, subcommand, checkout).
 
-% Term structure docstrings
+% Might as well mark those as ctors:
+component(git, ctor, C) :- component(git, subcommand, C).
+
+% Git command docstrings
 docstring(git(clone),
     {|string(_)||
     Clone a repository into a new directory.
@@ -68,26 +69,35 @@ docstring(git(pull),
     |}
 ).
 
+docstring(git(branch),
+    {|string(_)||
+    Manage git branches.
+    Format: git(branch(Operation))
+      Operations:
+        list         - List all branches
+        create(Name) - Create new branch named Name
+    |}
+).
+
+docstring(git(checkout),
+    {|string(_)||
+    Switch branches or restore working tree files.
+    Format: git(checkout(Branch))
+      Branch: Name of branch to switch to
+    |}
+).
+
 docstring(git, S) :-
-    findall(
-        SubCmdDoc,
-        (
-            component(git, subcommand, SubCmdType),
-            docstring(git(SubCmdType), SubCmd),
-            indent_lines('  ', SubCmd, SubCmdDoc)
-        ),
-        SubCmdDocs
-    ),
-    atomic_list_concat(SubCmdDocs, "\n\n", Joined),
-    S = {|string(Joined)||
+    make_ctors_docstring(git, CtorsDoc),
+    S = {|string(CtorsDoc)||
     Git commands suite.
     Format: git(subcommand(...))
 
     Possible subcommands:
-    {Joined}
+    {CtorsDoc}
     |}.
 
-% Convert git terms to shell arguments
+% Git command implementations
 git_args(clone(Url, Path)) --> ["clone", Url, Path].
 git_args(init(Path)) --> ["init", Path].
 git_args(add(all_tracked)) --> ["add", "-u"].
