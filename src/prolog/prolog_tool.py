@@ -61,9 +61,9 @@ class PrologToolset:
     """Engine for executing actions and rules in the semantic layer"""
 
     def __init__(self):
-        # Load core rules
+        # Load base system knowledge first
         rules_dir = os.path.dirname(__file__)
-        p.consult(os.path.join(rules_dir, "core_rules.pl"))
+        p.consult(os.path.join(rules_dir, "mypaos.pl"))
 
     @wrap_tool_error(exc_types=(PrologError,))
     def query(self, query: str) -> QueryResult:

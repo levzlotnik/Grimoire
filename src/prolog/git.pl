@@ -1,5 +1,7 @@
 :- use_module(library(strings)).
-:- ensure_loaded("./ecs.pl").
+
+% Git source location
+component(git, source, file("git.pl")).
 
 % Git entities and components
 entity(git).
@@ -15,6 +17,8 @@ component(git, subcommand, checkout).
 
 % Might as well mark those as ctors:
 component(git, ctor, C) :- component(git, subcommand, C).
+% Make these available to top level command:
+component(command, ctor, git(C)) :- component(git, subcommand, C).
 
 % Git command docstrings
 docstring(git(clone),
