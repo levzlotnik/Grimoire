@@ -1,0 +1,8 @@
+{
+    "recommendations": [
+        "ms-python.black-formatter",
+        "ms-python.python",
+        "arrterian.nix-env-selector",
+        "jnoortheen.nix-ide"
+    ]
+}

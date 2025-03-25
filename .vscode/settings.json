@@ -11,5 +11,10 @@
     "terminal.integrated.defaultProfile.linux": "nix-shell",
     "files.associations": {
         "*.pl": "prolog"
+    },
+
+    "[python]": {
+        "editor.defaultFormatter": "ms-python.black-formatter",
+        "editor.formatOnSave": true
     }
 }

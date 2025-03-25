@@ -1,17 +1,6 @@
 % Load core rules first
 :- ensure_loaded("./core_rules.pl").
-
-% The most fundamental entity
-entity(system).
-
-% System components and their sources
-entity(git).
-component(git, source, file("git.pl")).
-component(system, subsystem, git).
-
-entity(nix).
-component(nix, source, folder("nix")).
-component(system, subsystem, nix).
+:- use_module(library(filesex)).
 
 % Dynamic declarations specific to core_rules
 :- dynamic execute/2.   % execute(Transaction, Status)
@@ -19,12 +8,62 @@ component(system, subsystem, nix).
 
 % The most fundamental entity
 entity(system).
+% Some properties
+component(system, semantic_root, folder("/home/nixos/Projects/MyPAOS/src/prolog")) :- !.
+
+semantic_root(SemanticRootDir) :-
+    component(system, semantic_root, SemanticRootDir).
+
+load_entity_source(Entity) :-
+    semantic_root(folder(SemRoot)),
+    component(Entity, source, source(SemanticRelPath)),
+    (
+        SemanticRelPath = file(Path) ->
+            directory_file_path(SemRoot, Path, OutPath), SemanticPath = file(OutPath) ;
+        SemanticRelPath = folder(Path) ->
+            directory_file_path(SemRoot, Path, OutPath), SemanticPath = folder(OutPath) ;
+        fail
+    ),
+    mount_semantic(SemanticPath).
+
 
 % Fundamental concepts
 component(system, concept, command).
 component(system, concept, transaction).
 component(system, concept, hardware).
 component(system, concept, execute).
+component(system, concept, source).
+
+component(system, source, source(file("mypaos.pl"))) :- !.
+
+entity(source).
+component(source, ctor, file).
+comopnent(source, ctor, folder).
+docstring(source,S) :-
+    make_ctors_docstring(source, SourceTypes),
+    S = {|string(SourceTypes)||
+    Source of representation for entity.
+    Programmers usually refer to it broadly as "source code".
+    Typically could be things like source code files, all the way up to
+    entire project directories that contain a mix of code, data
+    and execution contexts (compilation/runtime flows and scripts).
+
+    Currently defined source types:
+    {SourceTypes}
+    |}.
+
+docstring(source(file), "A source code file for an entity.").
+docstring(source(folder), "A folder with source code for entity.").
+
+% System components and their sources
+entity(git).
+component(git, source, source(file("git.pl"))) :- !.
+component(system, subsystem, git).
+
+entity(nix).
+component(nix, source, source(folder("nix"))) :- !.
+component(system, subsystem, nix).
+
 
 docstring(execute,
     {|string(_)||
@@ -437,10 +476,3 @@ component(edit_file, ctor, insert).
 component(edit_file, ctor, delete).
 component(edit_file, ctor, replace).
 component(edit_file, ctor, append).
-
-% Mount subsystems automatically
-:- forall(
-    (component(system, subsystem, Subsystem),
-     component(Subsystem, source, Source)),
-    mount_semantic(Source)
-).

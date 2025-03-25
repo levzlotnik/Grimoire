@@ -13,6 +13,7 @@ let
       pyswip
       anthropic
       groq
+      python-dotenv
     ]
   );
 

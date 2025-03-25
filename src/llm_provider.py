@@ -1,10 +1,21 @@
+from dotenv import load_dotenv
 import os
+
+# Load environment variables from .env file, whi
+# it's located in `../.env` relative to this file
+env_file = os.path.join(os.path.dirname(__file__), "../.env")
+if os.path.exists(env_file):
+    load_dotenv(env_file)
+else:
+    print(f"Warning: .env file not found at {env_file}")
+
 from abc import ABC, abstractmethod
 from typing import List, Dict, Optional, Union, Literal, Any
 import warnings
 import openai
-import anthropic
-import groq
+
+# import anthropic
+# import groq
 from dataclasses import dataclass
 
 
