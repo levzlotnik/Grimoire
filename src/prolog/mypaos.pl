@@ -157,7 +157,8 @@ run(command(executable_program(Program, Args)), RetVal) :-
     (Stderr = "" ->
         RetVal = ok(Stdout)
     ;
-        RetVal = error(Stderr)
+        % RetVal = error(Stderr) % this is wrong...
+        true
     ).
 
 run(command(executable_program(Program, Args, interactive)), RetVal) :-

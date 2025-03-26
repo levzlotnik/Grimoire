@@ -148,7 +148,7 @@ nix_templates_expr_base(Expr) :-
 nix_templates_expr_id(TemplateId, Expr) :-
     ( TemplateId = default -> TId = "defaultTemplate" ; TId = TemplateId ),
     nix_templates_path(TPath),
-    format(string(Template), "path:~w#~w", [TPath, TId]).
+    format(string(Expr), "path:~w#~w", [TPath, TId]).
 
 
 component(nix(flake(template)), instance, Templates) :-
@@ -181,6 +181,5 @@ docstring(nix(flake(new)),
 run(command(nix(flake(new(TemplateId, DestPath)))), RetVal) :-
     ( TemplateId = none -> TId = default ; TId = TemplateId ),
     nix_templates_expr_id(TId, Template),
-    run(command(
-        shell(["nix", "flake", "new", DestPath, "-t", Template])
-    ), RetVal).
+    Args = ["nix", "flake", "new", DestPath, "-t", Template],
+    run(command(shell(Args)), RetVal).
