@@ -1,48 +1,194 @@
-:- module(project_semantics, [entity/1, component/3]).
-
 % Dynamic declarations
 :- dynamic entity/1.
 :- dynamic component/3.
 
-% Base project entity and components
+% Core entities
+entity(package).
+entity(application).
 entity(project).
-component(project, source, source(folder("project"))).
-component(project, ctor, empty).
-component(project, ctor, template).
+entity(environment).
+entity(context).
+entity(language).
+entity(build).
+entity(runtime).
+entity(test).
 
-% Project metadata components
-component(project, option, git).          % git(bool) - initialize git repo
-component(project, option, template).     % template(Template) - project template to use
-component(project, option, language).     % language(Lang) - primary language
+component(project, concept, application).
+component(project, concept, context).
+component(project, concept, environment).
+component(project, concept, source).
 
-% Document the entities
+component(application, ctor, program).
+component(application, ctor, library).
+component(application, ctor, service).
+component(package, ctor, application).
+
+component(application, requires, context(C)) :- component(context, ctor, C).
+component(context, requires, environment).
+
+component(context, ctor, build).
+component(context, ctor, runtime).
+component(context, ctor, test).
+entity(context(C)) :- component(context, ctor, C).
+
+% Config as a distinct entity
+entity(config).
+component(config, ctor, C) :- entity(context(C)).
+entity(config(C)) :- component(config, ctor, C).
+
+% Dependencies as a distinct entity
+entity(deps).
+component(deps, ctor, C) :- entity(context(C)).
+entity(deps(C)) :- component(deps, ctor, C).
+
+% Context-config relationships
+component(context(C), requires, config(C)) :-
+    entity(context(C)), entity(config(C)).
+
+component(context(C), requires, deps(C)) :-
+    entity(context(C)), entity(deps(C)).
+
+component(context(build), requires, source(code)).
+component(context(runtime), requires, source(data)).
+
+component(source, ctor, code).
+component(source, ctor, data).
+
+entity(source(code)).
+entity(source(data)).
+
+docstring(source(code),
+   {|string(_)||
+   Represents source of programming language code.
+   Format:
+     source(code(lang(Lang), file(...))) - file as source code
+     source(code(lang(Lang), folder(...))) - a folder full of source code
+   |}).
+
+docstring(source(data),
+   {|string(_)||
+   Represents a source of data.
+   |}).
+
+docstring(config,
+    {|string(_)||
+    Configuration entity for different project contexts.
+    Configs determine how contexts behave during build and runtime.
+    |}
+).
+
+docstring(deps,
+    {|string(_)||
+    Dependencies entity representing required resources.
+    Build deps are source-level needs (compilers, etc).
+    Runtime deps are execution needs (libraries, etc).
+    |}
+).
+
+docstring(package,
+    {|string(_)||
+    Package entity representing a distributable unit of software.
+    A package wraps a set of applications with their respective dependencies and configurations
+    into a deployable form.
+    |}).
+
+docstring(application,
+    {|string(_)||
+    Application entity representing a software system's intent and behavior.
+    Applications can both consume AND produce runtime dependencies:
+    - Services consume and produce (e.g., API endpoints)
+    - Frameworks primarily produce (e.g., web servers)
+    - Libraries produce factories (e.g., database connections)
+    |}).
+
 docstring(project,
     {|string(_)||
-    Project entity representing a software project.
-    A project is a directory with specific structure and tooling.
-    Projects can be created from templates or as empty directories.
+    Project entity representing the development context of software.
+    Projects provide structure for source code, build systems, and development
+    tools. They materialize applications into concrete implementations.
     |}).
 
-docstring(project(empty),
+docstring(environment,
     {|string(_)||
-    Empty project constructor.
-    Creates a bare project directory with only basic initialization.
+    Environment entity representing a complete set of resources for all the project's contexts.
+    - Build environment (compilers, tools)
+    - Runtime environment (libraries, data)
+    - Testing environment ()
+    - Development environment (editors, debuggers)
     |}).
 
-docstring(project(template),
+docstring(context,
     {|string(_)||
-    Template-based project constructor.
-    Creates a project from a predefined template with standard structure.
+    Context entity representing a phase in the software lifecycle.
+    Contexts define how software is built, run, and tested.
+    Each context has its own configuration and dependency requirements.
     |}).
 
-% Project template entity
-entity(project_template).
-component(project_template, ctor, nix_flake).
-component(project_template, ctor, python).
-component(project_template, ctor, rust).
-
-docstring(project_template,
+docstring(language,
     {|string(_)||
-    Project template entity defining standard project structures.
-    Templates provide consistent starting points for new projects.
+    Language entity representing a formal system for expressing computation.
+    Languages appear in multiple forms:
+    - Source language (how we write code)
+    - Interface language (how components communicate)
+    - Configuration language (how we describe behavior)
     |}).
+
+docstring(build,
+    {|string(_)||
+    Build entity representing the transformation from source to artifacts.
+    Build is a function from build dependencies and configuration
+    to runtime dependencies (executables, libraries, resources).
+    |}).
+
+docstring(runtime,
+    {|string(_)||
+    Runtime entity representing program execution context.
+    Runtime combines configuration with dependencies to create
+    an environment where applications can execute.
+    |}).
+
+docstring(test,
+    {|string(_)||
+    Test entity representing verification contexts.
+    Tests verify application behavior through:
+    - Unit tests (component behavior)
+    - Integration tests (component interaction)
+    - System tests (complete application)
+    |}).
+
+component(command, ctor, mkproject).
+
+docstring(mkproject,
+    {|string(_)||
+    Creates a new project directory with full initialization.
+    Format: command(mkproject(+Path, +Options)).
+    Options:
+    - git(bool)          % Initialize git repo (default: true)
+    - template(Template) % Flake template to use (default: none)
+    - lang(Language)     % Programming language (affects template)
+    |}
+).
+
+run(command(mkproject(Path, Options)), RetVal) :-
+    % Create project directory with semantics
+    run(command(mkdir(Path)), RetVal0),
+    (RetVal0 = error(E) -> RetVal = RetVal0
+    ;
+        % Initialize git if requested
+        (option(git(false), Options) -> RetVal1 = ok("")
+        ;
+            run(command(git(init(Path))), RetVal1)
+        ),
+        (RetVal1 = error(E) -> RetVal = RetVal1
+        ;
+            % Apply template if specified
+            (option(template(Template), Options, none) ->
+                run(command(nix(flake(init(Template)))), RetVal2)
+            ; RetVal2 = ok("")),
+            (RetVal2 = error(E) -> RetVal = RetVal2
+            ;
+                % Language setup stub for now
+                RetVal = ok("Project created successfully")
+            )
+        )
+    ).

@@ -1,0 +1,3 @@
+[submodule "src/prolog/nix/templates"]
+	path = src/prolog/nix/templates
+	url = https://github.com/NixOS/templates

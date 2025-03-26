@@ -1,3 +1,5 @@
+:- use_module(library(http/json)).
+
 % Core Nix entity
 entity(nix).
 
@@ -120,3 +122,65 @@ run(command(nix(shell(Packages, Command))), RetVal) :-
         "--packages", Packages
     ], Args),
     run(command(shell(Args)), RetVal).
+
+% Flake commands
+component(command, ctor, nix(flake)).
+component(nix(flake), ctor, new).
+
+component(nix(flake), templates_source, source(folder(Path))) :-
+    component(nix, semantic_root, folder(SemanticDir)),
+    directory_file_path(SemanticDir, "templates", Path).
+
+nix_templates_path(Path) :-
+    component(nix(flake), templates_source, source(folder(Path))).
+
+entity(nix(flake(template))).
+docstring(nix(flake(template)),
+   {|string(_)||
+   Nix flake templates that can be used to initialize projects.
+   Format: nix(flake(template(TemplateId)))
+   |}).
+
+nix_templates_expr_base(Expr) :-
+    nix_templates_path(TemplatePath),
+    format(string(Expr), "path:~w", [TemplatePath]).
+
+nix_templates_expr_id(TemplateId, Expr) :-
+    ( TemplateId = default -> TId = "defaultTemplate" ; TId = TemplateId ),
+    nix_templates_path(TPath),
+    format(string(Template), "path:~w#~w", [TPath, TId]).
+
+
+component(nix(flake(template)), instance, Templates) :-
+    % We read it from `nix flake show --json path:path/to/templates`
+    nix_templates_expr_base(PathExpr),
+    NixCmdArgs = ["flake", "show", "--json", PathExpr],
+    setup_call_cleanup(
+        % Run `nix flake show --json path:.../templates`
+        process_create(path("nix"), NixCmdArgs, [stdout(pipe(Out))]),
+        % Read output json
+        (
+            json_read_dict(Out, JsonDict, [tag(template)]),
+            dict_pairs(JsonDict.templates, Tag, Pairs),
+            findall(template(K, D), (member(K-V, Pairs), D = V.description), Templates)
+        ),
+        % Cleanup
+        (close(Out))
+    ).
+
+docstring(nix(flake(new)),
+    {|string(_)||
+    Initialize a new flake from template.
+    Creates a new flake.nix from specified template.
+    Format: command(nix(flake(new(TemplateId, DestPath)))).
+        TemplateId - the ID of the template as it appears in `templates.*` attribute within the flake. default: none
+        DestPath - where to create the new flake
+    |}
+).
+
+run(command(nix(flake(new(TemplateId, DestPath)))), RetVal) :-
+    ( TemplateId = none -> TId = default ; TId = TemplateId ),
+    nix_templates_expr_id(TId, Template),
+    run(command(
+        shell(["nix", "flake", "new", DestPath, "-t", Template])
+    ), RetVal).

@@ -11,19 +11,22 @@ entity(system).
 % Some properties
 component(system, semantic_root, folder("/home/nixos/Projects/MyPAOS/src/prolog")) :- !.
 
-semantic_root(SemanticRootDir) :-
+system_semantic_root(SemanticRootDir) :-
     component(system, semantic_root, SemanticRootDir).
 
-load_entity_source(Entity) :-
-    semantic_root(folder(SemRoot)),
-    component(Entity, source, source(SemanticRelPath)),
+component(E, semantic_root, Path) :-
+    component(E, source, source(semantic(RelPath))),
+    system_semantic_root(folder(SysSemRoot)),
     (
-        SemanticRelPath = file(Path) ->
-            directory_file_path(SemRoot, Path, OutPath), SemanticPath = file(OutPath) ;
-        SemanticRelPath = folder(Path) ->
-            directory_file_path(SemRoot, Path, OutPath), SemanticPath = folder(OutPath) ;
+        RelPath = file(RawPath) ->
+            (directory_file_path(SysSemRoot, RawPath, AbsPath), Path = file(AbsPath)) ;
+        RelPath = folder(RawPath) ->
+            (directory_file_path(SysSemRoot, RawPath, AbsPath), Path = folder(AbsPath)) ;
         fail
-    ),
+    ).
+
+load_entity_source(Entity) :-
+    component(Entity, semantic_root, SemanticPath),
     mount_semantic(SemanticPath).
 
 
@@ -33,12 +36,15 @@ component(system, concept, transaction).
 component(system, concept, hardware).
 component(system, concept, execute).
 component(system, concept, source).
+component(system, concept, project).
 
-component(system, source, source(file("mypaos.pl"))) :- !.
+component(system, source, source(semantic(file("mypaos.pl")))) :- !.
 
 entity(source).
-component(source, ctor, file).
-comopnent(source, ctor, folder).
+component(source, ctor, semantic).
+entity(semantic).
+component(semantic, ctor, file).
+component(semantic, ctor, folder).
 docstring(source,S) :-
     make_ctors_docstring(source, SourceTypes),
     S = {|string(SourceTypes)||
@@ -48,22 +54,28 @@ docstring(source,S) :-
     entire project directories that contain a mix of code, data
     and execution contexts (compilation/runtime flows and scripts).
 
+    Format: source(SourceType)
+
     Currently defined source types:
     {SourceTypes}
     |}.
-
-docstring(source(file), "A source code file for an entity.").
-docstring(source(folder), "A folder with source code for entity.").
+docstring(source(semantic(file)), "A source code file for an entity.\nFormat: semantic(file(Path))").
+docstring(source(semantic(folder)), "A folder with source code for entity.\nFormat: semantic(folder(Path))").
 
 % System components and their sources
 entity(git).
-component(git, source, source(file("git.pl"))) :- !.
+component(git, source, source(semantic(file("git.pl")))) :- !.
 component(system, subsystem, git).
 
 entity(nix).
-component(nix, source, source(folder("nix"))) :- !.
+component(nix, source, source(semantic(folder("nix")))) :- !.
 component(system, subsystem, nix).
 
+entity(project).
+component(project, source, source(semantic(folder("project")))) :- !.
+
+:- load_entity_source(git).
+:- load_entity_source(nix).
 
 docstring(execute,
     {|string(_)||
@@ -410,18 +422,6 @@ docstring(list_mounted_semantics,
     |}
 ).
 
-component(command, ctor, mkproject).
-
-docstring(mkproject,
-    {|string(_)||
-    Creates a new project directory with full initialization.
-    Format: command(mkproject(+Path, +Options)).
-    Options:
-    - git(bool)          % Initialize git repo (default: true)
-    - template(Template) % Flake template to use (default: none)
-    - lang(Language)     % Programming language (affects template)
-    |}
-).
 
 % Update mkdir/mkfile to support options
 run(command(mkdir(Path, Options)), RetVal) :-
@@ -447,28 +447,6 @@ run(command(mkfile(Path, Options)), RetVal) :-
         ;
         true
     ).
-
-% Add mkproject implementation
-run(command(mkproject(Path, Options)), RetVal) :-
-    % Create project directory with semantics
-    run(command(mkdir(Path)), RetVal),
-    % Initialize git if requested
-    (option(git(false), Options) -> true
-    ;
-        run(command(git(init(Path))), _)
-    ),
-    % Apply template if specified
-    (option(template(Template), Options) ->
-        run(command(shell(["nix", "flake", "init", "-t", Template])), _)
-    ; true),
-    % Apply language setup if specified
-    (option(lang(Language), Options) ->
-        setup_language(Path, Language)
-    ; true).
-
-setup_language(Path, Lang) :-
-    % Language specific initialization - to be implemented
-    true.
 
 % Edit file is now an entity with subcommands
 entity(edit_file).
