@@ -14,6 +14,7 @@ let
       anthropic
       groq
       python-dotenv
+      gitpython
     ]
   );
 
@@ -23,6 +24,7 @@ pkgs.mkShell
   packages = [
     pkgs.swi-prolog
     pythonEnv
+    pkgs.sqlite
   ];
 
   SWIPL_BIN = "${pkgs.swi-prolog}/bin/swipl";

@@ -8,8 +8,17 @@
 
 % The most fundamental entity
 entity(system).
+
+component(system, root_dir, folder("/home/nixos/Projects/MyPAOS")) :- !.
 % Some properties
-component(system, semantic_root, folder("/home/nixos/Projects/MyPAOS/src/prolog")) :- !.
+component(
+    system,
+    semantic_root,
+    folder(AbsSemRoot)
+) :-
+    RelSemRoot = "src/prolog",
+    component(system, root_dir, folder(SysRoot)),
+    directory_file_path(SysRoot, RelSemRoot, AbsSemRoot), !.
 
 system_semantic_root(SemanticRootDir) :-
     component(system, semantic_root, SemanticRootDir).
@@ -223,7 +232,7 @@ run(command(mkdir(Path)), RetVal) :-
     % Create directory
     run(command(shell({|string(Path)||mkdir -p '{Path}'|})), RetVal),
     % Initialize semantics.pl with proper module
-    atomic_list_concat([Path, '/semantics.pl'], SemanticFile),
+    directory_file_path(Path, "semantics.pl", SemanticsFile),
     InitContent = {|string(Path)||
     :- module(semantic_{Path}, [entity/1, component/3]).
 
@@ -234,10 +243,10 @@ run(command(mkdir(Path)), RetVal) :-
     % This directory's entity
     entity(folder('{Path}')).
     |},
-    write_file(SemanticFile, InitContent),
+    write_file(SemanticsFile, InitContent),
     % Rest same as before
     directory_file_path(Parent, _, Path),
-    atomic_list_concat([Parent, '/semantics.pl'], ParentSemantic),
+    directory_file_path(Parent, "semantics.pl", ParentSemantic),
     (exists_file(ParentSemantic) ->
         run(command(edit_file(file(ParentSemantic), [
             append({|string(Path)||
@@ -261,7 +270,7 @@ run(command(mkfile(Path)), RetVal) :-
     write_file(Path, ""),
     % Update parent semantics if exists
     directory_file_path(Parent, Name, Path),
-    atomic_list_concat([Parent, '/semantics.pl'], ParentSemantic),
+    directory_file_path(Parent, "semantics.pl", ParentSemantic),
     (exists_file(ParentSemantic) ->
         run(command(edit_file(file(ParentSemantic), [
             append({|string(Parent,Name)||
@@ -423,7 +432,6 @@ docstring(list_mounted_semantics,
     |}
 ).
 
-
 % Update mkdir/mkfile to support options
 run(command(mkdir(Path, Options)), RetVal) :-
     run(command(mkdir(Path)), RetVal),
@@ -455,3 +463,28 @@ component(edit_file, ctor, insert).
 component(edit_file, ctor, delete).
 component(edit_file, ctor, replace).
 component(edit_file, ctor, append).
+
+% Agent subsystem
+entity(agent).
+component(agent, source, source(semantic(file("agent.pl")))) :- !.
+component(system, subsystem, agent).
+
+% Define agent logging schema constructors
+entity(agent_log).
+component(agent_log, ctor, natural_language).
+component(agent_log, ctor, tool_call).
+component(agent_log, ctor, tool_result).
+component(agent_log, ctor, user_input).
+component(agent_log, ctor, return_value).
+
+docstring(agent_log,
+    {|string(_)||
+    Log entry types for agent interactions.
+    Matches the Thought hierarchy from tool_calling.py:
+    - natural_language: Human-like reasoning steps
+    - tool_call: Request to use a specific tool
+    - tool_result: Result from tool execution
+    - user_input: User's direct prompt.
+    - return_value: Final conclusion/answer
+    |}
+).

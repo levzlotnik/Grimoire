@@ -169,26 +169,45 @@ docstring(mkproject,
     |}
 ).
 
+% Load DB initialization module
+entity(db).
+component(db, source, source(semantic(folder("db")))) :- !.
+:- load_entity_source(db).
+
 run(command(mkproject(Path, Options)), RetVal) :-
     % Create project directory with semantics
     run(command(mkdir(Path)), RetVal0),
     (RetVal0 = error(E) -> RetVal = RetVal0
     ;
-        % Initialize git if requested
-        (option(git(false), Options) -> RetVal1 = ok("")
-        ;
-            run(command(git(init(Path))), RetVal1)
-        ),
+        % Create .mypaos and initialize agent DB
+        directory_file_path(Path, ".mypaos", MypaosDir),
+        run(command(mkdir(MypaosDir)), RetVal1),
         (RetVal1 = error(E) -> RetVal = RetVal1
         ;
-            % Apply template if specified
-            (option(template(Template), Options, none) ->
-                run(command(nix(flake(init(Template)))), RetVal2)
-            ; RetVal2 = ok("")),
+            % Initialize git if requested (before DB so we can track .mypaos)
+            (option(git(false), Options) -> RetVal2 = ok("")
+            ;
+                run(command(git(init(Path))), RetVal2)
+            ),
             (RetVal2 = error(E) -> RetVal = RetVal2
             ;
-                % Language setup stub for now
-                RetVal = ok("Project created successfully")
+                % Initialize DB using db_semantics module
+                directory_file_path(MypaosDir, "agent.db", DbPath),
+                catch(
+                    init_agent_db(DbPath),
+                    db_error(E),
+                    (RetVal = error(E), !, fail)
+                ),
+                % Apply template if specified
+                (option(template(Template), Options, none) ->
+                    run(command(nix(flake(init(Template)))), RetVal4)
+                ; RetVal4 = ok("")),
+                (RetVal4 = error(E) -> RetVal = RetVal4
+                ;
+                    % Language setup stub for now
+                    RetVal = ok("Project created successfully")
+                )
             )
         )
     ).
+
