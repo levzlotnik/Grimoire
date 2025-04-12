@@ -9,6 +9,11 @@
 % The most fundamental entity
 entity(system).
 
+docstring(system, {|string(_)||
+    The root entity of the entire system - the system itself.
+|}).
+
+
 component(system, root_dir, folder("/home/nixos/Projects/MyPAOS")) :- !.
 % Some properties
 component(

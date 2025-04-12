@@ -18,6 +18,8 @@ let
     ]
   );
 
+  schemaFile = ./src/prolog/db/schema.sql;
+
 in
 pkgs.mkShell
 {
@@ -28,4 +30,5 @@ pkgs.mkShell
   ];
 
   SWIPL_BIN = "${pkgs.swi-prolog}/bin/swipl";
+  LLM_DB_SCHEMA_PATH = toString schemaFile;
 }

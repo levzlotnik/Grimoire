@@ -2,6 +2,7 @@ import json
 import sqlite3
 import logging
 import git
+import os
 from abc import ABC, abstractmethod
 from datetime import datetime
 from pathlib import Path
@@ -80,46 +81,56 @@ class SQLiteSessionLogger(BaseSessionLogger):
         self.db_path = db_path
         self.conn = sqlite3.connect(str(db_path))
         self.conn.row_factory = sqlite3.Row
+
+        # Initialize schema from environment variable
+        schema_path = os.getenv("LLM_DB_SCHEMA_PATH")
+        if not schema_path:
+            raise RuntimeError("LLM_DB_SCHEMA_PATH environment variable not set")
+
+        with open(schema_path) as f:
+            with self.conn:
+                self.conn.executescript(f.read())
+
         self.current_session: Optional[SessionContext] = None
 
     def start_session(self, context: SessionContext) -> None:
-        cursor = self.conn.cursor()
-        cursor.execute(
-            """
-            INSERT INTO sessions (project_path, git_sha, git_branch, start_time)
-            VALUES (?, ?, ?, ?)
-        """,
-            (
-                str(context.project_path),
-                context.git_sha,
-                context.git_branch,
-                context.start_time,
-            ),
-        )
-        self.conn.commit()
-        context.session_id = cursor.lastrowid
-        self.current_session = context
+        with self.conn:
+            cur = self.conn.execute(
+                """
+                INSERT INTO sessions (project_path, git_sha, git_branch, start_time)
+                VALUES (:project_path, :git_sha, :git_branch, :start_time)
+                RETURNING id
+            """,
+                {
+                    "project_path": str(context.project_path),
+                    "git_sha": context.git_sha,
+                    "git_branch": context.git_branch,
+                    "start_time": context.start_time,
+                },
+            )
+            last_row = list(cur)[-1]
+            session_id = last_row["id"]
+            context.session_id = session_id
+            self.current_session = context
 
     def end_session(self) -> None:
         if not self.current_session or not self.current_session.session_id:
             return
 
         self.current_session.end_time = datetime.now()
-        cursor = self.conn.cursor()
-        cursor.execute(
-            """
-            UPDATE sessions SET end_time = ? WHERE id = ?
-        """,
-            (self.current_session.end_time, self.current_session.session_id),
-        )
-        self.conn.commit()
-        self.current_session = None
+        with self.conn:
+            self.conn.execute(
+                "UPDATE sessions SET end_time = :end_time WHERE id = :id",
+                {
+                    "end_time": self.current_session.end_time,
+                    "id": self.current_session.session_id,
+                },
+            )
+            self.current_session = None
 
-    def log_thought(
-        self, thought: Thought, parent_id: Optional[int] = None
-    ) -> Optional[int]:
-        if not self.current_session or not self.current_session.session_id:
-            return None
+    def log_thought(self, thought: Thought, parent_id: Optional[int] = None):
+        if self.current_session is None or self.current_session.session_id is None:
+            raise RuntimeError("Session not started or session ID not set.")
 
         # Map thought data to schema
         data = thought.data
@@ -148,30 +159,34 @@ class SQLiteSessionLogger(BaseSessionLogger):
                 tool_fields["tool_error"] = str(data.result.error)
             tool_fields["tool_result"] = json.dumps(data.result)
 
-        cursor = self.conn.cursor()
-        cursor.execute(
-            """
-            INSERT INTO thoughts (
-                session_id, step_number, thought_type, content,
-                parent_thought_id, tool_name, tool_parameters,
-                tool_reason, tool_result, tool_error
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-            (
-                self.current_session.session_id,
-                thought.step_number,
-                thought_type,
-                content,
-                parent_id,
-                tool_fields["tool_name"],
-                tool_fields["tool_parameters"],
-                tool_fields["tool_reason"],
-                tool_fields["tool_result"],
-                tool_fields["tool_error"],
-            ),
-        )
-        self.conn.commit()
-        return cursor.lastrowid
+        with self.conn:
+            cur = self.conn.execute(
+                """
+                INSERT INTO thoughts (
+                    session_id, step_number, thought_type, content,
+                    parent_thought_id, tool_name, tool_parameters,
+                    tool_reason, tool_result, tool_error
+                ) VALUES (:session_id, :step_number, :thought_type, :content,
+                    :parent_thought_id, :tool_name, :tool_parameters,
+                    :tool_reason, :tool_result, :tool_error)
+                RETURNING id
+            """,
+                {
+                    "session_id": self.current_session.session_id,
+                    "step_number": thought.step_number,
+                    "thought_type": thought_type,
+                    "content": content,
+                    "parent_thought_id": parent_id,
+                    "tool_name": tool_fields["tool_name"],
+                    "tool_parameters": tool_fields["tool_parameters"],
+                    "tool_reason": tool_fields["tool_reason"],
+                    "tool_result": tool_fields["tool_result"],
+                    "tool_error": tool_fields["tool_error"],
+                },
+            )
+            last_row = list(cur)[-1]
+            thought_id = last_row["id"]
+            return thought_id
 
     def log_transaction(
         self, thought_id: int, commands: List[str], result: Union[str, Dict]
@@ -187,15 +202,14 @@ class SQLiteSessionLogger(BaseSessionLogger):
         result_json = json.dumps(result)
         commands_json = json.dumps(commands)
 
-        cursor = self.conn.cursor()
-        cursor.execute(
-            """
-            INSERT INTO transactions (thought_id, status, command_list, result)
-            VALUES (?, ?, ?, ?)
-        """,
-            (thought_id, status, commands_json, result_json),
-        )
-        self.conn.commit()
+        with self.conn:
+            self.conn.execute(
+                """
+                INSERT INTO transactions (thought_id, status, command_list, result)
+                VALUES (?, ?, ?, ?)
+            """,
+                (thought_id, status, commands_json, result_json),
+            )
 
 
 class FileSessionLogger(BaseSessionLogger):
@@ -262,13 +276,34 @@ class FileSessionLogger(BaseSessionLogger):
             extra=extra,
         )
 
+    def info(self, message: str) -> None:
+        if not self.current_session:
+            return
+
+        extra = {"session_id": self.current_session.session_id or "UNKNOWN"}
+        self.logger.info(message, extra=extra)
+
+    def debug(self, message: str) -> None:
+        if not self.current_session:
+            return
+
+        extra = {"session_id": self.current_session.session_id or "UNKNOWN"}
+        self.logger.debug(message, extra=extra)
+
+    def error(self, message: str) -> None:
+        if not self.current_session:
+            return
+
+        extra = {"session_id": self.current_session.session_id or "UNKNOWN"}
+        self.logger.error(message, extra=extra)
+
 
 class InteractionLogger(BaseSessionLogger):
     """Logs both structured data and debug information"""
 
     def __init__(self, project_path: Path):
         mypaos_dir = project_path / ".mypaos"
-        mypaos_dir.mkdir(exist_ok=True)
+        mypaos_dir.mkdir(exist_ok=True, parents=True)
 
         self.db_logger = SQLiteSessionLogger(mypaos_dir / "agent.db")
         self.file_logger = FileSessionLogger(mypaos_dir / "agent.log")
@@ -293,6 +328,15 @@ class InteractionLogger(BaseSessionLogger):
     ) -> None:
         self.db_logger.log_transaction(thought_id, commands, result)
         self.file_logger.log_transaction(thought_id, commands, result)
+
+    def info(self, message: str) -> None:
+        self.file_logger.info(message)
+
+    def debug(self, message: str) -> None:
+        self.file_logger.debug(message)
+
+    def error(self, message: str) -> None:
+        self.file_logger.error(message)
 
 
 @contextmanager

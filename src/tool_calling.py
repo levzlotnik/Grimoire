@@ -10,6 +10,7 @@ from typing import (
     TypeVar,
     Union,
     Literal,
+    Tuple,
 )
 from pydantic import BaseModel, Field, ValidationError
 import json
@@ -37,16 +38,17 @@ class Tool(BaseModel):
     function: Callable[..., BaseModel] = Field(..., description="Function to call")
 
     def _sys_prompt(self) -> str:
-        return_schema = (
-            json.dumps(self.return_schema, indent=2) if self.return_schema else "None"
-        )
+        # return_schema = (
+        #     json.dumps(self.return_schema, indent=2) if self.return_schema else "None"
+        # )
         return dedent(
             f"""
             Tool: {self.name}
-            Description: {self.description}
-            Parameters: {json.dumps(self.parameters, indent=2)}
-            Return schema: {return_schema}
-        """
+            {self.description}
+            """
+            # Parameters: {json.dumps(self.parameters, indent=2)}
+            # Return schema: {return_schema}
+            # """
         ).strip()
 
 
@@ -95,6 +97,13 @@ class ToolCallResult(BaseModel):
     result: Any = Field(..., description="The result returned by the tool")
 
 
+class Feedback(BaseModel):
+    """Feedback on thoughts (usually from user or tool call results)"""
+
+    tag: Literal["feedback"] = "feedback"
+    feedback: str = Field(..., description="Feedback on thoughts or tool call results")
+
+
 class RetVal(BaseModel):
     """A conclusion from the LLM"""
 
@@ -105,7 +114,7 @@ class RetVal(BaseModel):
 class Thought(BaseModel):
     """A single thought in the chain of reasoning"""
 
-    data: Union[NaturalLanguage, ToolCall, ToolCallResult, RetVal] = Field(
+    data: Union[NaturalLanguage, ToolCall, ToolCallResult, Feedback, RetVal] = Field(
         ..., description="The data of the thought", discriminator="tag"
     )
     step_number: int = Field(..., description="Step number in the reasoning chain")
@@ -119,33 +128,62 @@ class ChainOfThought(BaseModel):
     )
 
 
-def _try_parse_tool_call(content: str) -> Optional[ToolCall]:
-    """Try to parse a tool call from the content"""
+class ValidationWarning(BaseModel):
+    """Warning for validation issues"""
+
+    original_content: str = Field(
+        ..., description="Original content that caused the warning"
+    )
+    error_message: str = Field(..., description="Error message from validation")
+
+
+class ParseResult(BaseModel):
+    """Result of parsing steps"""
+
+    thoughts: List[Thought] = Field(..., description="Parsed thoughts")
+    warnings: List[ValidationWarning] = Field(..., description="Validation warnings")
+
+
+def _try_parse_tool_call(
+    content: str,
+) -> Tuple[Optional[ToolCall], Optional[ValidationWarning]]:
+    """Try to parse a tool call from the content, returning both the tool call and any validation warning"""
     try:
-        data = ToolCall.model_validate_json(content)
-        return ToolCall(
-            tool_name=data.tool_name,
-            parameters=data.parameters,
-            reason=data.reason,
-        )
-    except (json.JSONDecodeError, ValidationError):
-        return None
+        json_content = json.loads(content)
+        if isinstance(json_content, dict):
+            try:
+                data = ToolCall.model_validate(json_content)
+                return (
+                    ToolCall(
+                        tool_name=data.tool_name,
+                        parameters=data.parameters,
+                        reason=data.reason,
+                    ),
+                    None,
+                )
+            except ValidationError as e:
+                return None, ValidationWarning(
+                    original_content=content, error_message=str(e)
+                )
+    except json.JSONDecodeError:
+        return None, None
 
 
-def parse_next_steps(text: str) -> List[Thought]:
+def parse_next_steps(text: str) -> ParseResult:
     """Parse steps from the LLM response until a tool call or return is found.
-    Returns all steps including the final tool call or return.
+    Returns all steps including the final tool call or return, along with any validation warnings.
 
     Args:
         text: Text containing one or more steps
 
     Returns:
-        List of Thoughts, where the last thought is either a tool call or return
+        ParseResult containing thoughts and any validation warnings
 
     Raises:
         LLMFormatError: If no valid steps are found or if steps are not properly formatted
     """
     steps: List[Thought] = []
+    warnings: List[ValidationWarning] = []
     # Split on STEP markers, capturing the step number
     pattern = re.compile(r"STEP (\d+):(.*?)(?=STEP \d+:|$)", re.DOTALL)
     matches = pattern.findall(text)
@@ -153,22 +191,22 @@ def parse_next_steps(text: str) -> List[Thought]:
     if not matches:
         raise LLMFormatError("No valid steps found in response")
 
-    # Process all steps except the last one as natural language
+    # Process all steps except the last one
     for step_num, content in matches[:-1]:
         content = content.strip()
         if content:
-            maybe_tool_call = _try_parse_tool_call(content)
-            if maybe_tool_call:
-                thought = Thought(
-                    data=maybe_tool_call,
-                    step_number=int(step_num),
-                )
+            tool_call, warning = _try_parse_tool_call(content)
+            if warning:
+                warnings.append(warning)
+            if tool_call:
+                steps.append(Thought(data=tool_call, step_number=int(step_num)))
             else:
-                thought = Thought(
-                    data=NaturalLanguage(natural_language=content),
-                    step_number=int(step_num),
+                steps.append(
+                    Thought(
+                        data=NaturalLanguage(natural_language=content),
+                        step_number=int(step_num),
+                    )
                 )
-            steps.append(thought)
 
     # Process the final step - must be either a tool call or lead to a return
     final_step_num, final_content = matches[-1]
@@ -177,27 +215,25 @@ def parse_next_steps(text: str) -> List[Thought]:
         raise LLMFormatError("Empty final step")
 
     # First try to parse as tool call
-    maybe_tool_call = _try_parse_tool_call(final_content)
-    if maybe_tool_call:
+    tool_call, warning = _try_parse_tool_call(final_content)
+    if warning:
+        warnings.append(warning)
+    if tool_call:
+        steps.append(Thought(data=tool_call, step_number=int(final_step_num)))
+        return ParseResult(thoughts=steps, warnings=warnings)
+
+    # Try to parse as return statement
+    return_pattern = re.compile(r"return:(.*?)$", re.DOTALL)
+    return_match = return_pattern.search(text)
+    if return_match:
+        conclusion = return_match.group(1).strip()
         steps.append(
             Thought(
-                data=maybe_tool_call,
+                data=RetVal(retval=conclusion),
                 step_number=int(final_step_num),
             )
         )
-        return steps
-    else:
-        return_pattern = re.compile(r"return:(.*?)$", re.DOTALL)
-        return_match = return_pattern.search(text)
-        if return_match:
-            conclusion = return_match.group(1).strip()
-            steps.append(
-                Thought(
-                    data=RetVal(retval=conclusion),
-                    step_number=int(final_step_num),
-                )
-            )
-            return steps
+        return ParseResult(thoughts=steps, warnings=warnings)
 
     # If we get here, the final step was neither a tool call nor a return
     raise LLMFormatError("Final step must be a tool call or return statement")
@@ -287,22 +323,25 @@ class ToolCallingLLM:
         all_thoughts: List[Thought] = []
 
         for _ in range(max_messages):
-            response = self.llm.chat_completion(
-                messages=messages,
-                temperature=0.7,
-                model=self.model,
-            )
-
-            try:
-                thoughts = parse_next_steps(response.content)
-            except LLMFormatError:
-                if self.n_retries > 0:
-                    self.n_retries -= 1
-                    continue
-                else:
-                    raise LLMFormatError(
-                        "I tried so hard, and got so far, but in the end, it doesn't even matter."
+            success = False
+            for _ in range(self.n_retries):
+                try:
+                    response = self.llm.chat_completion(
+                        messages=messages,
+                        temperature=0.7,
+                        model=self.model,
                     )
+                    parse_result = parse_next_steps(response.content)
+                    thoughts = parse_result.thoughts
+                    success = True
+                    break
+                except LLMFormatError:
+                    pass
+            if not success:
+                raise LLMFormatError(
+                    "I tried so hard, and got so far, but in the end, it doesn't even matter."
+                )
+
             # truncate the thoughts if we have a tool call or return in the middle
             n = len(thoughts)
             for i, thought in enumerate(thoughts, start=1):
@@ -313,7 +352,7 @@ class ToolCallingLLM:
 
             all_thoughts.extend(thoughts)
 
-            # Add thoughts as assistant message
+            # Add thoughts and any warnings as assistant/user messages
             concatenated_thoughts = "\n".join(
                 f"STEP {thought.step_number}: {thought.data.natural_language}"
                 for thought in thoughts[:-1]
@@ -325,6 +364,19 @@ class ToolCallingLLM:
                 )
                 concatenated_thoughts += f"\n{last_thought_content}"
             messages.append({"role": "assistant", "content": concatenated_thoughts})
+
+            if parse_result.warnings:
+                warning_messages = "\n".join(
+                    f"Warning: {w.error_message}\nOriginal content: {w.original_content}"
+                    for w in parse_result.warnings
+                )
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": f"Your tool call JSON was malformed:\n{warning_messages}",
+                    }
+                )
+                continue
 
             # Handle the final thought
             final_thought = thoughts[-1]
@@ -343,6 +395,8 @@ class ToolCallingLLM:
                         )
                     except ValidationError as e:
                         feedback = f"The return value didn't match the expected format: {retval_format}"
+                        feedback += f"\nError: {str(e)}"
+
                         messages.append(
                             {
                                 "role": "user",
@@ -356,6 +410,11 @@ class ToolCallingLLM:
                         raise ToolError(f"Tool {tool_call.tool_name} not found")
                     tool = toolset.tools[tool_call.tool_name]
                     result = tool.function(**tool_call.parameters)
+                    step_number = final_thought.step_number + 1
+                    tool_call_result_thought = Thought(
+                        data=ToolCallResult(result=result, step_number=step_number),
+                    )
+                    all_thoughts.append(tool_call_result_thought)
                     content = json.dumps(result.model_dump(), indent=2)
                     messages.append(
                         {
@@ -364,10 +423,16 @@ class ToolCallingLLM:
                         }
                     )
                 except ToolError as e:
+                    tool_error_content = json.dumps({"tool_error": str(e)})
+                    tool_call_error_thought = Thought(
+                        data=Feedback(error=str(e)),
+                        step_number=final_thought.step_number + 1,
+                    )
+                    all_thoughts.append(tool_call_error_thought)
                     messages.append(
                         {
                             "role": "user",
-                            "content": json.dumps({"tool_error": str(e)}),
+                            "content": tool_error_content,
                         }
                     )
                 # In any case, we need to update the system prompt given that

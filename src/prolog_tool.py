@@ -67,7 +67,7 @@ class ComponentsTypesResult(BaseModel):
 
 
 class ComponentsResult(BaseModel):
-    components: List[str]
+    components: List[Any]
 
 
 class ConstructorsResult(BaseModel):
@@ -132,7 +132,17 @@ class PrologToolset:
 
     @wrap_tool_error(exc_types=(PrologError,))
     def list_entities(self) -> EntitiesResult:
-        """List all entities in the system with docstrings"""
+        """List all entities in the system with docstrings.
+
+        Args:
+            None
+        Example:
+            {
+                "tool_name": "list_entities",
+                "parameters": {},
+                "reason": "List all entities in the system"
+            }
+        """
         results = p.query("entity(E)")
         if not results:
             results = []
@@ -147,21 +157,55 @@ class PrologToolset:
 
     @wrap_tool_error(exc_types=(PrologError,))
     def list_components_types(self, entity: str) -> ComponentsTypesResult:
-        """List all components and their values for an entity"""
+        """List all components and their values for an entity.
+
+        Args:
+            entity: The entity ID to list components for.
+
+        Example:
+            {
+                "tool_name": "list_components_types",
+                "parameters": {"entity": "git"},
+                "reason": "List all components of the git subsystem"
+            }
+        """
         results = p.query(f"component({entity}, CName, _)")
         types = [r["CName"] for r in results] if results else []
         return ComponentsTypesResult(component_types=types)
 
     @wrap_tool_error(exc_types=(PrologError,))
     def list_components(self, entity: str, component_type: str) -> ComponentsResult:
-        """List all components and their values for an entity"""
+        """List all components and their values for an entity.
+
+        Args:
+            entity: The entity ID to list components for.
+            component_type: The component type to list.
+
+        Example:
+            {
+                "tool_name": "list_components",
+                "parameters": {"entity": "git", "component_type": "branch"},
+                "reason": "List all branches of the git repository."
+            }
+        """
         results = p.query(f"component({entity}, {component_type}, Component)")
         comps = [r["Component"] for r in results] if results else []
         return ComponentsResult(components=comps)
 
     @wrap_tool_error(exc_types=(PrologError,))
     def get_docstring(self, entity: str) -> DocstringResult:
-        """Get documentation for an entity, component, or constructor"""
+        """Get documentation for an entity, component, or constructor.
+
+        Args:
+            entity: The entity ID to get documentation for.
+
+        Example:
+            {
+                "tool_name": "get_docstring",
+                "parameters": {"entity": "git"},
+                "reason": "Get documentation for the git subsystem."
+            }
+        """
         results = p.query(f"docstring({entity}, Doc)")
         if not results:
             results = []
@@ -195,12 +239,11 @@ class PrologToolset:
             entity_id: The entity ID to load the source code for.
 
         Example:
-            >>> list_components_types("git")
-            ['source']
-            >>> load_entity_source("git")
-            True
-            >>> list_components_types("git")
-            ['source', 'url', 'branch', 'commit']
+            {
+                "tool_name": "load_entity_source",
+                "parameters": {"entity_id": "git"},
+                "reason": "Load the component tree for the git subsystem."
+            }
         """
         results = p.query(f"load_entity_source({entity_id})")
         return BooleanResult(result=bool(results))
@@ -215,7 +258,17 @@ class PrologToolset:
 
     @wrap_tool_error(exc_types=(PrologError,))
     def is_entity(self, entity: str) -> BooleanResult:
-        """Check if something is an entity in the system"""
+        """Check if something is an entity in the system.
+
+        Args:
+            entity: The entity ID to check.
+        Example:
+            {
+                "tool_name": "is_entity",
+                "parameters": {"entity": "git"},
+                "reason": "Check if git is an entity."
+            }
+        """
         results = p.query(f"entity({entity})")
         return BooleanResult(result=bool(results))
 

@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS sessions (
-    id INTEGER PRIMARY KEY,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
     git_sha TEXT,                -- Git context at session start
     git_branch TEXT,            -- Branch name for better context
     start_time DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 
 CREATE TABLE IF NOT EXISTS thoughts (
-    id INTEGER PRIMARY KEY,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
     session_id INTEGER NOT NULL,
     step_number INTEGER NOT NULL,
     thought_type TEXT NOT NULL CHECK(
@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS thoughts (
 );
 
 CREATE TABLE IF NOT EXISTS transactions (
-    id INTEGER PRIMARY KEY,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
     thought_id INTEGER NOT NULL,
     executed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     status TEXT NOT NULL,        -- 'success' or 'error'
