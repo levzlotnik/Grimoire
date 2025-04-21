@@ -484,7 +484,7 @@ class MyPAOSAssistant:
 if __name__ == "__main__":
     assistant = MyPAOSAssistant(
         provider="openai",
-        model="gpt-4o-2024-11-20",
+        model="gpt-4.1-2025-04-14",
         project_path=Path.cwd() / "test_project",
     )
     # Example interaction

@@ -163,9 +163,9 @@ docstring(mkproject,
     Creates a new project directory with full initialization.
     Format: command(mkproject(+Path, +Options)).
     Options:
-    - git(bool)          % Initialize git repo (default: true)
-    - template(Template) % Flake template to use (default: none)
-    - lang(Language)     % Programming language (affects template)
+    - git(bool)          : Initialize git repo (default: true)
+    - template(Template) : Flake template to use (default: none)
+    - lang(Language)     : Programming language (affects template)
     |}
 ).
 

@@ -19,6 +19,16 @@ import re
 from llm_provider import LLMProvider
 from common import ToolError
 
+RetvalModel = TypeVar("RetvalModel", bound=Union[str, BaseModel])
+SystemPromptGen = Callable[[Type[RetvalModel], Optional["Toolset"]], str]
+"""Function that generates system prompts for the LLM.
+Args:
+    retval_model: The expected return value type
+    toolset: Optional set of available tools
+Returns:
+    A string containing the system prompt
+"""
+
 
 class LLMFormatError(Exception):
     """Raised when LLM output doesn't match expected format"""
@@ -38,17 +48,14 @@ class Tool(BaseModel):
     function: Callable[..., BaseModel] = Field(..., description="Function to call")
 
     def _sys_prompt(self) -> str:
-        # return_schema = (
-        #     json.dumps(self.return_schema, indent=2) if self.return_schema else "None"
-        # )
+        # # return_schema = (
+        # #     json.dumps(self.return_schema, indent=2) if self.return_schema else "None"
+        # # )
         return dedent(
             f"""
             Tool: {self.name}
             {self.description}
             """
-            # Parameters: {json.dumps(self.parameters, indent=2)}
-            # Return schema: {return_schema}
-            # """
         ).strip()
 
 
@@ -98,10 +105,14 @@ class ToolCallResult(BaseModel):
 
 
 class Feedback(BaseModel):
-    """Feedback on thoughts (usually from user or tool call results)"""
-
     tag: Literal["feedback"] = "feedback"
-    feedback: str = Field(..., description="Feedback on thoughts or tool call results")
+    message: str = Field(..., description="The feedback message")
+    source: str = Field(
+        ..., description="Source of the feedback (tool/user/validation)"
+    )
+    success: bool = Field(
+        ..., description="Whether this represents a successful outcome"
+    )
 
 
 class RetVal(BaseModel):
@@ -239,6 +250,23 @@ def parse_next_steps(text: str) -> ParseResult:
     raise LLMFormatError("Final step must be a tool call or return statement")
 
 
+def parse_single_thought(text: str) -> Thought:
+    content = text.strip()
+    if not content:
+        raise LLMFormatError("Empty thought")
+    try:
+        json_content = json.loads(content)
+        if isinstance(json_content, dict):
+            return Thought(data=ToolCall.model_validate(json_content), step_number=1)
+    except (json.JSONDecodeError, ValidationError):
+        pass
+    return_pattern = re.compile(r"return:(.*?)$", re.DOTALL)
+    return_match = return_pattern.search(text)
+    if return_match:
+        return Thought(data=RetVal(retval=return_match.group(1).strip()), step_number=1)
+    return Thought(data=NaturalLanguage(natural_language=content), step_number=1)
+
+
 class AssistantResponse(BaseModel):
     """Structured response from the assistant"""
 
@@ -270,9 +298,6 @@ class Toolset(BaseModel):
         return "\n\n".join(tool._sys_prompt() for tool in self.tools.values())
 
 
-SystemPromptGen = Callable[[Type[RetvalModel], Optional[Toolset]], str]
-
-
 class ToolCallingLLM:
     """LLM wrapper with tool-calling capabilities"""
 
@@ -285,6 +310,37 @@ class ToolCallingLLM:
         self.llm = llm_provider
         self.model = model
         self.n_retries = n_retries
+
+    def _generate_next_thought(self, messages: List[Dict[str, str]]) -> Thought:
+        for _ in range(self.n_retries):
+            try:
+                response = self.llm.chat_completion(
+                    messages=messages,
+                    temperature=0.7,
+                    model=self.model,
+                )
+                return parse_single_thought(response.content)
+            except LLMFormatError:
+                continue
+        raise LLMFormatError("Failed to generate valid thought after retries")
+
+    def _execute_thought(
+        self, thought: Thought, toolset: Optional[Toolset]
+    ) -> Feedback:
+        if thought.data.tag == "tool_call":
+            try:
+                if not toolset or thought.data.tool_name not in toolset.tools:
+                    raise ToolError(f"Tool {thought.data.tool_name} not found")
+                tool = toolset.tools[thought.data.tool_name]
+                result = tool.function(**thought.data.parameters)
+                return Feedback(
+                    message=json.dumps(result.model_dump(), indent=2),
+                    source="tool",
+                    success=True,
+                )
+            except (KeyError, ToolError) as e:
+                return Feedback(message=str(e), source="tool", success=False)
+        return Feedback(message="continue", source="system", success=True)
 
     def process_message(
         self,
@@ -321,123 +377,38 @@ class ToolCallingLLM:
         ]
 
         all_thoughts: List[Thought] = []
+        step_number = 1
 
         for _ in range(max_messages):
-            success = False
-            for _ in range(self.n_retries):
+            thought = self._generate_next_thought(messages)
+            thought.step_number = step_number
+            all_thoughts.append(thought)
+            step_number += 1
+
+            if thought.data.tag == "return":
                 try:
-                    response = self.llm.chat_completion(
-                        messages=messages,
-                        temperature=0.7,
-                        model=self.model,
-                    )
-                    parse_result = parse_next_steps(response.content)
-                    thoughts = parse_result.thoughts
-                    success = True
-                    break
-                except LLMFormatError:
-                    pass
-            if not success:
-                raise LLMFormatError(
-                    "I tried so hard, and got so far, but in the end, it doesn't even matter."
-                )
-
-            # truncate the thoughts if we have a tool call or return in the middle
-            n = len(thoughts)
-            for i, thought in enumerate(thoughts, start=1):
-                if thought.data.tag in ["tool_call", "return"]:
-                    n = i
-                    break
-            thoughts = thoughts[:n]
-
-            all_thoughts.extend(thoughts)
-
-            # Add thoughts and any warnings as assistant/user messages
-            concatenated_thoughts = "\n".join(
-                f"STEP {thought.step_number}: {thought.data.natural_language}"
-                for thought in thoughts[:-1]
-            )
-            if thoughts[-1].data.tag == "tool_call":
-                tool_call_content = json.dumps(thoughts[-1].data.model_dump(), indent=2)
-                last_thought_content = (
-                    f"STEP {thoughts[-1].step_number}: {tool_call_content}"
-                )
-                concatenated_thoughts += f"\n{last_thought_content}"
-            messages.append({"role": "assistant", "content": concatenated_thoughts})
-
-            if parse_result.warnings:
-                warning_messages = "\n".join(
-                    f"Warning: {w.error_message}\nOriginal content: {w.original_content}"
-                    for w in parse_result.warnings
-                )
-                messages.append(
-                    {
-                        "role": "user",
-                        "content": f"Your tool call JSON was malformed:\n{warning_messages}",
-                    }
-                )
-                continue
-
-            # Handle the final thought
-            final_thought = thoughts[-1]
-            if final_thought.data.tag == "return":
-                if retval_model is str:
-                    return ProcessResult(
-                        thoughts=all_thoughts, retval=final_thought.data.retval
-                    )
-                else:
-                    try:
-                        process_retval: RetvalModel = retval_model.model_validate_json(
-                            final_thought.data.retval
-                        )
+                    if retval_model is str:
                         return ProcessResult(
-                            thoughts=all_thoughts, retval=process_retval
+                            thoughts=all_thoughts, retval=thought.data.retval
                         )
-                    except ValidationError as e:
-                        feedback = f"The return value didn't match the expected format: {retval_format}"
-                        feedback += f"\nError: {str(e)}"
+                    retval = retval_model.model_validate_json(thought.data.retval)
+                    return ProcessResult(thoughts=all_thoughts, retval=retval)
+                except ValidationError as e:
+                    feedback = Feedback(
+                        message=f"Return value validation failed: {str(e)}",
+                        source="validation",
+                        success=False,
+                    )
+            else:
+                feedback = self._execute_thought(thought, toolset)
 
-                        messages.append(
-                            {
-                                "role": "user",
-                                "content": feedback,
-                            }
-                        )
-            elif final_thought.data.tag == "tool_call":
-                tool_call = final_thought.data
-                try:
-                    if tool_call.tool_name not in toolset.tools:
-                        raise ToolError(f"Tool {tool_call.tool_name} not found")
-                    tool = toolset.tools[tool_call.tool_name]
-                    result = tool.function(**tool_call.parameters)
-                    step_number = final_thought.step_number + 1
-                    tool_call_result_thought = Thought(
-                        data=ToolCallResult(result=result, step_number=step_number),
-                    )
-                    all_thoughts.append(tool_call_result_thought)
-                    content = json.dumps(result.model_dump(), indent=2)
-                    messages.append(
-                        {
-                            "role": "user",
-                            "content": content,
-                        }
-                    )
-                except ToolError as e:
-                    tool_error_content = json.dumps({"tool_error": str(e)})
-                    tool_call_error_thought = Thought(
-                        data=Feedback(error=str(e)),
-                        step_number=final_thought.step_number + 1,
-                    )
-                    all_thoughts.append(tool_call_error_thought)
-                    messages.append(
-                        {
-                            "role": "user",
-                            "content": tool_error_content,
-                        }
-                    )
-                # In any case, we need to update the system prompt given that
-                # the tools might have changed some hidden state that affects it:
-                messages[0]["content"] = system_prompt_gen(retval_model, toolset)
+            feedback_thought = Thought(data=feedback, step_number=step_number)
+            all_thoughts.append(feedback_thought)
+            step_number += 1
+
+            messages.append({"role": "assistant", "content": str(thought.data)})
+            messages.append({"role": "user", "content": feedback.message})
+            messages[0]["content"] = system_prompt_gen(retval_model, toolset)
 
         raise LLMFormatError(
             f"LLM didn't finish thinking within {max_messages} messages"

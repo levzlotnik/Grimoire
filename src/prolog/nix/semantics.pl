@@ -3,6 +3,15 @@
 % Core Nix entity
 entity(nix).
 
+% Concepts in nix
+component(nix, concept, nix(store)).
+component(nix, concept, nix(derivation)).
+component(nix, concept, nix(package)).
+component(nix, concept, nix(build)).
+component(nix, concept, nix(flake)).
+component(nix, concept, nix(develop)).
+component(nix, concept, nix(shell)).
+
 % Nix concepts as namespaces
 entity(nix(store)).
 entity(nix(derivation)).
@@ -22,8 +31,8 @@ component(nix(store), contains, nix(derivation)).
 component(nix(derivation), outputs, nix(package)).
 
 % Package types
-component(nix(package), ctor, versioned_package).
-component(nix(package), ctor, flake_package).
+component(nix(package), ctor, versioned).
+component(nix(package), ctor, flake).
 
 % Docstrings
 docstring(nix(package),
@@ -124,8 +133,15 @@ run(command(nix(shell(Packages, Command))), RetVal) :-
     run(command(shell(Args)), RetVal).
 
 % Flake commands
+entity(nix(flake)).
 component(command, ctor, nix(flake)).
 component(nix(flake), ctor, new).
+docstring(nix(flake), S) :-
+    S = {|string(_)||
+    Represents a Nix flake.
+    Flakes are a concept in Nix for reproducible, composable, and shareable development environments and packages.
+    Refer to `nix(flake(template))` for more information on existing templates.
+    |}.
 
 component(nix(flake), templates_source, source(folder(Path))) :-
     component(nix, semantic_root, folder(SemanticDir)),
@@ -139,6 +155,8 @@ docstring(nix(flake(template)),
    {|string(_)||
    Nix flake templates that can be used to initialize projects.
    Format: nix(flake(template(TemplateId)))
+   You can find the existing templates through the `instance` component
+   of `nix(flake(template))`: `component(nix(flake), instance, Templates)`.
    |}).
 
 nix_templates_expr_base(Expr) :-
@@ -162,7 +180,11 @@ component(nix(flake(template)), instance, Templates) :-
         (
             json_read_dict(Out, JsonDict, [tag(template)]),
             dict_pairs(JsonDict.templates, Tag, Pairs),
-            findall(template(K, D), (member(K-V, Pairs), D = V.description), Templates)
+            findall(
+                template(K, D),
+                (member(K-V, Pairs), D = V.description),
+                Templates
+            )
         ),
         % Cleanup
         (close(Out))

@@ -108,7 +108,24 @@ class PrologToolset:
 
     @wrap_tool_error(exc_types=(PrologError,))
     def commit_transaction(self, commands: List[str]) -> TransactionResult:
-        """Execute a transaction containing multiple commands atomically"""
+        """Execute a transaction containing multiple commands atomically.
+
+        Args:
+            commands: List of Prolog commands to execute in the transaction.
+
+        Example:
+            {
+                "tool_name": "commit_transaction",
+                "parameters": {
+                    "commands": [
+                        "mkdir('test_dir')",
+                        "mkfile('test_dir/test_file.txt')",
+                        "edit_file('test_dir/test_file.txt', [append('Hello World!')])"
+                    ]
+                },
+                "reason": "Execute multiple commands in a transaction."
+            }
+        """
         transaction = f"transaction([{','.join(commands)}])"
 
         if not self._get_user_consent(transaction):
@@ -124,11 +141,6 @@ class PrologToolset:
 
         result = results[0]["RetVal"]
         return TransactionResult.from_command_result(_parse_command_result(result))
-
-    @wrap_tool_error(exc_types=(PrologError,))
-    def list_commands(self):
-        """List all commands in the system"""
-        return self.list_constructors("command")
 
     @wrap_tool_error(exc_types=(PrologError,))
     def list_entities(self) -> EntitiesResult:
