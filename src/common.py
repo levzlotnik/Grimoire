@@ -1,5 +1,8 @@
-from typing import Callable, List, ParamSpec, Tuple, Type, TypeVar
+import json
+from typing import Callable, List, ParamSpec, Tuple, Type, TypeVar, Union
 from functools import wraps
+
+from pydantic import BaseModel
 
 
 class ToolError(Exception):
@@ -28,3 +31,17 @@ def wrap_tool_error(exc_types: Tuple[Type[Exception]]):
         return wrapper
 
     return decorator
+
+
+NoneType = type(None)
+PrimType = Union[NoneType, bool, int, str, float, BaseModel]
+
+
+def _dump_val(val: PrimType) -> str:
+    """Dump the result to a string format"""
+    if isinstance(val, BaseModel):
+        return json.dumps(val.model_dump(), indent=2)
+    elif isinstance(val, (str, int, float, NoneType)):
+        return str(val)
+    else:
+        raise TypeError(f"Unsupported result type: {type(val)}")

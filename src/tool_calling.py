@@ -1,4 +1,4 @@
-from textwrap import dedent
+from textwrap import dedent, indent
 from typing import (
     Generic,
     List,
@@ -17,14 +17,11 @@ import json
 import re
 
 from llm_provider import LLMProvider
-from common import ToolError
+from common import ToolError, _dump_val
 
 RetvalModel = TypeVar("RetvalModel", bound=Union[str, BaseModel])
-SystemPromptGen = Callable[[Type[RetvalModel], Optional["Toolset"]], str]
+SystemPromptGen = Callable[[], str]
 """Function that generates system prompts for the LLM.
-Args:
-    retval_model: The expected return value type
-    toolset: Optional set of available tools
 Returns:
     A string containing the system prompt
 """
@@ -48,13 +45,15 @@ class Tool(BaseModel):
     function: Callable[..., BaseModel] = Field(..., description="Function to call")
 
     def _sys_prompt(self) -> str:
-        # # return_schema = (
-        # #     json.dumps(self.return_schema, indent=2) if self.return_schema else "None"
-        # # )
+        signature = f"{self.name}({', '.join(self.parameters.keys())})"
+        return_schema = _dump_val(self.return_schema)
+        description = indent(self.description, "    ")
         return dedent(
             f"""
-            Tool: {self.name}
-            {self.description}
+            Tool: {signature}
+            Returns: {return_schema}
+            Description:
+            {description}
             """
         ).strip()
 
@@ -125,10 +124,27 @@ class RetVal(BaseModel):
 class Thought(BaseModel):
     """A single thought in the chain of reasoning"""
 
-    data: Union[NaturalLanguage, ToolCall, ToolCallResult, Feedback, RetVal] = Field(
+    data: Union[NaturalLanguage, ToolCall, Feedback, RetVal] = Field(
         ..., description="The data of the thought", discriminator="tag"
     )
     step_number: int = Field(..., description="Step number in the reasoning chain")
+
+    def to_text(self) -> str:
+        """Convert the thought to a text format"""
+        if self.data.tag == "natural_language":
+            return self.data.natural_language
+        elif self.data.tag == "tool_call":
+            return _dump_val(self.data)
+        elif self.data.tag == "return":
+            retval = _dump_val(self.data.retval)
+            return f"return: {retval}"
+        elif self.data.tag == "feedback":
+            if self.data.success:
+                return f"Success: {self.data.message}"
+            else:
+                return f"Error: {self.data.message} "
+        else:
+            raise TypeError(f"Unknown thought type: {self.data.tag}")
 
 
 class ChainOfThought(BaseModel):
@@ -293,6 +309,12 @@ class Toolset(BaseModel):
 
     tools: Dict[str, Tool] = Field(..., description="Dictionary of available tools")
 
+    def add_tool(self, tool: Tool):
+        """Add a tool to the toolset."""
+        if tool.name in self.tools:
+            raise ToolError(f"Tool {tool.name} already exists")
+        self.tools[tool.name] = tool
+
     def to_prompt(self) -> str:
         """Convert tools to a prompt format"""
         return "\n\n".join(tool._sys_prompt() for tool in self.tools.values())
@@ -334,7 +356,7 @@ class ToolCallingLLM:
                 tool = toolset.tools[thought.data.tool_name]
                 result = tool.function(**thought.data.parameters)
                 return Feedback(
-                    message=json.dumps(result.model_dump(), indent=2),
+                    message=_dump_val(result),
                     source="tool",
                     success=True,
                 )
@@ -345,7 +367,7 @@ class ToolCallingLLM:
     def process_message(
         self,
         message: str,
-        system_prompt_gen: SystemPromptGen[RetvalModel],
+        system_prompt_gen: SystemPromptGen,
         max_messages: int = 10,
         toolset: Optional[Toolset] = None,
         retval_model: Type[RetvalModel] = str,
@@ -363,15 +385,10 @@ class ToolCallingLLM:
         Raises:
             LLMFormatError: If the LLM doesn't finish thinking within max_messages
         """
-        if issubclass(retval_model, BaseModel):
-            retval_format = retval_model.model_json_schema(mode="serialization")
-        elif retval_model is str:
-            retval_format = "string"
-
         messages = [
             {
                 "role": "system",
-                "content": system_prompt_gen(retval_model, toolset),
+                "content": system_prompt_gen(),
             },
             {"role": "user", "content": message},
         ]
@@ -406,9 +423,9 @@ class ToolCallingLLM:
             all_thoughts.append(feedback_thought)
             step_number += 1
 
-            messages.append({"role": "assistant", "content": str(thought.data)})
-            messages.append({"role": "user", "content": feedback.message})
-            messages[0]["content"] = system_prompt_gen(retval_model, toolset)
+            messages.append({"role": "assistant", "content": thought.to_text()})
+            messages.append({"role": "user", "content": feedback_thought.to_text()})
+            messages[0]["content"] = system_prompt_gen()
 
         raise LLMFormatError(
             f"LLM didn't finish thinking within {max_messages} messages"

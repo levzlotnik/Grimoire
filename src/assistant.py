@@ -1,13 +1,14 @@
+from abc import ABC, abstractmethod
 import json
 import os
 from pathlib import Path
-from typing import Callable, List, Dict, Any, Optional, Type
+from typing import Callable, Generic, List, Dict, Any, Optional, Tuple, Type, TypeVar
 from llm_provider import get_llm_provider
 from tool_calling import ProcessResult, Tool, ToolCallingLLM, Toolset, make_tool
 from prolog_tool import PrologToolset
 from textwrap import dedent
 from pydantic import BaseModel, Field, ValidationError, model_validator
-from common import ToolError
+from common import ToolError, PrimType
 from logger import InteractionLogger, SessionContext
 
 
@@ -91,18 +92,183 @@ class Plan(BaseModel):
         return self
 
 
+PROMPTS_PATH = os.path.join(os.path.dirname(__file__), "prompts")
+with open(os.path.join(PROMPTS_PATH, "base_context.md")) as f:
+    BASE_CONTEXT = f.read()
+
+
+def _template_format(template: str, **vars: Dict[str, Any]) -> str:
+    """Format a template string with variables.
+
+    Example:
+
+        >>> template = "Hello, {{name}}!"
+        >>> formatted = _template_format(template, name="Alice")
+        >>> print(formatted)
+        Hello, Alice!
+
+    """
+    for key, value in vars.items():
+        template = template.replace(f"{{{{{key}}}}}", str(value))
+    return template
+
+
+InT = TypeVar("InT", bound=PrimType)
+OutT = TypeVar("OutT", bound=PrimType)
+
+
+class Agent(ABC, Generic[InT, OutT]):
+    """Abstract base class for agents"""
+
+    def __init__(self, agent_id: str):
+        self.agent_id = agent_id
+
+    @abstractmethod
+    def process(self, task: InT) -> ProcessResult[OutT]:
+        """Process a task and return the result."""
+
+    def run(self, task: InT, logger: InteractionLogger) -> OutT:
+        """Run the agent with a task and log the result.
+
+        Args:
+            task: The task to process.
+            logger: The logger to use for logging thoughts.
+        Returns:
+            The result of the task processing.
+        """
+        result = self.process(task)
+        thought_id = None
+        for thought in result.thoughts:
+            thought_id = logger.log_thought(thought, thought_id)
+        return result.retval
+
+
+class PrologExplorationAgent(Agent[str, KnowledgeTree]):
+    """Agent for exploring the Prolog knowledge base"""
+
+    def __init__(
+        self,
+        agent_id: str,
+        llm: ToolCallingLLM,
+        prolog_engine: PrologToolset,
+        max_messages: int = 10,
+    ):
+        super().__init__(agent_id)
+        self.engine = prolog_engine
+        tools = [
+            prolog_engine.list_entities,
+            prolog_engine.list_components_types,
+            prolog_engine.list_components,
+            prolog_engine.load_entity_source,
+            prolog_engine.get_docstring,
+            self.remember_component,
+        ]
+        tools = [make_tool(tool) for tool in tools]
+        toolset = Toolset(tools={tool.name: tool for tool in tools})
+        self.tools = toolset
+        self._llm = llm
+        self.max_messages = max_messages
+
+        self.state = KnowledgeTree()
+        self._init_knowledge_tree()
+
+    def _init_knowledge_tree(self):
+        """Initialize the knowledge tree with system concepts"""
+        system_docstring = self.engine.get_docstring("system").docstring
+        self.state = KnowledgeTree(data={"system": {"docstring": system_docstring}})
+        concepts = self.engine.list_components("system", "concept")
+        self.state.data["system"]["concept"] = {
+            concept: {"docstring": self.engine.get_docstring(concept).docstring}
+            for concept in concepts.components
+        }
+
+    def remember_component(self, entity: str, component_name: str, component_val: str):
+        """Remember a component in the knowledge tree, directly using entity names as keys.
+
+        Args:
+            entity: The name of the entity, e.g., "command"
+            component_name: The name of the component, e.g., "ctor"
+            component_val: Specific value of the component to remember
+
+        Note:
+            - If the component value is an entity, it will be added as a reference (prefixed with `$`).
+            - Entities are represented as top-level keys in the knowledge tree.
+
+        Example:
+            {
+                "tool_name": "remember_component",
+                "parameters": {
+                    "entity": "command",
+                    "component_name": "ctor",
+                    "component_val": "mkdir",
+                },
+                "reason": "I called remember_component to store the command constructor 'mkdir' as it is relevant for the task."
+            }
+        """
+        if self.engine.is_entity(component_val).result:
+            is_entity = True
+            docstring = self.engine.get_docstring(component_val).docstring
+        else:
+            is_entity = False
+            docstring = None
+
+        self.state.remember_component(
+            entity=entity,
+            component_name=component_name,
+            component_val=component_val,
+            is_entity=is_entity,
+            docstring=docstring,
+        )
+
+    def _get_system_prompt(self) -> str:
+        """Get the system prompt for the agent"""
+        with open(os.path.join(PROMPTS_PATH, "exploration_prompt.md")) as f:
+            template = f.read()
+        return _template_format(
+            template,
+            tools=self.tools.to_prompt(),
+            base_context=BASE_CONTEXT,
+            retval_format="string",
+            knowledge_tree=self.state.to_prompt(),
+        )
+
+    def process(self, task: str) -> ProcessResult[KnowledgeTree]:
+        """Process a task and return the result."""
+        processed_message = self._llm.process_message(
+            task,
+            system_prompt_gen=self._get_system_prompt,
+            toolset=self.tools,
+            retval_model=str,
+            max_messages=self.max_messages,
+        )
+
+        # Update state with the new knowledge tree
+        self.state = processed_message.retval
+
+        result = ProcessResult[KnowledgeTree](
+            thoughts=processed_message.thoughts, retval=self.state
+        )
+        return result
+
+    def reset(self):
+        """Reset the agent's state and knowledge tree"""
+        self._init_knowledge_tree()
+
+
 class MyPAOSAssistant:
     """Assistant that uses LLM to interact with the operating system."""
 
     def __init__(
         self,
         project_path: Path | str,
+        agent_id: str = "assistant",
         provider: str = "claude",
         model: str = "claude-3-5-sonnet-20240620",
     ):
         self.project_path = Path(project_path)
         self.engine = PrologToolset()
         self.logger = InteractionLogger(self.project_path)
+        self.agent_id = agent_id
 
         # Initialize base tools
         tools = [
@@ -119,6 +285,13 @@ class MyPAOSAssistant:
         self.llm = ToolCallingLLM(
             llm_provider=get_llm_provider(provider),
             model=model,
+        )
+
+        self.exploration_agent = PrologExplorationAgent(
+            "exploration_agent",
+            llm=self.llm,
+            prolog_engine=self.engine,
+            max_messages=10,
         )
 
         # Start session immediately
@@ -156,168 +329,10 @@ class MyPAOSAssistant:
         self.logger.info(f"Ending session at {self.project_path}")
 
     def base_context(self) -> str:
-        base_context_path = os.path.join(
-            os.path.dirname(__file__), "prompts/base_context.md"
-        )
+        base_context_path = os.path.join(PROMPTS_PATH, "base_context.md")
         with open(base_context_path) as f:
             base_context = f.read()
         return base_context
-
-    def remember_component(self, entity: str, component_name: str, component_val: str):
-        """Remember a component in the knowledge tree, directly using entity names as keys.
-
-        Args:
-            entity: The name of the entity, e.g., "command"
-            component_name: The name of the component, e.g., "ctor"
-            component_val: Specific value of the component to remember
-
-        Note:
-            - If the component value is an entity, it will be added as a reference (prefixed with `$`).
-            - Entities are represented as top-level keys in the knowledge tree.
-
-        Example:
-            {
-                "tool_name": "remember_component",
-                "parameters": {
-                    "entity": "command",
-                    "component_name": "ctor",
-                    "component_val": "mkdir",
-                },
-                "reason": "I called remember_component to store the command constructor 'mkdir' as it is relevant for the task."
-            }
-        """
-        is_entity = False
-        docstring = None
-        if self.engine.is_entity(component_val).result:
-            is_entity = True
-            docstring = self.engine.get_docstring(component_val).docstring
-
-        self.knowledge_tree.remember_component(
-            entity=entity,
-            component_name=component_name,
-            component_val=component_val,
-            is_entity=is_entity,
-            docstring=docstring,
-        )
-
-    def run_exploration(self, task: str, max_messages: int = 10):
-        """Run exploration phase and validate results"""
-
-        EXPLORATION_PROMPT = dedent(
-            r"""
-        Core Premise:
-        {base_context}
-
-        You have access to the MyPAOS Prolog knowledge base through these tools.
-        Your task is exploring what's relevant for the current request.
-
-        IMPORTANT: Remember relevant components using `remember_component` tool, e.g.
-        {{ "tool_name": "remember_component", "parameters": {{ "entity": "command", "component_name": "ctor", "component_val": "mkdir" }}, "reason": "The user asked for creating a new project directory." }}
-        THIS IS YOUR SOLE RESPONSIBILITY TO REMEMBER RELEVANT COMPONENTS.
-        PRIORITIZE calling `remember_component` for components that are relevant to the task.
-        THIS IS EXTREMELY IMPORTANT FOR THE PLANNING PHASE.
-        THE MOMENT YOU FIND SOMETHING RELEVANT, IMMEDIATELY CALL `remember_component`.
-
-        Example exploration:
-
-            User: TASK: Create a new project directory and initialize a flake.nix file
-
-            AI:
-                STEP 1: Check command entity constructors
-                STEP 2: {{
-                    "tool_name": "list_constructors",
-                    "parameters": {{"entity": "command"}},
-                    "reason": "List all available commands."
-                }}
-                USER: ["mkdir", "mkfile", "mkproject", "nix(flake(init))", ...]
-
-                STEP 3: Get documentation for relevant command constructor mkproject
-                STEP 4: {{
-                    "tool_name": "get_docstring",
-                    "parameters": {{ "entity": "mkproject" }},
-                    "reason": "Understand what the 'mkproject' command does."
-                }}
-                USER: "Creates a new project directory with full initialization..."
-
-                STEP 5: This command is relevant for creating a new project directory, remember it.
-                STEP 6: {{
-                    "tool_name": "remember_component",
-                    "parameters": {{
-                        "entity": "command",
-                        "component_name": "ctor",
-                        "component_val": "mkproject"
-                    }},
-                    "reason": "Remember the 'mkproject' for project creation transaction."
-                }}
-
-                STEP 7: Get documentation for relevant command constructor `nix(flake(init))`
-                STEP 8: {{
-                    "tool_name": "get_docstring",
-                    "parameters": {{ "entity": "nix(flake(init))" }},
-                    "reason": "Understand what the 'nix(flake(init))' command does."
-                }}
-                USER: "Initialize a flake.nix file in the project directory..."
-                STEP 9: This command is relevant for initializing a flake.nix file, remember it.
-                STEP 10: {{
-                    "tool_name": "remember_component",
-                    "parameters": {{
-                        "entity": "command",
-                        "component_name": "ctor",
-                        "component_val": "nix(flake(init))"
-                    }},
-                    "reason": "The user asked for initializing a flake.nix file."
-                }}
-
-                Step 11: return: mkproject and nix(flake(init)) are relevant for creating a new project directory and initializing a flake.nix file.
-
-        Available tools:
-        {tools}
-
-        AGAIN, REMEMBER RELEVANT COMPONENTS USING `remember_component` TOOL.
-        THIS IS CRUCIAL FOR THE PLANNING PHASE.
-        CALL `remember_component` IMMEDIATELY WHEN YOU FIND SOMETHING RELEVANT.
-        IF YOU DON'T CALL `remember_component` FOR A RELEVANT COMPONENT,
-        IT WILL NOT BE AVAILABLE FOR PLANNING - AND I WILL BE FORCED TO FINE TUNE YOUR WEIGHTS.
-        YOUR CONCLUSION SHOULD BE A SUMMARY OF THE EXPLORATION, NOT A LISTING OF COMPONENTS.
-
-
-        Response format:
-        {retval_format}
-
-        Current Knowledge Tree State, you SHOULD use `remember_component` to add more relevant components:
-        {knowledge_tree}
-        """
-        )
-
-        tools_kb = [make_tool(self.remember_component)]
-        tools = self.tools + tools_kb
-        toolset = Toolset(tools={tool.name: tool for tool in tools})
-
-        def system_prompt_gen(retval_model: Type[str], toolset: Toolset) -> str:
-            return EXPLORATION_PROMPT.format(
-                base_context=self.base_context(),
-                tools=toolset.to_prompt(),
-                retval_format="string",
-                knowledge_tree=self.knowledge_tree.to_prompt(),
-            )
-
-        processed_message = self.llm.process_message(
-            task,
-            system_prompt_gen=system_prompt_gen,
-            max_messages=max_messages,
-            toolset=toolset,
-            retval_model=str,
-        )
-
-        thought_id = None
-        # Log the exploration phase thoughts
-        for thought in processed_message.thoughts:
-            thought_id = self.logger.log_thought(thought, thought_id)
-
-        result = ProcessResult[KnowledgeTree](
-            thoughts=processed_message.thoughts, retval=self.knowledge_tree.model_copy()
-        )
-        return result
 
     def run_planning(
         self, task: str, exploration: KnowledgeTree, max_messages: int = 10

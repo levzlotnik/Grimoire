@@ -281,8 +281,11 @@ class PrologToolset:
                 "reason": "Check if git is an entity."
             }
         """
-        results = p.query(f"entity({entity})")
-        return BooleanResult(result=bool(results))
+        results = list(p.query(f"entity({entity})"))
+        if len(results) == 0:
+            return BooleanResult(result=False)
+        else:
+            return BooleanResult(result=True)
 
 
 if __name__ == "__main__":
