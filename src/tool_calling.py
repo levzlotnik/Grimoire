@@ -17,7 +17,7 @@ import json
 import re
 
 from llm_provider import LLMProvider
-from common import ToolError, _dump_val
+from common import ToolError, dump_val
 
 RetvalModel = TypeVar("RetvalModel", bound=Union[str, BaseModel])
 SystemPromptGen = Callable[[], str]
@@ -46,7 +46,7 @@ class Tool(BaseModel):
 
     def _sys_prompt(self) -> str:
         signature = f"{self.name}({', '.join(self.parameters.keys())})"
-        return_schema = _dump_val(self.return_schema)
+        return_schema = dump_val(self.return_schema)
         description = indent(self.description, "    ")
         return dedent(
             f"""
@@ -96,13 +96,6 @@ class ToolCall(BaseModel):
     reason: str = Field(..., description="Explanation of why this tool is being used")
 
 
-class ToolCallResult(BaseModel):
-    """Result from a tool call"""
-
-    tag: Literal["tool_call_result"] = "tool_call_result"
-    result: Any = Field(..., description="The result returned by the tool")
-
-
 class Feedback(BaseModel):
     tag: Literal["feedback"] = "feedback"
     message: str = Field(..., description="The feedback message")
@@ -145,9 +138,9 @@ class Thought(BaseModel):
         if self.data.tag == "natural_language":
             return self.data.natural_language
         elif self.data.tag == "tool_call":
-            return _dump_val(self.data)
+            return dump_val(self.data)
         elif self.data.tag == "return":
-            retval = _dump_val(self.data.retval)
+            retval = dump_val(self.data.retval)
             return f"return: {retval}"
         elif self.data.tag == "feedback":
             if self.data.success:
@@ -277,21 +270,33 @@ def parse_next_steps(text: str) -> ParseResult:
     raise LLMFormatError("Final step must be a tool call or return statement")
 
 
-def parse_single_thought(text: str) -> Thought:
+def parse_single_thought(text: str, agent_id: str, step_number: int) -> Thought:
     content = text.strip()
     if not content:
         raise LLMFormatError("Empty thought")
     try:
         json_content = json.loads(content)
         if isinstance(json_content, dict):
-            return Thought(data=ToolCall.model_validate(json_content), step_number=1)
+            return Thought(
+                data=ToolCall.model_validate(json_content),
+                step_number=step_number,
+                agent_id=agent_id,
+            )
     except (json.JSONDecodeError, ValidationError):
         pass
     return_pattern = re.compile(r"return:(.*?)$", re.DOTALL)
     return_match = return_pattern.search(text)
     if return_match:
-        return Thought(data=RetVal(retval=return_match.group(1).strip()), step_number=1)
-    return Thought(data=NaturalLanguage(natural_language=content), step_number=1)
+        return Thought(
+            data=RetVal(retval=return_match.group(1).strip()),
+            step_number=step_number,
+            agent_id=agent_id,
+        )
+    return Thought(
+        data=NaturalLanguage(natural_language=content),
+        step_number=step_number,
+        agent_id=agent_id,
+    )
 
 
 class AssistantResponse(BaseModel):
@@ -344,7 +349,9 @@ class ToolCallingLLM:
         self.model = model
         self.n_retries = n_retries
 
-    def _generate_next_thought(self, messages: List[Dict[str, str]]) -> Thought:
+    def _generate_next_thought(
+        self, messages: List[Dict[str, str]], agent_id: str, step_number: int
+    ) -> Thought:
         for _ in range(self.n_retries):
             try:
                 response = self.llm.chat_completion(
@@ -352,7 +359,7 @@ class ToolCallingLLM:
                     temperature=0.7,
                     model=self.model,
                 )
-                return parse_single_thought(response.content)
+                return parse_single_thought(response.content, agent_id, step_number)
             except LLMFormatError:
                 continue
         raise LLMFormatError("Failed to generate valid thought after retries")
@@ -367,7 +374,7 @@ class ToolCallingLLM:
                 tool = toolset.tools[thought.data.tool_name]
                 result = tool.function(**thought.data.parameters)
                 return Feedback(
-                    message=_dump_val(result),
+                    message=dump_val(result),
                     source="tool",
                     success=True,
                 )
@@ -412,9 +419,7 @@ class ToolCallingLLM:
         step_number = 1
 
         for _ in range(max_messages):
-            thought = self._generate_next_thought(messages)
-            thought.step_number = step_number
-            thought.agent_id = agent_id
+            thought = self._generate_next_thought(messages, agent_id, step_number)
             all_thoughts.append(thought)
             step_number += 1
 

@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS thoughts (
     step_number INTEGER NOT NULL,
     agent_id TEXT NOT NULL,      -- ID of the agent that generated this thought
     thought_type TEXT NOT NULL CHECK(
-        thought_type IN ('user_input', 'natural_language', 'tool_call', 'tool_result', 'return_value')
+        thought_type IN ('natural_language', 'tool_call', 'feedback', 'return')
     ),
     -- Common fields
     content TEXT NOT NULL,         -- Main content (prompt/reasoning/result)
@@ -23,19 +23,26 @@ CREATE TABLE IF NOT EXISTS thoughts (
     tool_name TEXT,               -- NULL unless thought_type = 'tool_call'
     tool_parameters TEXT,         -- JSON, NULL unless thought_type = 'tool_call'
     tool_reason TEXT,            -- NULL unless thought_type = 'tool_call'
-    tool_result TEXT,            -- JSON, NULL unless thought_type = 'tool_result'
-    tool_error TEXT,             -- NULL unless thought_type = 'tool_result' and error occurred
+    -- Feedback-specific fields
+    feedback_message TEXT,       -- Only set if thought_type = 'feedback'
+    feedback_source TEXT,        -- Only set if thought_type = 'feedback'
+    feedback_success BOOLEAN,    -- Only set if thought_type = 'feedback'
+    -- Return-specific field
+    retval TEXT,                 -- Only set if thought_type = 'return'
     -- Constraints
     FOREIGN KEY(session_id) REFERENCES sessions(id),
     FOREIGN KEY(parent_thought_id) REFERENCES thoughts(id),
     -- Type safety constraints
     CHECK (
-        (thought_type = 'tool_call' AND tool_name IS NOT NULL AND tool_parameters IS NOT NULL AND tool_reason IS NOT NULL)
-        OR (thought_type = 'tool_result' AND tool_result IS NOT NULL)
-        OR (thought_type NOT IN ('tool_call', 'tool_result') AND
-            tool_name IS NULL AND tool_parameters IS NULL AND
-            tool_reason IS NULL AND tool_result IS NULL AND
-            tool_error IS NULL)
+        (thought_type = 'tool_call' AND tool_name IS NOT NULL AND tool_parameters IS NOT NULL AND tool_reason IS NOT NULL
+            AND retval IS NULL AND feedback_message IS NULL AND feedback_source IS NULL AND feedback_success IS NULL)
+        OR (thought_type = 'return' AND retval IS NOT NULL
+            AND tool_name IS NULL AND tool_parameters IS NULL AND tool_reason IS NULL
+            AND feedback_message IS NULL AND feedback_source IS NULL AND feedback_success IS NULL)
+        OR (thought_type = 'natural_language' AND tool_name IS NULL AND tool_parameters IS NULL AND tool_reason IS NULL AND retval IS NULL
+            AND feedback_message IS NULL AND feedback_source IS NULL AND feedback_success IS NULL)
+        OR (thought_type = 'feedback' AND feedback_message IS NOT NULL AND feedback_source IS NOT NULL AND feedback_success IS NOT NULL
+            AND tool_name IS NULL AND tool_parameters IS NULL AND tool_reason IS NULL AND retval IS NULL)
     )
 );
 

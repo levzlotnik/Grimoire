@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Union
 from contextlib import contextmanager
 
-from tool_calling import NaturalLanguage, ToolCall, ToolCallResult, RetVal, Thought
+from tool_calling import NaturalLanguage, ToolCall, RetVal, Thought
 
 
 class SessionContext:
@@ -132,32 +132,31 @@ class SQLiteSessionLogger(BaseSessionLogger):
         if self.current_session is None or self.current_session.session_id is None:
             raise RuntimeError("Session not started or session ID not set.")
 
-        # Map thought data to schema
         data = thought.data
         thought_type = data.tag
         content = data.model_dump_json()
 
-        # Extract tool-specific fields
-        tool_fields = {
+        thought_fields = {
             "tool_name": None,
             "tool_parameters": None,
             "tool_reason": None,
-            "tool_result": None,
-            "tool_error": None,
+            "retval": None,
+            "feedback_message": None,
+            "feedback_source": None,
+            "feedback_success": None,
         }
 
-        if isinstance(data, ToolCall):
-            tool_fields.update(
-                {
-                    "tool_name": data.tool_name,
-                    "tool_parameters": json.dumps(data.parameters),
-                    "tool_reason": data.reason,
-                }
-            )
-        elif isinstance(data, ToolCallResult):
-            if hasattr(data.result, "error"):
-                tool_fields["tool_error"] = str(data.result.error)
-            tool_fields["tool_result"] = json.dumps(data.result)
+        if thought_type == "tool_call":
+            thought_fields["tool_name"] = data.tool_name
+            thought_fields["tool_parameters"] = json.dumps(data.parameters)
+            thought_fields["tool_reason"] = data.reason
+        elif thought_type == "return":
+            thought_fields["retval"] = data.retval
+        elif thought_type == "feedback":
+            thought_fields["feedback_message"] = data.message
+            thought_fields["feedback_source"] = data.source
+            thought_fields["feedback_success"] = int(data.success)
+        # NaturalLanguage: just store content, all tool fields/retval/feedback remain None
 
         with self.conn:
             cur = self.conn.execute(
@@ -165,24 +164,30 @@ class SQLiteSessionLogger(BaseSessionLogger):
                 INSERT INTO thoughts (
                     session_id, step_number, thought_type, content,
                     parent_thought_id, tool_name, tool_parameters,
-                    tool_reason, tool_result, tool_error, agent_id
-                ) VALUES (:session_id, :step_number, :thought_type, :content,
+                    tool_reason, retval, agent_id,
+                    feedback_message, feedback_source, feedback_success
+                ) VALUES (
+                    :session_id, :step_number, :thought_type, :content,
                     :parent_thought_id, :tool_name, :tool_parameters,
-                    :tool_reason, :tool_result, :tool_error, :agent_id)
+                    :tool_reason, :retval, :agent_id,
+                    :feedback_message, :feedback_source, :feedback_success
+                )
                 RETURNING id
-            """,
+                """,
                 {
                     "session_id": self.current_session.session_id,
                     "step_number": thought.step_number,
                     "thought_type": thought_type,
                     "content": content,
                     "parent_thought_id": parent_id,
-                    "tool_name": tool_fields["tool_name"],
-                    "tool_parameters": tool_fields["tool_parameters"],
-                    "tool_reason": tool_fields["tool_reason"],
-                    "tool_result": tool_fields["tool_result"],
-                    "tool_error": tool_fields["tool_error"],
+                    "tool_name": thought_fields["tool_name"],
+                    "tool_parameters": thought_fields["tool_parameters"],
+                    "tool_reason": thought_fields["tool_reason"],
+                    "retval": thought_fields["retval"],
                     "agent_id": thought.agent_id,
+                    "feedback_message": thought_fields["feedback_message"],
+                    "feedback_source": thought_fields["feedback_source"],
+                    "feedback_success": thought_fields["feedback_success"],
                 },
             )
             last_row = list(cur)[-1]
@@ -258,8 +263,6 @@ class FileSessionLogger(BaseSessionLogger):
                 f"Tool call: {data.tool_name}\nReason: {data.reason}\nParams: {data.parameters}",
                 extra=extra,
             )
-        elif isinstance(data, ToolCallResult):
-            self.logger.info(f"Tool result: {data.result}", extra=extra)
         elif isinstance(data, RetVal):
             self.logger.info(f"Conclusion: {data.retval}", extra=extra)
 

@@ -1,5 +1,5 @@
 import json
-from typing import Callable, List, ParamSpec, Tuple, Type, TypeVar, Union
+from typing import Callable, Dict, List, ParamSpec, Tuple, Type, TypeVar, Union
 from functools import wraps
 
 from pydantic import BaseModel
@@ -34,14 +34,20 @@ def wrap_tool_error(exc_types: Tuple[Type[Exception]]):
 
 
 NoneType = type(None)
-PrimType = Union[NoneType, bool, int, str, float, BaseModel]
+PrimType = Union[
+    NoneType, bool, int, str, float, BaseModel, Dict[str, "PrimType"], List["PrimType"]
+]
 
 
-def _dump_val(val: PrimType) -> str:
+def dump_val(val: PrimType) -> str:
     """Dump the result to a string format"""
     if isinstance(val, BaseModel):
         return json.dumps(val.model_dump(), indent=2)
     elif isinstance(val, (str, int, float, NoneType)):
         return str(val)
+    elif isinstance(val, dict):
+        return json.dumps({k: dump_val(v) for k, v in val.items()}, indent=2)
+    elif isinstance(val, list):
+        return json.dumps([dump_val(item) for item in val], indent=2)
     else:
         raise TypeError(f"Unsupported result type: {type(val)}")

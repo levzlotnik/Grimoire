@@ -243,8 +243,6 @@ class PrologExplorationAgent(Agent[str, KnowledgeTree]):
             agent_id=self.agent_id,
         )
 
-        self.state = processed_message.retval
-
         result = ProcessResult[KnowledgeTree](
             thoughts=processed_message.thoughts, retval=self.state
         )
@@ -273,7 +271,7 @@ class PrologPlanningAgent(Agent[Tuple[str, KnowledgeTree], Plan]):
         assert (
             self._exploration_state is not None
         ), "Exploration state must be set before planning"
-        with open(os.path.join(PROMPTS_PATH, "planning_prompt.md")) as f:
+        with open(os.path.join(PROMPTS_PATH, "planning.md")) as f:
             template = f.read()
         return _template_format(
             template,
@@ -320,7 +318,7 @@ class PrologExecutionAgent(Agent[Tuple[str, Plan], str]):
     def _get_system_prompt(self) -> str:
         """Get the system prompt for execution"""
         assert self._plan_state is not None, "Plan state must be set before execution"
-        with open(os.path.join(PROMPTS_PATH, "execution_prompt.md")) as f:
+        with open(os.path.join(PROMPTS_PATH, "execution.md")) as f:
             template = f.read()
         return _template_format(
             template,
@@ -354,6 +352,7 @@ class MyPAOSAssistant:
         agent_id: str = "assistant",
         provider: str = "claude",
         model: str = "claude-3-5-sonnet-20240620",
+        max_messages_per_phase: int = 10,
     ):
         self.project_path = Path(project_path)
         self.engine = PrologToolset()
@@ -370,20 +369,20 @@ class MyPAOSAssistant:
             f"{self.agent_id}/exploration_agent",
             llm=self.llm,
             prolog_engine=self.engine,
-            max_messages=10,
+            max_messages=max_messages_per_phase,
         )
 
         self.planning_agent = PrologPlanningAgent(
             f"{self.agent_id}/planning_agent",
             llm=self.llm,
-            max_messages=10,
+            max_messages=max_messages_per_phase,
         )
 
         self.execution_agent = PrologExecutionAgent(
             f"{self.agent_id}/execution_agent",
             llm=self.llm,
             prolog_engine=self.engine,
-            max_messages=10,
+            max_messages=max_messages_per_phase,
         )
 
         # Start session immediately
@@ -408,7 +407,7 @@ class MyPAOSAssistant:
         self.logger.end_session()
         self.logger.info(f"Ending session at {self.project_path}")
 
-    def process_task(self, task: str, max_messages: int = 10):
+    def process_task(self, task: str):
         """Process message through all phases with validation"""
         # Exploration Phase
         exploration_result = self.exploration_agent.run(task, self.logger)
@@ -428,15 +427,15 @@ class MyPAOSAssistant:
 if __name__ == "__main__":
     assistant = MyPAOSAssistant(
         provider="openai",
-        model="gpt-4.1-2025-04-14",
+        model="gpt-4.1",
         project_path=Path.cwd() / "test_project",
+        max_messages_per_phase=30,
     )
     # Example interaction
     print(
         assistant.process_task(
             "Create a full stack application project for me. "
             "What are the possible frameworks I can use for this?",
-            max_messages=30,
         )
     )
     print(assistant.process_task('What is the "project_development" rule?'))
