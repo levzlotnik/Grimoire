@@ -182,8 +182,8 @@ class PrologToolset:
             }
         """
         results = p.query(f"component({entity}, CName, _)")
-        types = [r["CName"] for r in results] if results else []
-        return ComponentsTypesResult(component_types=types)
+        types = {r["CName"] for r in results} if results else set()
+        return ComponentsTypesResult(component_types=sorted(types))
 
     @wrap_tool_error(exc_types=(PrologError,))
     def list_components(self, entity: str, component_type: str) -> ComponentsResult:

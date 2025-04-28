@@ -168,29 +168,34 @@ nix_templates_expr_id(TemplateId, Expr) :-
     nix_templates_path(TPath),
     format(string(Expr), "path:~w#~w", [TPath, TId]).
 
-
-component(nix(flake(template)), instance, Templates) :-
-    % We read it from `nix flake show --json path:path/to/templates`
+%% memoize the one–time JSON fetch
+:- table nix_flake_templates/1.
+nix_flake_templates(Pairs) :-
     nix_templates_expr_base(PathExpr),
-    NixCmdArgs = ["flake", "show", "--json", PathExpr],
-    setup_call_cleanup(
-        % Run `nix flake show --json path:.../templates`
-        process_create(path("nix"), NixCmdArgs, [stdout(pipe(Out))]),
-        % Read output json
-        (
-            json_read_dict(Out, JsonDict, [tag(template)]),
-            dict_pairs(JsonDict.templates, Tag, Pairs),
-            findall(
-                template(K, D),
-                (member(K-V, Pairs), D = V.description),
-                Templates
-            )
-        ),
-        % Cleanup
-        (close(Out))
-    ).
+    process_create(path(nix),
+                   ["flake","show","--json",PathExpr],
+                   [stdout(pipe(Out))]),
+    json_read_dict(Out, JsonDict),
+    close(Out),
+    dict_pairs(JsonDict.templates, _Tag, Pairs).
 
-docstring(nix(flake(new)),
+%% component/3 now yields one template/2 per backtrack
+component(nix(flake(template)), instance, nix(flake(template(Id))))  :-
+    nix_flake_templates(Pairs),
+    member(Id-V, Pairs),
+    Desc = V.description.
+
+%% entity/1 and docstring/2 for nix(flake(template(Id)))
+entity(nix(flake(template(Id)))) :-
+    nix_flake_templates(Pairs),
+    member(Id-_, Pairs).
+
+docstring(nix(flake(template(Id))), Desc) :-
+    nix_flake_templates(Pairs),
+    member(Id-V, Pairs),
+    Desc = V.description.
+
+docstring(command(nix(flake(new))),
     {|string(_)||
     Initialize a new flake from template.
     Creates a new flake.nix from specified template.

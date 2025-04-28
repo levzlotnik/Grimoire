@@ -14,7 +14,7 @@ docstring(system, {|string(_)||
 |}).
 
 
-component(system, root_dir, folder("/home/nixos/Projects/MyPAOS")) :- !.
+component(system, root_dir, folder("/home/nixos/Projects/MyPAOS")).
 % Some properties
 component(
     system,
@@ -23,13 +23,26 @@ component(
 ) :-
     RelSemRoot = "src/prolog",
     component(system, root_dir, folder(SysRoot)),
-    directory_file_path(SysRoot, RelSemRoot, AbsSemRoot), !.
+    directory_file_path(SysRoot, RelSemRoot, AbsSemRoot).
 
 system_semantic_root(SemanticRootDir) :-
     component(system, semantic_root, SemanticRootDir).
 
-component(E, semantic_root, Path) :-
-    component(E, source, source(semantic(RelPath))),
+% component(E, semantic_root, Path) :-
+%     component(E, source, source(semantic(RelPath))),
+%     system_semantic_root(folder(SysSemRoot)),
+%     (
+%         RelPath = file(RawPath) ->
+%             (directory_file_path(SysSemRoot, RawPath, AbsPath), Path = file(AbsPath)) ;
+%         RelPath = folder(RawPath) ->
+%             (directory_file_path(SysSemRoot, RawPath, AbsPath), Path = folder(AbsPath)) ;
+%         fail
+%     ).
+
+load_entity_source(Entity) :-
+    % component(Entity, semantic_root, SemanticPath),
+    % mount_semantic(SemanticPath).
+    component(Entity, source, source(semantic(RelPath))),
     system_semantic_root(folder(SysSemRoot)),
     (
         RelPath = file(RawPath) ->
@@ -37,11 +50,8 @@ component(E, semantic_root, Path) :-
         RelPath = folder(RawPath) ->
             (directory_file_path(SysSemRoot, RawPath, AbsPath), Path = folder(AbsPath)) ;
         fail
-    ).
-
-load_entity_source(Entity) :-
-    component(Entity, semantic_root, SemanticPath),
-    mount_semantic(SemanticPath).
+    ),
+    mount_semantic(Path).
 
 
 % Fundamental concepts
@@ -52,7 +62,7 @@ component(system, concept, execute).
 component(system, concept, source).
 component(system, concept, project).
 
-component(system, source, source(semantic(file("mypaos.pl")))) :- !.
+component(system, source, source(semantic(file("mypaos.pl")))).
 
 entity(source).
 component(source, ctor, semantic).
@@ -78,15 +88,25 @@ docstring(source(semantic(folder)), "A folder with source code for entity.\nForm
 
 % System components and their sources
 entity(git).
-component(git, source, source(semantic(file("git.pl")))) :- !.
+component(git, source, source(semantic(file("git.pl")))).
 component(system, subsystem, git).
 
 entity(nix).
-component(nix, source, source(semantic(folder("nix")))) :- !.
+component(nix, source, source(semantic(folder("nix")))).
 component(system, subsystem, nix).
 
 entity(project).
-component(project, source, source(semantic(folder("project")))) :- !.
+component(project, source, source(semantic(folder("project")))).
+
+docstring(project,
+    {|string(_)||
+    A project represents the organizational unit of a system,
+    bundling together source code, configuration files,
+    and other resources necessary for building and running an application or library.
+    It structures the work into manageable components and defines the
+    ecosystem in which the system operates.
+    |}
+)
 
 :- load_entity_source(git).
 :- load_entity_source(nix).
@@ -109,12 +129,16 @@ docstring(transaction,
 ).
 
 docstring(command, S) :-
-    make_ctors_docstring(command, CmdsDocs),
-    S = {|string(CmdsDocs)||
+    % make_ctors_docstring(command, CmdsDocs),
+    S = {|string(_)||
     Term structure for system operations.
-    Available commands:
+    Usage: command(cmd_ctor(...))
 
-    {CmdsDocs}
+    You may view which commands are available by inspecting the `ctor` components of
+    `command` entity - it is an extensible sum type of many entities that represent
+    system operations. Also note that different subsystems and projects may extend
+    the ctors, so after loading a new entity source it's worth it to re-query the
+    command's `ctor`s.
     |}.
 
 % Just commands as a sum type
@@ -471,7 +495,7 @@ component(edit_file, ctor, append).
 
 % Agent subsystem
 entity(agent).
-component(agent, source, source(semantic(file("agent.pl")))) :- !.
+component(agent, source, source(semantic(file("agent.pl")))).
 component(system, subsystem, agent).
 
 % Define agent logging schema constructors

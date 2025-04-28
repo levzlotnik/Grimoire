@@ -1,4 +1,6 @@
 :- use_module(library(process)).
+:- use_module(library(yall)).
+:- use_module(library(apply)).
 :- use_module(library(strings)).
 :- use_module(library(filesex)).
 
@@ -74,8 +76,14 @@ docstring(component,
 % Constructor docstring helpers
 make_ctors_docstring(Entity, Docstring) :-
     entity(Entity),
-    findall(Ctor, component(Entity, ctor, Ctor), Ctors),
-    maplist(get_ctor_docstring(Entity), Ctors, CtorsDocs),
+    findall(
+        CtorDoc,
+        (
+            component(Entity, ctor, Ctor),
+            get_ctor_docstring(Entity, Ctor, CtorDoc)
+        ),
+        CtorsDocs
+    ),
     atomic_list_concat(CtorsDocs, '\n\n', DocsUnindent),
     indent_lines('  ',DocsUnindent, Docstring).
 

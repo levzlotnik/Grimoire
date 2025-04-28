@@ -88,7 +88,9 @@ class Plan(BaseModel):
             return
         for cmd in self.commands:
             if not (cmd.command.startswith("command(") and cmd.command.endswith(")")):
-                raise ValidationError(f"Invalid command format: {cmd}")
+                raise ValueError(
+                    f"Invalid command format: {cmd.command}. Expected format: command(cmd_ctor(...))"
+                )
         return self
 
 
@@ -175,12 +177,14 @@ class PrologExplorationAgent(Agent[str, KnowledgeTree]):
     def _init_knowledge_tree(self):
         """Initialize the knowledge tree with system concepts"""
         system_docstring = self.engine.get_docstring("system").docstring
-        self.state = KnowledgeTree(data={"system": {"docstring": system_docstring}})
+        self.state = KnowledgeTree(data={"$system": {"docstring": system_docstring}})
         concepts = self.engine.list_components("system", "concept")
-        self.state.data["system"]["concept"] = {
-            concept: {"docstring": self.engine.get_docstring(concept).docstring}
-            for concept in concepts.components
-        }
+        for concept in concepts.components:
+            self.remember_component(
+                entity="system",
+                component_name="concept",
+                component_val=concept,
+            )
 
     def remember_component(self, entity: str, component_name: str, component_val: str):
         """Remember a component in the knowledge tree, directly using entity names as keys.
@@ -205,6 +209,19 @@ class PrologExplorationAgent(Agent[str, KnowledgeTree]):
                 "reason": "I called remember_component to store the command constructor 'mkdir' as it is relevant for the task."
             }
         """
+        # Check that the component value is indeed an entity's component
+        component_types = self.engine.list_components_types(entity)
+        if component_name not in component_types.component_types:
+            raise ToolError(
+                f"Component name '{component_name}' is not valid for entity '{entity}'."
+            )
+        component_vals = self.engine.list_components(entity, component_name)
+        if component_val not in component_vals.components:
+            raise ToolError(
+                f"Component value '{component_val}' is not valid for entity "
+                f"'{entity}' and component name '{component_name}'."
+            )
+
         if self.engine.is_entity(component_val).result:
             is_entity = True
             docstring = self.engine.get_docstring(component_val).docstring
@@ -243,9 +260,7 @@ class PrologExplorationAgent(Agent[str, KnowledgeTree]):
             agent_id=self.agent_id,
         )
 
-        result = ProcessResult[KnowledgeTree](
-            thoughts=processed_message.thoughts, retval=self.state
-        )
+        result = ProcessResult(thoughts=processed_message.thoughts, retval=self.state)
         return result
 
     def reset(self):
@@ -286,13 +301,14 @@ class PrologPlanningAgent(Agent[Tuple[str, KnowledgeTree], Plan]):
         """Process a planning task and return the result."""
         task, exploration = task_and_exploration
         self.set_exploration(exploration)
-        return self._llm.process_message(
+        result = self._llm.process_message(
             task,
             system_prompt_gen=self._get_system_prompt,
             retval_model=Plan,
             max_messages=self.max_messages,
             agent_id=self.agent_id,
         )
+        return result
 
 
 class PrologExecutionAgent(Agent[Tuple[str, Plan], str]):
@@ -334,13 +350,15 @@ class PrologExecutionAgent(Agent[Tuple[str, Plan], str]):
         commands = [cmd.command for cmd in plan.commands]
         transaction_result = self.engine.commit_transaction(commands)
 
-        return self._llm.process_message(
+        result = self._llm.process_message(
             task,
             system_prompt_gen=self._get_system_prompt,
             retval_model=str,
             max_messages=self.max_messages,
             agent_id=self.agent_id,
         )
+
+        return result
 
 
 class MyPAOSAssistant:

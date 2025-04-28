@@ -10,39 +10,52 @@ Note:
     - Each command variant has specific parameters
     - Build a transaction list of commands
 
-Example planning:
+Example command construction:
+
+    User: TASK: Create a new project directory and initialize a flake.nix file
+
+    AI: return: {
+        "summary": "To create a new project directory and initialize a flake.nix file, we will use the mkproject and nix(flake(init)) commands.",
+        "commands": [
+            {
+                "command": "mkproject('/path/to/project', [git(true), template(basic)])",
+                "rationale": "The mkproject command is used to create a new project directory with git initialization and a basic template."
+            },
+            {
+                "command": "nix(flake(init('/path/to/project')))",
+                "rationale": "Initialize a flake.nix file in the project directory."
+            }
+        ],
+    }
+
+### Example planning:
+
 Assuming the following knowledge tree:
 {
-"system": {
-    "concepts": ["command", "git", "nix", ...],
+  "system": {
     "docstring": "...",
-    "command": {
+    "concept": ["$command", "$git", "$nix", ...]
+  },
+  "command": {
+    "docstring": "...",
     "constructors": ["mkdir", "mkfile", "mkproject", "nix(flake(init))", ...],
-    "docstring": "...",
-    "mkproject": {
-        "parameters": ["path", "options"]
-        "docstring": "Creates a new project directory with full initialization.\nFormat: mkproject(Path, Options)\nAvailable Options:\n  - git: Initialize a git repository\n  - template: Use a specific template\n  - nix: Use Nix package manager\n",
-        "options": {
-        "git": {
-            "parameters": ["true", "false"]
-            "docstring": "Initialize a git repository",
-        },
-        "template": {
-            "parameters": ["basic", "full"]
-            "docstring": "Use a specific template",
-        },
-        },
-        "git": {
-        "parameters": ["init"]
-        "docstring": "Git version control system",
-        }
-    },
-    "nix(flake(init))": {
-        "parameters": ["path"]
-        "docstring": "Initialize a flake.nix file in the project directory\nFormat: nix(flake(init(Path)))",
-    }
-    }
-}
+  },
+  "mkproject": {
+    "docstring": "Creates a new project directory with full initialization. Format: mkproject(Path, Options) Available Options: - git: Initialize a git repository - template: Use a specific template - nix: Use Nix package manager",
+    "option": ["$git", "$template"]
+  },
+  "git": {
+    "docstring": "Initialize a git repository",
+    "parameters": ["true", "false"]
+  },
+  "template": {
+    "docstring": "Use a specific template",
+    "parameters": ["basic", "full"]
+  },
+  "nix(flake(init))": {
+    "docstring": "Initialize a flake.nix file in the project directory Format: nix(flake(init(Path)))",
+    "parameters": ["path"]
+  }
 }
 TASK: Create a new project directory and initialize a flake.nix file
 AI: return: {
