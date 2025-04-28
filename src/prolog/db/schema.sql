@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS thoughts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     session_id INTEGER NOT NULL,
     step_number INTEGER NOT NULL,
+    agent_id TEXT NOT NULL,      -- ID of the agent that generated this thought
     thought_type TEXT NOT NULL CHECK(
         thought_type IN ('user_input', 'natural_language', 'tool_call', 'tool_result', 'return_value')
     ),

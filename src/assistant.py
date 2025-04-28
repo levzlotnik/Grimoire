@@ -222,7 +222,7 @@ class PrologExplorationAgent(Agent[str, KnowledgeTree]):
 
     def _get_system_prompt(self) -> str:
         """Get the system prompt for the agent"""
-        with open(os.path.join(PROMPTS_PATH, "exploration_prompt.md")) as f:
+        with open(os.path.join(PROMPTS_PATH, "exploration.md")) as f:
             template = f.read()
         return _template_format(
             template,
@@ -240,9 +240,9 @@ class PrologExplorationAgent(Agent[str, KnowledgeTree]):
             toolset=self.tools,
             retval_model=str,
             max_messages=self.max_messages,
+            agent_id=self.agent_id,
         )
 
-        # Update state with the new knowledge tree
         self.state = processed_message.retval
 
         result = ProcessResult[KnowledgeTree](
@@ -253,6 +253,96 @@ class PrologExplorationAgent(Agent[str, KnowledgeTree]):
     def reset(self):
         """Reset the agent's state and knowledge tree"""
         self._init_knowledge_tree()
+
+
+class PrologPlanningAgent(Agent[Tuple[str, KnowledgeTree], Plan]):
+    """Agent for planning Prolog commands based on exploration results"""
+
+    def __init__(self, agent_id: str, llm: ToolCallingLLM, max_messages: int = 10):
+        super().__init__(agent_id)
+        self._llm = llm
+        self.max_messages = max_messages
+        self._exploration_state: Optional[KnowledgeTree] = None
+
+    def set_exploration(self, exploration: KnowledgeTree):
+        """Set the exploration state for planning"""
+        self._exploration_state = exploration
+
+    def _get_system_prompt(self) -> str:
+        """Get the system prompt for planning"""
+        assert (
+            self._exploration_state is not None
+        ), "Exploration state must be set before planning"
+        with open(os.path.join(PROMPTS_PATH, "planning_prompt.md")) as f:
+            template = f.read()
+        return _template_format(
+            template,
+            base_context=BASE_CONTEXT,
+            retval_format=Plan.model_json_schema(mode="serialization"),
+            knowledge_tree=self._exploration_state.to_prompt(),
+        )
+
+    def process(
+        self, task_and_exploration: Tuple[str, KnowledgeTree]
+    ) -> ProcessResult[Plan]:
+        """Process a planning task and return the result."""
+        task, exploration = task_and_exploration
+        self.set_exploration(exploration)
+        return self._llm.process_message(
+            task,
+            system_prompt_gen=self._get_system_prompt,
+            retval_model=Plan,
+            max_messages=self.max_messages,
+            agent_id=self.agent_id,
+        )
+
+
+class PrologExecutionAgent(Agent[Tuple[str, Plan], str]):
+    """Agent for executing and interpreting Prolog commands"""
+
+    def __init__(
+        self,
+        agent_id: str,
+        llm: ToolCallingLLM,
+        prolog_engine: PrologToolset,
+        max_messages: int = 10,
+    ):
+        super().__init__(agent_id)
+        self._llm = llm
+        self.engine = prolog_engine
+        self.max_messages = max_messages
+        self._plan_state: Optional[Plan] = None
+
+    def set_plan(self, plan: Plan):
+        """Set the plan state for execution"""
+        self._plan_state = plan
+
+    def _get_system_prompt(self) -> str:
+        """Get the system prompt for execution"""
+        assert self._plan_state is not None, "Plan state must be set before execution"
+        with open(os.path.join(PROMPTS_PATH, "execution_prompt.md")) as f:
+            template = f.read()
+        return _template_format(
+            template,
+            base_context=BASE_CONTEXT,
+            retval_format="string",
+            transaction_result=self._plan_state.to_prompt(),
+        )
+
+    def process(self, task_and_plan: Tuple[str, Plan]) -> ProcessResult[str]:
+        """Process an execution task and return the result."""
+        task, plan = task_and_plan
+        self.set_plan(plan)
+        commands = [cmd.command for cmd in plan.commands]
+        transaction_result = self.engine.commit_transaction(commands)
+
+        return self._llm.process_message(
+            task,
+            system_prompt_gen=self._get_system_prompt,
+            retval_model=str,
+            max_messages=self.max_messages,
+            agent_id=self.agent_id,
+        )
 
 
 class MyPAOSAssistant:
@@ -270,25 +360,27 @@ class MyPAOSAssistant:
         self.logger = InteractionLogger(self.project_path)
         self.agent_id = agent_id
 
-        # Initialize base tools
-        tools = [
-            self.engine.list_entities,
-            self.engine.list_components_types,
-            self.engine.list_components,
-            self.engine.load_entity_source,
-            self.engine.get_docstring,
-            # self.engine.mount_semantic,
-        ]
-
-        self.tools = [make_tool(tool) for tool in tools]
-        self.init_knowledge_tree()
         self.llm = ToolCallingLLM(
             llm_provider=get_llm_provider(provider),
             model=model,
         )
 
+        # Initialize agents
         self.exploration_agent = PrologExplorationAgent(
-            "exploration_agent",
+            f"{self.agent_id}/exploration_agent",
+            llm=self.llm,
+            prolog_engine=self.engine,
+            max_messages=10,
+        )
+
+        self.planning_agent = PrologPlanningAgent(
+            f"{self.agent_id}/planning_agent",
+            llm=self.llm,
+            max_messages=10,
+        )
+
+        self.execution_agent = PrologExecutionAgent(
+            f"{self.agent_id}/execution_agent",
             llm=self.llm,
             prolog_engine=self.engine,
             max_messages=10,
@@ -301,18 +393,6 @@ class MyPAOSAssistant:
     def __del__(self):
         """Ensure session is ended when assistant is destroyed"""
         self.logger.end_session()
-
-    def init_knowledge_tree(self):
-        """Initialize the knowledge tree with system concepts"""
-        system_docstring = self.engine.get_docstring("system").docstring
-        self.knowledge_tree = KnowledgeTree(
-            data={"system": {"docstring": system_docstring}}
-        )
-        concepts = self.engine.list_components("system", "concept")
-        self.knowledge_tree.data["system"]["concept"] = {
-            concept: {"docstring": self.engine.get_docstring(concept).docstring}
-            for concept in concepts.components
-        }
 
     def start_session(self):
         """Start a new interaction session"""
@@ -328,170 +408,19 @@ class MyPAOSAssistant:
         self.logger.end_session()
         self.logger.info(f"Ending session at {self.project_path}")
 
-    def base_context(self) -> str:
-        base_context_path = os.path.join(PROMPTS_PATH, "base_context.md")
-        with open(base_context_path) as f:
-            base_context = f.read()
-        return base_context
-
-    def run_planning(
-        self, task: str, exploration: KnowledgeTree, max_messages: int = 10
-    ):
-        """Run planning phase and validate results"""
-
-        PLANNING_PROMPT = dedent(
-            """
-        Core Premise:
-        {base_context}
-
-        Your task is to use the exploration results to plan the necessary commands for solving the task.
-        Create a transaction plan that will accomplish this task.
-        Explain your reasoning for each command.
-
-        Note:
-            - Based on exploration, identify needed commands
-            - Commands are constructors of the command entity
-            - Each command variant has specific parameters
-            - Build a transaction list of commands
-
-        Example planning:
-        Assuming the following knowledge tree:
-        {{
-        "system": {{
-            "concepts": ["command", "git", "nix", ...],
-            "docstring": "...",
-            "command": {{
-            "constructors": ["mkdir", "mkfile", "mkproject", "nix(flake(init))", ...],
-            "docstring": "...",
-            "mkproject": {{
-                "parameters": ["path", "options"]
-                "docstring": "Creates a new project directory with full initialization.\nFormat: mkproject(Path, Options)\nAvailable Options:\n  - git: Initialize a git repository\n  - template: Use a specific template\n  - nix: Use Nix package manager\n",
-                "options": {{
-                "git": {{
-                    "parameters": ["true", "false"]
-                    "docstring": "Initialize a git repository",
-                }},
-                "template": {{
-                    "parameters": ["basic", "full"]
-                    "docstring": "Use a specific template",
-                }},
-                }},
-                "git": {{
-                "parameters": ["init"]
-                "docstring": "Git version control system",
-                }}
-            }},
-            "nix(flake(init))": {{
-                "parameters": ["path"]
-                "docstring": "Initialize a flake.nix file in the project directory\nFormat: nix(flake(init(Path)))",
-            }}
-            }}
-        }}
-        }}
-        TASK: Create a new project directory and initialize a flake.nix file
-        AI: return: {{
-        "summary": "To create a new project directory and initialize a flake.nix file, we will use the mkproject and nix(flake(init)) commands.",
-        "commands": [
-            {{
-            "command": "mkproject('/path/to/project', [git(true), template(basic)])",
-            "rationale": "The mkproject command is used to create a new project directory with git initialization and a basic template."
-            }},
-            {{
-            "command": "nix(flake(init('/path/to/project')))",
-            "rationale": "Initialize a flake.nix file in the project directory."
-            }}
-        ],
-        }}
-
-        Relevant Knowledge:
-        {knowledge_tree}
-
-        Response format:
-        {retval_format}
-        """
-        )
-
-        def system_prompt_gen(retval_model: Type[Plan], toolset: Toolset) -> str:
-            return PLANNING_PROMPT.format(
-                base_context=self.base_context(),
-                retval_format=Plan.model_json_schema(mode="serialization"),
-                knowledge_tree=exploration.to_prompt(),
-            )
-
-        result: ProcessResult[Plan] = self.llm.process_message(
-            task,
-            system_prompt_gen=system_prompt_gen,
-            retval_model=Plan,
-            max_messages=max_messages,
-        )
-
-        thought_id = None
-        # Log the planning phase thoughts
-        for thought in result.thoughts:
-            thought_id = self.logger.log_thought(thought, thought_id)
-
-        return result
-
-    def run_execution(self, task: str, plan: Plan, max_messages: int = 10):
-        """Execute transaction and get interpretation"""
-
-        EXECUTION_PROMPT = dedent(
-            """
-        Core Premise:
-        {base_context}
-
-        You are tasked with interpreting the transaction's execution result, given the task.
-
-        Executed transaction:
-        {transaction_result}
-
-        Response format:
-        {retval_format}
-        """
-        )
-
-        def system_prompt_gen(retval_model: Type[str], toolset: Toolset) -> str:
-            return EXECUTION_PROMPT.format(
-                base_context=self.base_context(),
-                transaction_result=plan.to_prompt(),
-                retval_format="string",
-            )
-
-        commands = [cmd.command for cmd in plan.commands]
-        transaction_result = self.engine.commit_transaction(commands)
-
-        exec_result = self.llm.process_message(
-            task,
-            system_prompt_gen=system_prompt_gen,
-            max_messages=max_messages,
-            retval_model=str,
-        )
-
-        # Log execution phase thoughts and transaction
-        last_thought = None
-        for thought in exec_result.thoughts:
-            thought_id = self.logger.log_thought(thought, last_thought)
-            last_thought = thought_id
-
-        if last_thought is not None:
-            self.logger.log_transaction(last_thought, commands, transaction_result)
-
-        return exec_result
-
     def process_task(self, task: str, max_messages: int = 10):
         """Process message through all phases with validation"""
         # Exploration Phase
-        exploration_result = self.run_exploration(task, max_messages=max_messages)
+        exploration_result = self.exploration_agent.run(task, self.logger)
 
         # Planning Phase
-        plan_result = self.run_planning(
-            task, exploration=exploration_result.retval, max_messages=max_messages
-        )
-        plan = plan_result.retval
+        plan = self.planning_agent.run((task, exploration_result), self.logger)
+
         # Execution Phase (if needed)
         if len(plan.commands) > 0:
-            execution_result = self.run_execution(task, plan, max_messages=max_messages)
-            return execution_result.retval
+            execution_result = self.execution_agent.run((task, plan), self.logger)
+            self.logger.info(f"Execution result: {execution_result}")
+            return execution_result
 
         return "No commands to execute."
 

@@ -165,10 +165,10 @@ class SQLiteSessionLogger(BaseSessionLogger):
                 INSERT INTO thoughts (
                     session_id, step_number, thought_type, content,
                     parent_thought_id, tool_name, tool_parameters,
-                    tool_reason, tool_result, tool_error
+                    tool_reason, tool_result, tool_error, agent_id
                 ) VALUES (:session_id, :step_number, :thought_type, :content,
                     :parent_thought_id, :tool_name, :tool_parameters,
-                    :tool_reason, :tool_result, :tool_error)
+                    :tool_reason, :tool_result, :tool_error, :agent_id)
                 RETURNING id
             """,
                 {
@@ -182,6 +182,7 @@ class SQLiteSessionLogger(BaseSessionLogger):
                     "tool_reason": tool_fields["tool_reason"],
                     "tool_result": tool_fields["tool_result"],
                     "tool_error": tool_fields["tool_error"],
+                    "agent_id": thought.agent_id,
                 },
             )
             last_row = list(cur)[-1]

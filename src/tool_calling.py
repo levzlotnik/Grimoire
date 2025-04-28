@@ -128,6 +128,17 @@ class Thought(BaseModel):
         ..., description="The data of the thought", discriminator="tag"
     )
     step_number: int = Field(..., description="Step number in the reasoning chain")
+    agent_id: str = Field(..., description="ID of the agent generating the thought")
+
+    @classmethod
+    def with_data(
+        cls,
+        data: Union[NaturalLanguage, ToolCall, Feedback, RetVal],
+        step_number: int = 1,
+        agent_id: str = "assistant",
+    ) -> "Thought":
+        """Create a new thought with the given data and step number"""
+        return cls(data=data, step_number=step_number, agent_id=agent_id)
 
     def to_text(self) -> str:
         """Convert the thought to a text format"""
@@ -142,7 +153,7 @@ class Thought(BaseModel):
             if self.data.success:
                 return f"Success: {self.data.message}"
             else:
-                return f"Error: {self.data.message} "
+                return f"Error: {self.data.message}"
         else:
             raise TypeError(f"Unknown thought type: {self.data.tag}")
 
@@ -371,6 +382,7 @@ class ToolCallingLLM:
         max_messages: int = 10,
         toolset: Optional[Toolset] = None,
         retval_model: Type[RetvalModel] = str,
+        agent_id: str = "assistant",
     ):
         """Process a message using available tools.
 
@@ -378,6 +390,9 @@ class ToolCallingLLM:
             message: The message to process
             system_prompt_gen: Function to generate the system prompt
             max_messages: Maximum number of messages to send to the LLM
+            toolset: Optional set of tools to use
+            retval_model: Type to validate the return value against
+            agent_id: ID of the agent processing the message
 
         Returns:
             ProcessResult containing both the chain of thoughts and final conclusion
@@ -399,6 +414,7 @@ class ToolCallingLLM:
         for _ in range(max_messages):
             thought = self._generate_next_thought(messages)
             thought.step_number = step_number
+            thought.agent_id = agent_id
             all_thoughts.append(thought)
             step_number += 1
 
@@ -419,7 +435,9 @@ class ToolCallingLLM:
             else:
                 feedback = self._execute_thought(thought, toolset)
 
-            feedback_thought = Thought(data=feedback, step_number=step_number)
+            feedback_thought = Thought(
+                data=feedback, step_number=step_number, agent_id=agent_id
+            )
             all_thoughts.append(feedback_thought)
             step_number += 1
 
