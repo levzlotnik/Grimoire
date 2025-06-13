@@ -50,6 +50,43 @@ the available entities in the MyPAOS semantic knowledge base.
 3. Components use constructors (ctor) to define variants/sum types
 4. All changes happen through atomic transactions
 
+## Example: ECS Structure in Prolog
+
+Here are some concrete examples of how the Entity-Component System (ECS) is represented in Prolog within MyPAOS:
+
+```prolog
+% Define the most fundamental entity
+entity(system).
+
+% Attach components to entities
+component(system, root_dir, folder("/path/to/MyPAOS")).
+component(system, concept, command).
+component(system, concept, transaction).
+component(system, concept, hardware).
+component(system, concept, execute).
+component(system, concept, source).
+component(system, concept, project).
+
+% Define a command as an extensible sum type
+entity(command).
+component(command, ctor, shell).
+component(command, ctor, mkdir).
+component(command, ctor, mkfile).
+component(command, ctor, edit_file).
+component(command, ctor, executable_program).
+
+% Example of a subsystem
+entity(git).
+component(git, source, source(semantic(file("git.pl")))).
+component(system, subsystem, git).
+
+% Example of a project entity
+entity(project).
+component(project, source, source(semantic(folder("project")))).
+```
+
+These examples show how entities and their relationships are declared, and how the system can be extended with new concepts, commands, and subsystems.
+
 ## Response Format
 
 You must respond with exactly ONE thought, tool call, or return per response. Do not include step numbers or multiple steps in one message. After each response, wait for feedback before continuing. Strictly alternate between your response and user feedback (which may be tool results, errors, or 'continue').

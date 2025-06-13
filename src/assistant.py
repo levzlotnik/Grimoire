@@ -2,12 +2,17 @@ from abc import ABC, abstractmethod
 import json
 import os
 from pathlib import Path
-from typing import Callable, Generic, List, Dict, Any, Optional, Tuple, Type, TypeVar
+from typing import Generic, List, Dict, Any, Optional, Tuple, TypeVar, Callable
 from llm_provider import get_llm_provider
-from tool_calling import ProcessResult, Tool, ToolCallingLLM, Toolset, make_tool
+from tool_calling import (
+    ProcessResult,
+    Tool,
+    ToolCallingLLM,
+    Toolset,
+    make_tool,
+)
 from prolog_tool import PrologToolset
-from textwrap import dedent
-from pydantic import BaseModel, Field, ValidationError, model_validator
+from pydantic import BaseModel, Field, model_validator
 from common import ToolError, PrimType
 from logger import InteractionLogger, SessionContext
 
@@ -120,29 +125,42 @@ OutT = TypeVar("OutT", bound=PrimType)
 
 
 class Agent(ABC, Generic[InT, OutT]):
-    """Abstract base class for agents"""
+    """Abstract base class for agents with hook support"""
 
     def __init__(self, agent_id: str):
         self.agent_id = agent_id
+        self._pre_hooks = []  # List of callables: (agent, task) -> None
+        self._post_hooks = []  # List of callables: (agent, task, result) -> None
 
     @abstractmethod
     def process(self, task: InT) -> ProcessResult[OutT]:
         """Process a task and return the result."""
 
-    def run(self, task: InT, logger: InteractionLogger) -> OutT:
-        """Run the agent with a task and log the result.
+    def register_pre_hook(self, hook: Callable[["Agent", InT], None]):
+        self._pre_hooks.append(hook)
 
-        Args:
-            task: The task to process.
-            logger: The logger to use for logging thoughts.
-        Returns:
-            The result of the task processing.
-        """
+    def register_post_hook(
+        self, hook: Callable[["Agent", InT, ProcessResult[OutT]], None]
+    ):
+        self._post_hooks.append(hook)
+
+    def run(self, task: InT) -> OutT:
+        for hook in self._pre_hooks:
+            hook(self, task)
         result = self.process(task)
-        thought_id = None
-        for thought in result.thoughts:
-            thought_id = logger.log_thought(thought, thought_id)
+        for hook in self._post_hooks:
+            hook(self, task, result)
         return result.retval
+
+    def to_tool(self) -> Tool:
+        """Makes a tool out of the agent's `.run` method."""
+
+        def tool_fn(task: InT) -> OutT:
+            return self.run(task)
+
+        tool_fn.__name__ = f"{self.agent_id}_tool"
+        tool_fn.__doc__ = f"Tool interface for agent {self.agent_id}"
+        return make_tool(tool_fn)
 
 
 class PrologExplorationAgent(Agent[str, KnowledgeTree]):
@@ -271,18 +289,31 @@ class PrologExplorationAgent(Agent[str, KnowledgeTree]):
 class PrologPlanningAgent(Agent[Tuple[str, KnowledgeTree], Plan]):
     """Agent for planning Prolog commands based on exploration results"""
 
-    def __init__(self, agent_id: str, llm: ToolCallingLLM, max_messages: int = 10):
+    def __init__(
+        self,
+        agent_id: str,
+        llm: ToolCallingLLM,
+        prolog_engine: PrologToolset,
+        max_messages: int = 10,
+    ):
         super().__init__(agent_id)
         self._llm = llm
         self.max_messages = max_messages
         self._exploration_state: Optional[KnowledgeTree] = None
+        # Instantiate own exploration agent
+        self.exploration_agent = PrologExplorationAgent(
+            f"{agent_id}/exploration_agent",
+            llm=llm,
+            prolog_engine=prolog_engine,
+            max_messages=max_messages,
+        )
 
     def set_exploration(self, exploration: KnowledgeTree):
         """Set the exploration state for planning"""
         self._exploration_state = exploration
 
-    def _get_system_prompt(self) -> str:
-        """Get the system prompt for planning"""
+    def _get_planning_system_prompt(self) -> str:
+        """Get the system prompt for planning phase"""
         assert (
             self._exploration_state is not None
         ), "Exploration state must be set before planning"
@@ -298,12 +329,16 @@ class PrologPlanningAgent(Agent[Tuple[str, KnowledgeTree], Plan]):
     def process(
         self, task_and_exploration: Tuple[str, KnowledgeTree]
     ) -> ProcessResult[Plan]:
-        """Process a planning task and return the result."""
-        task, exploration = task_and_exploration
-        self.set_exploration(exploration)
+        """Use the LLM to plan, with the exploration agent as a tool."""
+        task, high_level_knowledge = task_and_exploration
+        self.set_exploration(high_level_knowledge)
+        # Provide the exploration agent as a tool
+        exploration_tool = self.exploration_agent.to_tool()
+        toolset = Toolset(tools={exploration_tool.name: exploration_tool})
         result = self._llm.process_message(
             task,
-            system_prompt_gen=self._get_system_prompt,
+            system_prompt_gen=self._get_planning_system_prompt,
+            toolset=toolset,
             retval_model=Plan,
             max_messages=self.max_messages,
             agent_id=self.agent_id,
@@ -393,6 +428,7 @@ class MyPAOSAssistant:
         self.planning_agent = PrologPlanningAgent(
             f"{self.agent_id}/planning_agent",
             llm=self.llm,
+            prolog_engine=self.engine,
             max_messages=max_messages_per_phase,
         )
 
@@ -427,8 +463,9 @@ class MyPAOSAssistant:
 
     def process_task(self, task: str):
         """Process message through all phases with validation"""
-        # Exploration Phase
-        exploration_result = self.exploration_agent.run(task, self.logger)
+        # High-level Exploration Phase: use a high-level prompt
+        high_level_prompt = f"Explore the high level concepts and entities that are related to the task: {task}"
+        exploration_result = self.exploration_agent.run(high_level_prompt, self.logger)
 
         # Planning Phase
         plan = self.planning_agent.run((task, exploration_result), self.logger)
