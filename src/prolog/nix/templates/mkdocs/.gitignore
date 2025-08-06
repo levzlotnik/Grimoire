@@ -1,0 +1,12 @@
+# MkDocs build artifacts
+site/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db

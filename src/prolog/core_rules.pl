@@ -8,11 +8,24 @@
 :- dynamic([
     entity/1,
     component/3,
-    docstring/2
+    docstring/2,
+    load_entity/2          % Allow subsystems to extend entity loading
 ], [
     discontiguous(true),
     multifile(true)
 ]).
+
+% Passive loading system - entities exist but need explicit loading
+passive_load(Entity, semantic(Source)) :-
+    assertz(entity(Entity)),
+    assertz(component(Entity, to_be_loaded, semantic(Source))),
+    % Add default docstring if none exists yet
+    (\+ docstring(Entity, _) ->
+        format(string(DefaultDoc), "To get a full view of the entity please call load_entity(~w, semantic(~w))", [Entity, Source]),
+        assertz(docstring(Entity, DefaultDoc))
+    ;
+        true
+    ).
 
 % Core ECS patterns
 entity(component).
@@ -165,4 +178,43 @@ unmount_semantic(Path) :-
 
 list_mounted_semantics(Paths) :-
     findall(Path, mounted_semantic(Path, _), Paths).
+
+% Base entity loading cases for semantic files/folders
+
+% Helper for project semantics files - prevents duplicate loading
+ensure_load_entity(Entity, Source) :-
+    % Check if already loaded (has source component)
+    (component(Entity, source, Source) ->
+        true  % Already loaded
+    ;
+        load_entity(Entity, Source)  % Load it
+    ).
+
+% Absolute entities that declare themselves directly
+load_entity(semantic(Source)) :-
+    mount_semantic(Source).
+
+docstring(load_entity,
+    {|string(_)||
+    Loads semantic entities with single-arity API for absolute entities.
+
+    Format: load_entity(semantic(Source))
+    - For absolute entities like git that declare themselves directly
+    - Simply mounts the semantic source without transformation
+
+    Format: passive_load(Entity, semantic(Source))
+    - Declares entity with to_be_loaded component
+    - Entity exists immediately but shows only to_be_loaded info
+    - User must explicitly call load_entity to get full functionality
+
+    Examples:
+        % Load semantic files directly
+        ?- load_entity(semantic(file("src/prolog/git.pl"))).
+        ?- entity(git).  % Now available
+
+        % Load semantic folders
+        ?- load_entity(semantic(folder("src/prolog/nix"))).
+        ?- entity(nix).  % Now available
+    |}
+).
 

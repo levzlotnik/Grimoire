@@ -169,10 +169,9 @@ docstring(mkproject,
     |}
 ).
 
-% Load DB initialization module
+% DB entity for project database
 entity(db).
 component(db, source, source(semantic(folder("db")))) :- !.
-:- load_entity_source(db).
 
 run(command(mkproject(Path, Options)), RetVal) :-
     % Create project directory with semantics
@@ -210,4 +209,227 @@ run(command(mkproject(Path, Options)), RetVal) :-
             )
         )
     ).
+
+% Project artifact discovery utilities
+:- use_module(library(filesex)).
+:- use_module(library(strings)).
+
+% Project utility commands
+component(project, utility, discover_project_artifacts).
+component(project, utility, discover_core_artifacts).
+component(project, utility, discover_nix_targets).
+component(project, utility, validate_project_structure).
+
+% Core project artifact types (non-negotiable)
+component(project, core_artifact, nix(flake)).
+component(project, core_artifact, git).
+component(project, core_artifact, readme).
+component(project, core_artifact, sources).
+
+% Main project discovery predicate with options
+discover_project_artifacts(Entity, Options) :-
+    % Discover core artifacts first (always included)
+    discover_core_artifacts(Entity),
+    % Discover Nix targets and expose them as components
+    discover_nix_targets(Entity),
+    % Then discover custom filesystem patterns
+    (member(fs_patterns(IncludePatterns, ExcludePatterns), Options) ->
+        Patterns = [IncludePatterns, ExcludePatterns]
+    ;
+        Patterns = []
+    ),
+    (Patterns \= [] ->
+        discover_custom_artifacts(Entity, Patterns)
+    ;
+        true
+    ).
+
+% Default discovery without custom patterns
+discover_project_artifacts(Entity) :-
+    discover_core_artifacts(Entity),
+    discover_nix_targets(Entity).
+
+% Discover core project artifacts (non-negotiable)
+discover_core_artifacts(Entity) :-
+    working_directory(CurrentDir, CurrentDir),
+    % Discover flake.nix (every project must have one)
+    discover_flake_artifact(Entity, CurrentDir),
+    % Discover git repository (every project must be in git)
+    discover_git_artifact(Entity, CurrentDir),
+    % Discover README (every project must have documentation)
+    discover_readme_artifact(Entity, CurrentDir),
+    % Discover source files (inferred from git)
+    discover_sources_artifact(Entity, CurrentDir).
+
+% Discover Nix targets and expose them as project components
+discover_nix_targets(Entity) :-
+    working_directory(CurrentDir, CurrentDir),
+    FlakePath = 'flake.nix',
+    directory_file_path(CurrentDir, FlakePath, FlakeFullPath),
+    (exists_file(FlakeFullPath) ->
+        % Use nix flake show to get available targets
+        process_create(path(nix), ['flake', 'show', '--json'], [
+            stdout(pipe(Out)),
+            cwd(CurrentDir)
+        ]),
+        read_string(Out, _, JsonString),
+        close(Out),
+        atom_string(JsonAtom, JsonString),
+        atom_json_term(JsonAtom, JsonDict, []),
+        % Extract apps and expose as nix_target components
+        extract_nix_apps(Entity, JsonDict, CurrentDir)
+    ;
+        true  % No flake, skip Nix target discovery
+    ).
+
+% Extract Nix apps from flake show JSON and create components
+extract_nix_apps(Entity, JsonDict, FlakeRef) :-
+    (get_dict(apps, JsonDict, Apps) ->
+        dict_pairs(Apps, _, SystemPairs),
+        member(System-SystemApps, SystemPairs),
+        dict_pairs(SystemApps, _, AppPairs),
+        member(AppName-_, AppPairs),
+        format(atom(AttrPath), 'apps.~w.~w', [System, AppName]),
+        assertz(component(Entity, nix_target, app(FlakeRef, AttrPath, AppName)))
+    ;
+        true  % No apps section
+    ).
+
+% General project command implementations using discovered Nix targets
+% These work for any project entity that has discovered Nix targets
+
+% Build command - uses nix build
+run(command(Cmd), RetVal) :-
+    Cmd =.. [Entity, build],
+    entity(Entity),
+    component(Entity, nix_target, app(FlakeRef, _, build)),
+    !,
+    run(command(nix(build(FlakeRef))), RetVal).
+
+run(command(Cmd), RetVal) :-
+    Cmd =.. [Entity, build],
+    entity(Entity),
+    % Fallback: use current directory if no specific build target
+    run(command(nix(build("."))), RetVal).
+
+% Test command - uses nix check or test target
+run(command(Cmd), RetVal) :-
+    Cmd =.. [Entity, test],
+    entity(Entity),
+    component(Entity, nix_target, app(FlakeRef, _, test)),
+    !,
+    format(atom(Target), '~w#test', [FlakeRef]),
+    run(command(nix(run(Target))), RetVal).
+
+run(command(Cmd), RetVal) :-
+    Cmd =.. [Entity, test],
+    entity(Entity),
+    % Fallback: use nix flake check
+    run(command(nix(check("."))), RetVal).
+
+% Run command - uses nix run
+run(command(Cmd), RetVal) :-
+    Cmd =.. [Entity, run],
+    entity(Entity),
+    component(Entity, nix_target, app(FlakeRef, _, run)),
+    !,
+    format(atom(Target), '~w#run', [FlakeRef]),
+    run(command(nix(run(Target))), RetVal).
+
+run(command(Cmd), RetVal) :-
+    Cmd =.. [Entity, run],
+    entity(Entity),
+    component(Entity, nix_target, app(FlakeRef, _, default)),
+    !,
+    run(command(nix(run(FlakeRef))), RetVal).
+
+% Generic command for any discovered Nix target
+run(command(Cmd), RetVal) :-
+    Cmd =.. [Entity, Command],
+    entity(Entity),
+    component(Entity, nix_target, app(FlakeRef, _, Command)),
+    format(atom(Target), '~w#~w', [FlakeRef, Command]),
+    run(command(nix(run(Target))), RetVal).
+
+% Discover flake.nix artifact
+discover_flake_artifact(Entity, BaseDir) :-
+    FlakePath = 'flake.nix',
+    directory_file_path(BaseDir, FlakePath, FlakeFullPath),
+    (exists_file(FlakeFullPath) ->
+        assertz(component(Entity, core_artifact, nix(flake(FlakeFullPath))))
+    ;
+        assertz(component(Entity, missing_core_artifact, nix(flake)))
+    ).
+
+% Discover git repository artifact
+discover_git_artifact(Entity, BaseDir) :-
+    GitDir = '.git',
+    directory_file_path(BaseDir, GitDir, GitFullPath),
+    (exists_directory(GitFullPath) ->
+        assertz(component(Entity, core_artifact, git(repository(BaseDir))))
+    ;
+        assertz(component(Entity, missing_core_artifact, git))
+    ).
+
+% Discover README artifact
+discover_readme_artifact(Entity, BaseDir) :-
+    ReadmePatterns = ['README.md', 'README.rst', 'README.txt', 'README'],
+    find_first_existing_file(BaseDir, ReadmePatterns, ReadmePath),
+    (ReadmePath \= none ->
+        assertz(component(Entity, core_artifact, readme(ReadmePath)))
+    ;
+        assertz(component(Entity, missing_core_artifact, readme))
+    ).
+
+% Find first existing file from pattern list
+find_first_existing_file(_, [], none).
+find_first_existing_file(BaseDir, [Pattern|Rest], Result) :-
+    directory_file_path(BaseDir, Pattern, FullPath),
+    (exists_file(FullPath) ->
+        Result = FullPath
+    ;
+        find_first_existing_file(BaseDir, Rest, Result)
+    ).
+
+% Discover source files (git-tracked files)
+discover_sources_artifact(Entity, BaseDir) :-
+    process_create(path(git), ['ls-files'], [
+        stdout(pipe(Out)),
+        cwd(BaseDir)
+    ]),
+    read_lines_from_stream(Out, Lines),
+    close(Out),
+    maplist(assert_source_file(Entity, BaseDir), Lines).
+
+% Read all lines from a stream
+read_lines_from_stream(Stream, Lines) :-
+    read_line_to_codes(Stream, Codes),
+    (Codes == end_of_file ->
+        Lines = []
+    ;
+        atom_codes(Line, Codes),
+        Lines = [Line|RestLines],
+        read_lines_from_stream(Stream, RestLines)
+    ).
+
+% Assert source file component
+assert_source_file(Entity, BaseDir, RelativePath) :-
+    directory_file_path(BaseDir, RelativePath, FullPath),
+    (exists_file(FullPath) ->
+        assertz(component(Entity, source_file, file(RelativePath)))
+    ;
+        true  % Skip non-existent files
+    ).
+
+% Discover custom filesystem artifacts based on patterns
+discover_custom_artifacts(Entity, [IncludePatterns, ExcludePatterns]) :-
+    working_directory(CurrentDir, CurrentDir),
+    discover_fs_components(Entity, CurrentDir,
+        [include(IncludePatterns), exclude(ExcludePatterns)],
+        Components),
+    maplist(assert_component, Components).
+
+% Assert discovered component
+assert_component(Component) :-
+    assertz(Component).
 

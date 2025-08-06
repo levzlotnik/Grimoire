@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Grimoire OS executable wrapper
+# Boots SWI-Prolog with the core system pre-loaded
+
+# Get the directory where this script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+GRIMOIRE_CORE="$SCRIPT_DIR/src/prolog/grimoire.pl"
+
+# Check if grimoire.pl exists
+if [[ ! -f "$GRIMOIRE_CORE" ]]; then
+    echo "Error: Cannot find grimoire.pl at $GRIMOIRE_CORE" >&2
+    exit 1
+fi
+
+exec swipl --quiet -l "$GRIMOIRE_CORE" "$@"

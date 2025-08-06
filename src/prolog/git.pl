@@ -14,6 +14,12 @@ component(git, subcommand, push).
 component(git, subcommand, pull).
 component(git, subcommand, branch).
 component(git, subcommand, checkout).
+component(git, subcommand, status).
+component(git, subcommand, diff).
+component(git, subcommand, log).
+component(git, subcommand, rev_parse).
+component(git, subcommand, reset).
+component(git, subcommand, merge).
 
 % Might as well mark those as ctors:
 component(git, ctor, C) :- component(git, subcommand, C).
@@ -91,6 +97,27 @@ docstring(git(checkout),
     |}
 ).
 
+docstring(git(status),
+    {|string(_)||
+    Show the working tree status.
+    Format: git(status)
+    |}
+).
+
+docstring(git(diff),
+    {|string(_)||
+    Show changes between commits, commit and working tree, etc.
+    Format: git(diff)
+    |}
+).
+
+docstring(git(log),
+    {|string(_)||
+    Show the commit logs.
+    Format: git(log)
+    |}
+).
+
 docstring(git, S) :-
     make_ctors_docstring(git, CtorsDoc),
     S = {|string(CtorsDoc)||
@@ -113,7 +140,17 @@ git_args(push(Remote, Branch)) --> ["push", Remote, Branch].
 git_args(pull(Remote, Branch)) --> ["pull", Remote, Branch].
 git_args(branch(list)) --> ["branch"].
 git_args(branch(create(Name))) --> ["branch", Name].
+git_args(branch(Args)) --> ["branch" | Args].  % Handle branch with args list
 git_args(checkout(Branch)) --> ["checkout", Branch].
+git_args(checkout(Args)) --> ["checkout" | Args].  % Handle checkout with args list
+git_args(status) --> ["status"].
+git_args(diff) --> ["diff"].
+git_args(log) --> ["log"].
+git_args(log(Args)) --> ["log" | Args].  % Handle log with args list
+git_args(rev_parse(Args)) --> ["rev-parse" | Args].
+git_args(reset(Args)) --> ["reset" | Args].
+git_args(merge(Args)) --> ["merge" | Args].
+git_args(commit(Args)) --> ["commit" | Args].  % Handle commit with args list
 
 % Main git command implementation
 run(command(git(Term)), RetVal) :-
@@ -127,3 +164,13 @@ run(command(git(Term)), RetVal) :-
         command(executable_program(path(git), Args)),
         RetVal
     ).
+
+% Example git subsystem extension for load_entity
+% This could handle git repository cloning and then loading semantics
+% load_entity(Entity, semantic(git(repo(URL)))) :-
+%     % Clone repository to local path
+%     format(atom(LocalPath), '/tmp/git_clone_~w', [Entity]),
+%     git_clone(URL, LocalPath),
+%     % Load the cloned semantics
+%     atomic_list_concat([LocalPath, '/semantics.pl'], SemanticFile),
+%     load_entity(Entity, semantic(file(SemanticFile))).

@@ -1,40 +1,170 @@
 :- use_module(library(http/json)).
 
+% Declare run/2 as discontiguous since it's spread throughout the file
+:- discontiguous run/2.
+
 % Core Nix entity
 entity(nix).
 
-% Concepts in nix
+% Main Nix command categories from nix --help
 component(nix, concept, nix(store)).
 component(nix, concept, nix(derivation)).
 component(nix, concept, nix(package)).
+component(nix, concept, nix(target)).
 component(nix, concept, nix(build)).
 component(nix, concept, nix(flake)).
-component(nix, concept, nix(develop)).
-component(nix, concept, nix(shell)).
+com:- use_module(library(http/json)).ent(nix, concept, nix(develop)).
+component(nix, concept, nix(search)).
+component(nix, concept, nix(run)).
 
 % Nix concepts as namespaces
 entity(nix(store)).
 entity(nix(derivation)).
 entity(nix(package)).
+entity(nix(target)).
 
-% Type constructors for packages
-component(nix(package), ctor, versioned).
-component(nix(package), ctor, flake).
-
-% Command constructors
+% Main command constructors (the essential ones)
 component(command, ctor, nix(build)).
 component(command, ctor, nix(develop)).
-component(command, ctor, nix(shell)).
+component(command, ctor, nix(flake)).
+component(command, ctor, nix(run)).
+component(command, ctor, nix(search)).
+
+% Essential utility commands
+component(command, ctor, nix(store)).
+component(command, ctor, nix(log)).
+component(command, ctor, nix(why_depends)).
 
 % Store relationships
 component(nix(store), contains, nix(derivation)).
 component(nix(derivation), outputs, nix(package)).
+component(nix(flake), exposes, nix(target)).
+component(nix(target), builds_to, nix(derivation)).
 
 % Package types
 component(nix(package), ctor, versioned).
 component(nix(package), ctor, flake).
 
-% Docstrings
+% Target types (flake outputs)
+component(nix(target), ctor, package).
+component(nix(target), ctor, app).
+component(nix(target), ctor, devShell).
+component(nix(target), ctor, check).
+component(nix(target), ctor, formatter).
+
+% Target constructor entities
+entity(nix(target(package))).
+entity(nix(target(app))).
+entity(nix(target(devShell))).
+entity(nix(target(check))).
+entity(nix(target(formatter))).
+
+% Dynamic target discovery - flakes define themselves, we discover their targets
+% Usage: entity(nix(flake(FlakeName, FlakeRef))) in individual semantics.pl files
+
+% Memoized flake introspection
+:- table get_nix_flake_targets/2.
+get_nix_flake_targets(FlakeRef, Targets) :-
+    process_create(path(nix),
+                   ["flake", "show", "--json", FlakeRef],
+                   [stdout(pipe(Out))]),
+    json_read_dict(Out, JsonDict),
+    close(Out),
+    findall(Target, extract_flake_target(JsonDict, FlakeRef, Target), Targets).
+
+extract_flake_target(JsonDict, FlakeRef, Target) :-
+    % Extract packages
+    (get_dict(packages, JsonDict, Packages) ->
+        dict_pairs(Packages, _, SystemPairs),
+        member(System-SystemPackages, SystemPairs),
+        dict_pairs(SystemPackages, _, PackagePairs),
+        member(PackageName-_, PackagePairs),
+        format(atom(AttrPath), 'packages.~w.~w', [System, PackageName]),
+        Target = nix(target(package(FlakeRef, AttrPath)))
+    ; fail),
+    !.
+
+extract_flake_target(JsonDict, FlakeRef, Target) :-
+    % Extract apps
+    (get_dict(apps, JsonDict, Apps) ->
+        dict_pairs(Apps, _, SystemPairs),
+        member(System-SystemApps, SystemPairs),
+        dict_pairs(SystemApps, _, AppPairs),
+        member(AppName-_, AppPairs),
+        format(atom(AttrPath), 'apps.~w.~w', [System, AppName]),
+        Target = nix(target(app(FlakeRef, AttrPath)))
+    ; fail),
+    !.
+
+extract_flake_target(JsonDict, FlakeRef, Target) :-
+    % Extract devShells
+    (get_dict(devShells, JsonDict, DevShells) ->
+        dict_pairs(DevShells, _, SystemPairs),
+        member(System-SystemShells, SystemPairs),
+        dict_pairs(SystemShells, _, ShellPairs),
+        member(ShellName-_, ShellPairs),
+        format(atom(AttrPath), 'devShells.~w.~w', [System, ShellName]),
+        Target = nix(target(devShell(FlakeRef, AttrPath)))
+    ; fail),
+    !.
+
+extract_flake_target(JsonDict, FlakeRef, Target) :-
+    % Extract checks
+    (get_dict(checks, JsonDict, Checks) ->
+        dict_pairs(Checks, _, SystemPairs),
+        member(System-SystemChecks, SystemPairs),
+        dict_pairs(SystemChecks, _, CheckPairs),
+        member(CheckName-_, CheckPairs),
+        format(atom(AttrPath), 'checks.~w.~w', [System, CheckName]),
+        Target = nix(target(check(FlakeRef, AttrPath)))
+    ; fail),
+    !.
+
+extract_flake_target(JsonDict, FlakeRef, Target) :-
+    % Extract formatters
+    (get_dict(formatter, JsonDict, Formatters) ->
+        dict_pairs(Formatters, _, SystemPairs),
+        member(System-_, SystemPairs),
+        format(atom(AttrPath), 'formatter.~w', [System]),
+        Target = nix(target(formatter(FlakeRef, AttrPath)))
+    ; fail).
+
+% Dynamic entity generation for flake targets
+entity(nix(target(package(FlakeRef, AttrPath)))) :-
+    entity(nix(flake(_, FlakeRef))),
+    get_nix_flake_targets(FlakeRef, Targets),
+    member(nix(target(package(FlakeRef, AttrPath))), Targets).
+
+entity(nix(target(app(FlakeRef, AttrPath)))) :-
+    entity(nix(flake(_, FlakeRef))),
+    get_nix_flake_targets(FlakeRef, Targets),
+    member(nix(target(app(FlakeRef, AttrPath))), Targets).
+
+entity(nix(target(devShell(FlakeRef, AttrPath)))) :-
+    entity(nix(flake(_, FlakeRef))),
+    get_nix_flake_targets(FlakeRef, Targets),
+    member(nix(target(devShell(FlakeRef, AttrPath))), Targets).
+
+entity(nix(target(check(FlakeRef, AttrPath)))) :-
+    entity(nix(flake(_, FlakeRef))),
+    get_nix_flake_targets(FlakeRef, Targets),
+    member(nix(target(check(FlakeRef, AttrPath))), Targets).
+
+entity(nix(target(formatter(FlakeRef, AttrPath)))) :-
+    entity(nix(flake(_, FlakeRef))),
+    get_nix_flake_targets(FlakeRef, Targets),
+    member(nix(target(formatter(FlakeRef, AttrPath))), Targets).
+
+% Dynamic component generation - flakes expose their targets
+component(nix(flake(FlakeName, FlakeRef)), target(TargetType), Target) :-
+    entity(nix(flake(FlakeName, FlakeRef))),
+    get_nix_flake_targets(FlakeRef, Targets),
+    member(Target, Targets),
+    Target = nix(target(TargetTypeCall)),
+    functor(TargetTypeCall, TargetType, _).
+
+% === DOCSTRINGS ===
+
 docstring(nix(package),
     {|string(_)||
     Represents a Nix package.
@@ -51,11 +181,70 @@ docstring(nix(derivation),
     |}
 ).
 
+docstring(nix(target),
+    {|string(_)||
+    Represents a flake output target (sum type).
+    Targets are discovered dynamically from flakes via 'nix flake show --json'.
+
+    Formats:
+      nix(target(package(FlakeRef, AttrPath)))
+      nix(target(app(FlakeRef, AttrPath)))
+      nix(target(devShell(FlakeRef, AttrPath)))
+      nix(target(check(FlakeRef, AttrPath)))
+      nix(target(formatter(FlakeRef, AttrPath)))
+
+    Usage:
+      1. Define flake: entity(nix(flake(MyFlake, "path/to/flake")))
+      2. Targets auto-discovered: entity(nix(target(app("path/to/flake", "apps.x86_64-linux.hello"))))
+      3. Components auto-generated: component(nix(flake(MyFlake, "path/to/flake")), target(app), Target)
+    |}
+).
+
+% === COMMAND IMPLEMENTATIONS ===
+
+% Search command
+docstring(nix(search),
+    {|string(_)||
+    Search for packages in nixpkgs.
+    Format: command(nix(search(Query))) or command(nix(search(Flake, Query)))
+      Query: Search term(s)
+      Flake: Flake to search in (defaults to nixpkgs)
+    |}
+).
+
+run(command(nix(search(Query))), RetVal) :-
+    run(command(nix(search(nixpkgs, Query))), RetVal).
+
+run(command(nix(search(Flake, Query))), RetVal) :-
+    format(atom(FlakeQuery), '~w#~w', [Flake, Query]),
+    Args = ["nix", "search", FlakeQuery],
+    run(command(shell(Args)), RetVal).
+
+% Run command
+docstring(nix(run),
+    {|string(_)||
+    Run a Nix application.
+    Format: command(nix(run(Installable))) or command(nix(run(Installable, Args)))
+      Installable: Package/flake to run
+      Args: Arguments to pass to the application
+    |}
+).
+
+run(command(nix(run(Installable))), RetVal) :-
+    Args = ["nix", "run", Installable],
+    run(command(shell(Args, interactive)), RetVal).
+
+run(command(nix(run(Installable, AppArgs))), RetVal) :-
+    flatten([["nix", "run", Installable, "--"], AppArgs], Args),
+    run(command(shell(Args, interactive)), RetVal).
+
 % Command docstrings
 docstring(nix(build),
     {|string(_)||
-    Builds a Nix expression.
-    Format: command(nix(build(Path))).
+    Builds a Nix expression or flake.
+    Format: command(nix(build(Installable))) or command(nix(build(Installable, Options)))
+      Installable: What to build (flake reference, derivation, etc.)
+      Options: List of build options
     Creates:
     - Derivation entity
     - Result component linking to built outputs
@@ -63,14 +252,69 @@ docstring(nix(build),
 ).
 
 % Command implementations
-run(command(nix(build(Path))), RetVal) :-
-    run(command(shell(["nix", "build", Path])), RetVal),
+run(command(nix(build(Installable))), RetVal) :-
+    Args = ["nix", "build", Installable],
+    run(command(shell(Args)), RetVal),
     % Track built derivation
     (RetVal = ok(Output) ->
         assert(entity(nix(derivation(Output)))),
-        directory_file_path(Dir, _, Path),
-        assert(component(folder(Dir), build_output, nix(derivation(Output))))
+        assert(component(build_result, output_path, Output))
     ; true).
+
+run(command(nix(build(Installable, Options))), RetVal) :-
+    flatten([["nix", "build", Installable], Options], Args),
+    run(command(shell(Args)), RetVal).
+
+% Store commands
+entity(nix(store)).
+component(nix(store), ctor, gc).
+component(nix(store), ctor, repair).
+component(nix(store), ctor, optimise).
+
+docstring(nix(store),
+    {|string(_)||
+    Manipulate the Nix store - essential for system maintenance.
+    Format: command(nix(store(Subcommand)))
+    Subcommands: gc (garbage collect), repair, optimise
+    |}
+).
+
+run(command(nix(store(gc))), RetVal) :-
+    Args = ["nix", "store", "gc"],
+    run(command(shell(Args)), RetVal).
+
+run(command(nix(store(repair(Path)))), RetVal) :-
+    Args = ["nix", "store", "repair", Path],
+    run(command(shell(Args)), RetVal).
+
+run(command(nix(store(optimise))), RetVal) :-
+    Args = ["nix", "store", "optimise"],
+    run(command(shell(Args)), RetVal).
+
+% Utility commands for debugging and analysis
+docstring(nix(why_depends),
+    {|string(_)||
+    Show why a package has another package in its closure.
+    Format: command(nix(why_depends(Package1, Package2)))
+    Essential for understanding dependency chains.
+    |}
+).
+
+run(command(nix(why_depends(Pkg1, Pkg2))), RetVal) :-
+    Args = ["nix", "why-depends", Pkg1, Pkg2],
+    run(command(shell(Args)), RetVal).
+
+docstring(nix(log),
+    {|string(_)||
+    Show the build log of specified packages or paths.
+    Format: command(nix(log(Installable)))
+    Essential for debugging build failures.
+    |}
+).
+
+run(command(nix(log(Installable))), RetVal) :-
+    Args = ["nix", "log", Installable],
+    run(command(shell(Args)), RetVal).
 
 component(nix(develop), option(unique), shell_cmd).
 component(nix(develop), option(unique), phase).
@@ -115,22 +359,6 @@ run(command(nix(develop(Options))), RetVal) :-
     ),
     flatten([["nix", "develop"] | AllOptionArgs], Args),
     run(command(shell(Args, interactive)), RetVal).
-
-docstring(nix(shell),
-    {|string(_)||
-    Runs a command in a Nix shell.
-    Format: command(nix(shell(Packages, Command))).
-    Executes Command with specified package dependencies.
-    |}
-).
-
-run(command(nix(shell(Packages, Command))), RetVal) :-
-    flatten([
-        "nix-shell",
-        "--run", Command,
-        "--packages", Packages
-    ], Args),
-    run(command(shell(Args)), RetVal).
 
 % Flake commands
 entity(nix(flake)).
@@ -210,3 +438,9 @@ run(command(nix(flake(new(TemplateId, DestPath)))), RetVal) :-
     nix_templates_expr_id(TId, Template),
     Args = ["nix", "flake", "new", DestPath, "-t", Template],
     run(command(shell(Args)), RetVal).
+
+% Nix subsystem extension for load_entity
+% Lazy loading for nix semantic folders
+load_entity(Entity, semantic(nix_folder(Path), lazy)) :-
+    assertz(to_be_loaded(Entity, semantic(folder(Path)))),
+    asserta(entity(Entity)).
