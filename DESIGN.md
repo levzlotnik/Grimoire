@@ -323,7 +323,7 @@ src/prolog/nix/templates/{language}/
 
 **Phase 6: Session + Transaction System**:
 1. **Session-Based Isolation**: Each work session creates its own Git branch for concurrent streams
-2. **Transaction Execution**: Atomic operations within sessions that result in Git commits  
+2. **Transaction Execution**: Atomic operations within sessions that result in Git commits
 3. **Git-Native Rollback**: Use `git reset --hard` for transaction-level rollback within sessions
 4. **Session Lifecycle**: Create, execute transactions, merge/abandon sessions with flexible strategies
 5. **Session History**: Query session logs via Git branch history and commit messages
@@ -404,14 +404,14 @@ component(transaction, state, rolled_back).
 start_session(SessionId, BranchStrategy, Result) :-
     uuid(SessionId),
     get_current_commit(StartCommit),
-    
+
     (BranchStrategy = new_branch ->
         format(string(BranchName), "session-~w", [SessionId]),
         run(command(git(checkout(['-b', BranchName]))), _)
     ; BranchStrategy = current_branch ->
         get_current_branch(BranchName)
     ),
-    
+
     assertz(active_session(SessionId, BranchName, StartCommit)).
 ```
 
@@ -422,13 +422,13 @@ start_session(SessionId, BranchStrategy, Result) :-
 execute_transaction(SessionId, Commands, Result) :-
     active_session(SessionId, BranchName, _),
     uuid(TransactionId),
-    
+
     % Switch to session branch
     run(command(git(checkout([BranchName]))), _),
-    
+
     % Execute with atomic rollback
     execute_commands_atomically(Commands, ExecuteResult),
-    
+
     (ExecuteResult = ok(Results) ->
         commit_transaction(SessionId, TransactionId, Commands, CommitResult),
         Result = ok(transaction_committed(TransactionId, CommitResult, Results))
@@ -441,7 +441,7 @@ execute_transaction(SessionId, Commands, Result) :-
 execute_commands_atomically(Commands, Result) :-
     get_current_commit(PreCommit),
     execute_commands(Commands, Results),
-    
+
     (member(error(E), Results) ->
         run(command(git(reset(['--hard', PreCommit]))), _),
         Result = error(E)
@@ -456,7 +456,7 @@ execute_commands_atomically(Commands, Result) :-
 % Session closure strategies
 close_session(SessionId, CloseStrategy, Result) :-
     active_session(SessionId, BranchName, StartCommit),
-    
+
     (CloseStrategy = merge_to_main ->
         run(command(git(checkout(['main']))), _),
         run(command(git(merge(['--no-ff', BranchName]))), _),
@@ -467,7 +467,7 @@ close_session(SessionId, CloseStrategy, Result) :-
     ; CloseStrategy = keep_branch ->
         true  % Keep branch for later reference
     ),
-    
+
     retract(active_session(SessionId, BranchName, StartCommit)).
 
 % Convenience workflow patterns

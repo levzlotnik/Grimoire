@@ -7,7 +7,7 @@ entity(session).
 entity(transaction).
 % Core session components
 component(session, state, active).
-component(session, state, closed). 
+component(session, state, closed).
 component(session, state, suspended).
 component(session, state, merged).
 component(session, state, abandoned).
@@ -15,7 +15,7 @@ component(session, state, abandoned).
 % Session branch strategies - every session creates new branch
 component(session, branch_strategy, new_branch).
 
-% Session closure strategies  
+% Session closure strategies
 component(session, close_strategy, merge_to_main).
 component(session, close_strategy, abandon).
 component(session, close_strategy, keep_branch).
@@ -37,18 +37,18 @@ docstring(session,
     {|string(_)||
     A session represents a logical work context that creates a Git branch for isolation.
     Each session automatically creates its own branch, enabling concurrent work streams without conflicts.
-    
+
     Session Lifecycle:
     1. start_session/2 - Create session (always creates new branch)
-    2. execute_transaction/3 - Execute atomic operations within session  
+    2. execute_transaction/3 - Execute atomic operations within session
     3. close_session/3 - Merge, abandon, or keep session branch
-    
+
     Format: session(SessionId, CloseStrategy)
     - CloseStrategy: merge_to_main | abandon | keep_branch
-    
+
     Benefits:
     - Session isolation via Git branches (always new branch)
-    - Concurrent work streams  
+    - Concurrent work streams
     - Atomic transaction rollback
     - Rich Git-native history
     |}
@@ -58,16 +58,16 @@ docstring(transaction,
     {|string(_)||
     A transaction is an atomic set of operations within a session that results in a Git commit.
     All operations in a transaction succeed together or fail together with Git-based rollback.
-    
+
     Transaction Lifecycle:
     1. Commands executed atomically
-    2. Git reset --hard on failure (rollback)  
+    2. Git reset --hard on failure (rollback)
     3. Git commit on success with descriptive message
     4. Transaction ID tagged for easy reference
-    
+
     Format: transaction(SessionId, Commands)
     Commands: List of command(Entity(Action)) terms
-    
+
     Benefits:
     - Atomic operations with rollback
     - Git commit provides transaction boundary
@@ -83,7 +83,7 @@ start_session(SessionId, Result) :-
     uuid(SessionId),
     get_current_commit(StartCommit),
     create_session_branch(SessionId, BranchName, Result),
-    
+
     % Track active session
     assertz(active_session(SessionId, BranchName, StartCommit)),
     format("Session ~w started on branch: ~w~n", [SessionId, BranchName]).
@@ -189,7 +189,7 @@ commit_transaction(_SessionId, _TransactionId, _Commands, Result) :-
     % Find and add files in src directory
     find_src_files(SrcFiles),
     add_src_files(SrcFiles, AddResult),
-    
+
     (AddResult = ok(_) ->
         % Commit with simple message
         run(command(git(commit(['-m', 'saving work']))), CommitResult),
@@ -303,9 +303,9 @@ execute(transaction(Commands), Result) :-
     ;
         % Legacy direct execution without session
         execute_commands(Commands, Results),
-        (member(error(E), Results) -> 
-            Result = error(E) 
-        ; 
+        (member(error(E), Results) ->
+            Result = error(E)
+        ;
             Result = ok(Results)
         )
     ).
@@ -317,7 +317,7 @@ switch_session(TargetSessionId, Result) :-
     % Check if target session exists
     active_session(TargetSessionId, TargetBranch, _),
     !,
-    
+
     % Switch to target session branch
     run(command(git(checkout([TargetBranch]))), SwitchResult),
     (SwitchResult = ok(_) ->
@@ -373,7 +373,7 @@ start_experiment_session(ExperimentName, SessionId, Result) :-
 create_session_snapshot(SessionId, SnapshotName, Result) :-
     active_session(SessionId, SessionBranch, _),
     format(string(SnapshotBranch), "~w-snapshot-~w", [SessionBranch, SnapshotName]),
-    
+
     % Create snapshot branch from current session
     run(command(git(checkout(['-b', SnapshotBranch]))), SnapshotResult),
     (SnapshotResult = ok(_) ->
@@ -400,8 +400,8 @@ discover_session_context(Context) :-
     (active_session(SessionId, BranchName, StartCommit) ->
         list_session_transactions(SessionId, Transactions),
         length(Transactions, TransactionCount),
-        format(string(Context), 
-            "Active session: ~w on branch ~w~nStart commit: ~w~nTransactions: ~w", 
+        format(string(Context),
+            "Active session: ~w on branch ~w~nStart commit: ~w~nTransactions: ~w",
             [SessionId, BranchName, StartCommit, TransactionCount])
     ;
         Context = "No active session - working on main branch"
