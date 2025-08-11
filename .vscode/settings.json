@@ -8,7 +8,16 @@
             "icon": "terminal-linux"
         }
     },
+    "terminal.integrated.profiles.osx": {
+        "nix develop": {
+            "path": "/bin/zsh",
+            "args": ["-l", "-c", "/nix/var/nix/profiles/default/bin/nix develop"],
+            "icon": "terminal-linux",
+            "overrideName": true
+        }
+    },
     "terminal.integrated.defaultProfile.linux": "nix-shell",
+    "terminal.integrated.defaultProfile.osx": "nix develop",
     "files.associations": {
         "*.pl": "prolog"
     },

@@ -128,6 +128,7 @@ component(command, ctor, mkdir).
 component(command, ctor, mkfile).
 component(command, ctor, edit_file).
 component(command, ctor, executable_program).
+component(command, ctor, session).
 
 % Dynamic docstring for run based on command type
 docstring(run(command(Command)), Doc) :-

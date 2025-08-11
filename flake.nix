@@ -3,20 +3,26 @@
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-unstable";
-    nixos-templates.url = "github:NixOS/templates";
   };
 
-  outputs = { self, nixpkgs, nixos-templates, ... }@inputs:
+  outputs = { self, nixpkgs, ... }@inputs:
   let
-    system = "x86_64-linux";
-    pkgs = nixpkgs.legacyPackages.${system};
+    systems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
+    forAllSystems = nixpkgs.lib.genAttrs systems;
   in
   {
-    devShells.${system}.default =
-      import ./shell.nix { pkgs = pkgs; };
+    devShells = forAllSystems (system: {
+      default = import ./shell.nix {
+        pkgs = nixpkgs.legacyPackages.${system};
+      };
+    });
 
     # Apps for running Grimoire
-    apps.${system} = {
+    apps = forAllSystems (system:
+    let
+      pkgs = nixpkgs.legacyPackages.${system};
+    in
+    {
       # Launch interactive Grimoire shell
       grimoire = {
         type = "app";
@@ -50,8 +56,6 @@
           fi
         ''}";
       };
-    };
-
-    inherit (nixos-templates) templates;
+    });
   };
 }
