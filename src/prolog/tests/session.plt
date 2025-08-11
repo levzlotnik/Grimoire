@@ -9,9 +9,7 @@
 :- begin_tests(session_management).
 
 setup :-
-    % Clean up any existing sessions
-    retractall(active_session(_, _, _)),
-    retractall(session_transaction(_, _, _, _)),
+    % No dynamic facts to clean up - all state is in Git
     % Ensure we're on main branch for tests (ignore failures)
     catch(run(command(git(checkout(['main']))), _), _, true).
 
@@ -21,11 +19,11 @@ teardown :-
 
 % Helper to clean up test sessions
 cleanup_test_sessions :-
-    % Clean up dynamic facts - safer than trying to parse git output
-    retractall(active_session(_, _, _)),
-    retractall(session_transaction(_, _, _, _)),
+    % No dynamic facts to clean up - all state is in Git
     % Try to switch to main (ignore errors)
-    catch(run(command(git(checkout(['main']))), _), _, true).
+    catch(run(command(git(checkout(['main']))), _), _, true),
+    % Clean up any test session branches
+    catch(kill_all_inactive_sessions(_), _, true).
 
 test(start_session_creates_branch, [setup(setup), cleanup(teardown)]) :-
     % Test starting a session always creates new branch
@@ -33,14 +31,14 @@ test(start_session_creates_branch, [setup(setup), cleanup(teardown)]) :-
 
     % Verify session was created
     assertion(ground(SessionId)),
-    assertion(Result = ok(branch_created(_))),
+    assertion(Result = ok(session_started(SessionId, _, _))),
 
-    % Verify session is tracked
-    assertion(active_session(SessionId, _, _)),
+    % Verify session exists (Git-inferred)
+    assertion(current_session(SessionId)),
 
     % Verify we're on the session branch
     get_current_branch(CurrentBranch),
-    format(string(ExpectedBranch), "session-~w", [SessionId]),
+    format(string(ExpectedBranch), "session/~w", [SessionId]),
     assertion(CurrentBranch = ExpectedBranch).
 
 test(execute_transaction_success, [setup(setup), cleanup(teardown)]) :-
@@ -51,10 +49,10 @@ test(execute_transaction_success, [setup(setup), cleanup(teardown)]) :-
     Commands = [command(mkfile("/tmp/test_session_file.txt"))],
     execute_transaction(SessionId, Commands, Result),
 
-    % Verify transaction succeeded
-    assertion(Result = ok(transaction_committed(_, _, [ok(_)]))),
+    % Verify transaction succeeded (Git-native result)
+    assertion(Result = ok(transaction_committed(_, [ok(_)]))),
 
-    % Verify transaction is tracked
+    % Verify transaction is tracked in Git
     list_session_transactions(SessionId, Transactions),
     assertion(length(Transactions, 1)),
 
@@ -96,8 +94,8 @@ test(close_session_merge, [setup(setup), cleanup(teardown)]) :-
     get_current_branch(CurrentBranch),
     assertion(CurrentBranch = "main"),
 
-    % Verify session is no longer tracked
-    assertion(\+ active_session(SessionId, _, _)),
+    % Verify session no longer exists (Git-inferred)
+    assertion(\+ current_session(SessionId)),
 
     % Verify file still exists (merged to main)
     assertion(exists_file("/tmp/test_merge_file.txt")),
@@ -120,8 +118,8 @@ test(close_session_abandon, [setup(setup), cleanup(teardown)]) :-
     get_current_branch(CurrentBranch),
     assertion(CurrentBranch = "main"),
 
-    % Verify session is no longer tracked
-    assertion(\+ active_session(SessionId, _, _)),
+    % Verify session no longer exists (Git-inferred)
+    assertion(\+ current_session(SessionId)),
 
     % Verify file does not exist (abandoned)
     assertion(\+ exists_file("/tmp/test_abandon_file.txt")).
@@ -131,8 +129,8 @@ test(session_workflow_convenience, [setup(setup), cleanup(teardown)]) :-
     Commands = [command(mkfile("/tmp/test_workflow_file.txt"))],
     with_session(Commands, Result),
 
-    % Verify workflow completed
-    assertion(Result = session_completed(_, ok(transaction_committed(_, _, _)), ok(merged_and_deleted(_)))),
+    % Verify workflow completed (Git-native result format)
+    assertion(Result = session_completed(_, ok(transaction_committed(_, _)), ok(merged_and_deleted(_)))),
 
     % Verify file exists (merged to main)
     assertion(exists_file("/tmp/test_workflow_file.txt")),
@@ -148,9 +146,9 @@ test(multi_transaction_session, [setup(setup), cleanup(teardown)]) :-
     execute_transaction(SessionId, [command(mkfile("/tmp/test_multi1.txt"))], Result1),
     execute_transaction(SessionId, [command(mkfile("/tmp/test_multi2.txt"))], Result2),
 
-    % Verify both transactions succeeded
-    assertion(Result1 = ok(transaction_committed(_, _, _))),
-    assertion(Result2 = ok(transaction_committed(_, _, _))),
+    % Verify both transactions succeeded (Git-native format)
+    assertion(Result1 = ok(transaction_committed(_, _))),
+    assertion(Result2 = ok(transaction_committed(_, _))),
 
     % Verify both files exist
     assertion(exists_file("/tmp/test_multi1.txt")),
@@ -185,9 +183,8 @@ test(session_history, [setup(setup), cleanup(teardown)]) :-
 :- begin_tests(session_integration).
 
 setup :-
-    % Clean up any existing sessions
-    retractall(active_session(_, _, _)),
-    retractall(session_transaction(_, _, _, _)).
+    % No dynamic facts to clean up - all state is in Git
+    true.
 
 teardown :-
     cleanup_test_sessions,
@@ -200,10 +197,10 @@ test(execute_with_active_session, [setup(setup), cleanup(teardown)]) :-
     % Use the enhanced execute/2 - should work within session
     execute(transaction([command(mkfile("/tmp/test_integrate.txt"))]), Result),
 
-    % Verify it executed within the session
-    assertion(Result = ok(transaction_committed(_, _, _))),
+    % Verify it executed within the session (Git-native format)
+    assertion(Result = ok(transaction_committed(_, _))),
 
-    % Verify transaction is tracked in session
+    % Verify transaction is tracked in session (Git-inferred)
     list_session_transactions(SessionId, Transactions),
     assertion(length(Transactions, 1)),
 
@@ -212,7 +209,7 @@ test(execute_with_active_session, [setup(setup), cleanup(teardown)]) :-
 
 test(execute_without_session, [setup(setup), cleanup(teardown)]) :-
     % Ensure no active session
-    assertion(\+ active_session(_, _, _)),
+    assertion(\+ current_session(_)),
 
     % Use execute/2 without session - should work in legacy mode
     execute(transaction([command(mkfile("/tmp/test_legacy.txt"))]), Result),
@@ -247,8 +244,7 @@ test(session_context_discovery, [setup(setup), cleanup(teardown)]) :-
 :- begin_tests(session_advanced).
 
 setup :-
-    retractall(active_session(_, _, _)),
-    retractall(session_transaction(_, _, _, _)),
+    % No dynamic facts to clean up - all state is in Git
     run(command(git(checkout(['main']))), _).
 
 teardown :-
@@ -261,7 +257,7 @@ test(feature_session_template, [setup(setup), cleanup(teardown)]) :-
 
     % Verify feature session started
     assertion(Result = ok(feature_session_started(SessionId, "user-auth"))),
-    assertion(active_session(SessionId, _, _)),
+    assertion(current_session(SessionId)),
 
     % Clean up
     close_session(SessionId, abandon, _).
@@ -272,7 +268,7 @@ test(experiment_session_template, [setup(setup), cleanup(teardown)]) :-
 
     % Verify experiment session started
     assertion(Result = ok(experiment_session_started(SessionId, "new-algorithm"))),
-    assertion(active_session(SessionId, _, _)),
+    assertion(current_session(SessionId)),
 
     % Clean up
     close_session(SessionId, abandon, _).
@@ -288,15 +284,17 @@ test(session_snapshot, [setup(setup), cleanup(teardown)]) :-
     % Verify snapshot created
     assertion(Result = ok(snapshot_created(_))),
 
-    % Verify we're still on session branch
-    active_session(SessionId, SessionBranch, _),
+    % Verify we're still on session branch (Git-inferred)
+    assertion(current_session(SessionId)),
     get_current_branch(CurrentBranch),
-    assertion(CurrentBranch = SessionBranch),
+    format(string(ExpectedBranch), "session/~w", [SessionId]),
+    assertion(CurrentBranch = ExpectedBranch),
 
     % Clean up
     close_session(SessionId, abandon, _),
     % Clean up snapshot branch
-    run(command(git(branch(['-D', 'session-*-snapshot-before-refactor']))), _).
+    format(string(SnapshotBranch), "session/~w-snapshot-before-refactor", [SessionId]),
+    catch(run(command(git(branch(['-D', SnapshotBranch]))), _), _, true).
 
 :- end_tests(session_advanced).
 

@@ -171,7 +171,7 @@ docstring(mkproject,
 
 % DB entity for project database
 entity(db).
-component(db, source, source(semantic(folder("db")))) :- !.
+component(db, source, source(semantic(folder("db")))).
 
 run(command(mkproject(Path, Options)), RetVal) :-
     % Create project directory with semantics

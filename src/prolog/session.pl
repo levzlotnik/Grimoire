@@ -27,10 +27,7 @@ component(transaction, state, committed).
 component(transaction, state, failed).
 component(transaction, state, rolled_back).
 
-% Dynamic session tracking - transactions only (sessions inferred from git)
-:- dynamic([
-    session_transaction/4 % session_transaction(SessionId, TransactionId, Commands, State)
-]).
+
 
 docstring(session, S) :-
     findall(SubCmd, component(session, subcommand, SubCmd), SubCommands),
@@ -188,75 +185,205 @@ format_session_subcommand(experiment, "session(experiment(Name)) - Start experim
 
 % Session management predicates
 
-% Start a new session with branch creation
+% Start a new session with transition branch support
 start_session(SessionId, Result) :-
     uuid(SessionId),
+    start_session_with_transition(SessionId, Result).
+
+% Core session creation with transition branch handling
+start_session_with_transition(SessionId, Result) :-
+    get_current_branch(SourceBranch),
+    check_tracked_changes(StatusResult),
+
+    (StatusResult = clean ->
+        % Clean state - direct session creation
+        direct_session_creation(SessionId, SourceBranch, Result)
+    ;
+        % Dirty state - use transition branch
+        transition_based_session_creation(SessionId, SourceBranch, Result)
+    ).
+
+% Direct session creation for clean state
+direct_session_creation(SessionId, SourceBranch, Result) :-
     get_current_commit(StartCommit),
-    create_session_branch(SessionId, BranchName, CreateResult),
+    format(string(SessionBranch), "session-~w", [SessionId]),
+    run(command(git(checkout(['-b', SessionBranch]))), CheckoutResult),
 
-    (CreateResult = ok(branch_created(BranchName)) ->
-        % Session state is tracked via git branch, no need for dynamic facts
-        format("Session ~w started on branch: ~w~n", [SessionId, BranchName]),
-        Result = ok(session_started(SessionId, BranchName, StartCommit))
-    ;
-        % Branch creation failed
-        Result = CreateResult
-    ).
-
-% Create a new branch for the session
-create_session_branch(SessionId, BranchName, Result) :-
-    format(string(BranchName), "session/~w", [SessionId]),
-    run(command(git(checkout(['-b', BranchName]))), CheckoutResult),
     (CheckoutResult = ok(_) ->
-        Result = ok(branch_created(BranchName))
+        format("Session ~w started on branch: ~w (direct)~n", [SessionId, SessionBranch]),
+        Result = ok(session_started(SessionId, SessionBranch, StartCommit, direct))
     ;
-        Result = error(failed_to_create_branch(CheckoutResult))
+        Result = error(failed_to_create_session_branch(CheckoutResult))
     ).
 
-% Close a session
-close_session(SessionId, CloseStrategy, Result) :-
-    % Infer session state from current branch or find session branch
-    (current_session(CurrentSessionId) ->
-        (CurrentSessionId = SessionId ->
-            get_current_branch(BranchName)
+% Transition-based session creation for dirty state
+transition_based_session_creation(SessionId, SourceBranch, Result) :-
+    create_transition_for_new_session(SourceBranch, SessionId, TransitionResult),
+
+    (TransitionResult = ok(transition_created(TransitionBranch, CommitHash)) ->
+        % Create session branch from transition
+        format(string(SessionBranch), "session-~w", [SessionId]),
+        run(command(git(checkout(['-b', SessionBranch]))), CheckoutResult),
+
+        (CheckoutResult = ok(_) ->
+            format("Session ~w started on branch: ~w (via transition ~w)~n",
+                   [SessionId, SessionBranch, TransitionBranch]),
+            Result = ok(session_started(SessionId, SessionBranch, CommitHash, via_transition(TransitionBranch)))
         ;
-            format(string(BranchName), "session/~w", [SessionId])
+            % Session creation failed - transition branch remains as recovery point
+            Result = error(failed_to_create_session_from_transition(CheckoutResult, TransitionBranch))
         )
     ;
-        format(string(BranchName), "session/~w", [SessionId])
-    ),
+        % Transition creation failed
+        Result = error(transition_creation_failed(TransitionResult))
+    ).
+
+% Create transition branch for new session with tracked changes
+create_transition_for_new_session(SourceBranch, SessionId, Result) :-
+    % Generate transition branch name
+    format(string(TransitionBranch), "transition_branch/~w--session-~w", [SourceBranch, SessionId]),
+
+    % Create transition branch from source
+    run(command(git(checkout(['-b', TransitionBranch]))), CreateResult),
+
+    (CreateResult = ok(_) ->
+        % Stage and commit tracked changes only
+        commit_tracked_changes_only(TransitionBranch, SessionId, CommitResult),
+
+        (CommitResult = ok(CommitHash) ->
+            Result = ok(transition_created(TransitionBranch, CommitHash))
+        ;
+            % Commit failed - clean up transition branch
+            run(command(git(checkout([SourceBranch]))), _),
+            run(command(git(branch(['-D', TransitionBranch]))), _),
+            Result = error(failed_to_commit_transition(CommitResult))
+        )
+    ;
+        Result = error(failed_to_create_transition_branch(CreateResult))
+    ).
+
+% Commit only tracked changes to transition branch
+commit_tracked_changes_only(TransitionBranch, SessionId, Result) :-
+    % Stage tracked files with changes (not untracked files)
+    run(command(git(add(['-u']))), AddResult),
+
+    (AddResult = ok(_) ->
+        % Check if there are staged changes
+        run(command(git(diff(['--cached', '--quiet']))), DiffResult),
+
+        (DiffResult = error(_) ->
+            % There are staged changes - commit them
+            format(string(CommitMsg), "Transition: tracked changes for session-~w", [SessionId]),
+            run(command(git(commit(['-m', CommitMsg]))), CommitResult),
+
+            (CommitResult = ok(_) ->
+                get_current_commit(CommitHash),
+                Result = ok(CommitHash)
+            ;
+                Result = error(commit_failed(CommitResult))
+            )
+        ;
+            % No staged changes - skip transition
+            Result = error(no_tracked_changes)
+        )
+    ;
+        Result = error(failed_to_stage_changes(AddResult))
+    ).
+
+% Check for tracked unstaged changes
+check_tracked_changes(Status) :-
+    % Check for tracked files with unstaged changes
+    run(command(git(diff(['--quiet']))), DiffResult),
+
+    (DiffResult = error(_) ->
+        % There are unstaged changes in tracked files
+        Status = dirty
+    ;
+        % No unstaged changes in tracked files
+        Status = clean
+    ).
+
+% Close a session with transition cleanup
+close_session(SessionId, CloseStrategy, Result) :-
+    % Use new session branch naming
+    format(string(SessionBranch), "session-~w", [SessionId]),
 
     (CloseStrategy = merge_to_main ->
-        merge_session_to_main(SessionId, BranchName, Result)
+        merge_session_to_main_with_transition_cleanup(SessionId, SessionBranch, Result)
     ; CloseStrategy = abandon ->
-        abandon_session(SessionId, BranchName, Result)
+        abandon_session_with_transition_cleanup(SessionId, SessionBranch, Result)
     ; CloseStrategy = keep_branch ->
-        Result = ok(branch_kept(BranchName))
+        Result = ok(branch_kept(SessionBranch))
     ),
 
-    % Clean up transaction tracking only
-    retractall(session_transaction(SessionId, _, _, _)),
     format("Session ~w closed: ~w~n", [SessionId, Result]).
 
-% Merge session branch back to main
-merge_session_to_main(_SessionId, BranchName, Result) :-
+% Merge session branch to main and cleanup transition
+merge_session_to_main_with_transition_cleanup(SessionId, SessionBranch, Result) :-
     run(command(git(checkout(['main']))), _),
-    run(command(git(merge(['--no-ff', BranchName]))), MergeResult),
+    run(command(git(merge(['--no-ff', SessionBranch]))), MergeResult),
+
     (MergeResult = ok(_) ->
-        run(command(git(branch(['-d', BranchName]))), _),
-        Result = ok(merged_and_deleted(BranchName))
+        % Delete session branch
+        run(command(git(branch(['-d', SessionBranch]))), _),
+
+        % Delete associated transition branch
+        delete_transition_on_merge(SessionId, _),
+
+        Result = ok(merged_and_deleted(SessionBranch))
     ;
         Result = error(merge_failed(MergeResult))
     ).
 
-% Abandon session (delete branch)
-abandon_session(_SessionId, BranchName, Result) :-
+% Abandon session and cleanup transition
+abandon_session_with_transition_cleanup(SessionId, SessionBranch, Result) :-
     run(command(git(checkout(['main']))), _),
-    run(command(git(branch(['-D', BranchName]))), DeleteResult),
+    run(command(git(branch(['-D', SessionBranch]))), DeleteResult),
+
     (DeleteResult = ok(_) ->
-        Result = ok(abandoned(BranchName))
+        % Delete associated transition branch
+        delete_transition_on_merge(SessionId, _),
+
+        Result = ok(abandoned(SessionBranch))
     ;
         Result = error(delete_failed(DeleteResult))
+    ).
+
+% Delete transition branch when session is merged or abandoned
+delete_transition_on_merge(SessionId, Result) :-
+    % Find transition branch for this session
+    find_transition_for_session(SessionId, TransitionBranch),
+
+    (TransitionBranch \= none ->
+        run(command(git(branch(['-D', TransitionBranch]))), DeleteResult),
+        (DeleteResult = ok(_) ->
+            Result = ok(transition_deleted(TransitionBranch))
+        ;
+            Result = error(failed_to_delete_transition(DeleteResult))
+        )
+    ;
+        % No transition branch found (direct session creation)
+        Result = ok(no_transition_to_delete)
+    ).
+
+% Find transition branch for a session
+find_transition_for_session(SessionId, TransitionBranch) :-
+    % Look for transition branch matching pattern
+    run(command(git(branch(['--format=%(refname:short)']))), BranchResult),
+
+    (BranchResult = ok(BranchOutput) ->
+        split_string(BranchOutput, '\n', '\n \t', BranchLines),
+        format(string(Pattern), "--session-~w", [SessionId]),
+
+        (member(Branch, BranchLines),
+         atom_string(BranchAtom, Branch),
+         sub_atom(BranchAtom, _, _, _, Pattern) ->
+            TransitionBranch = Branch
+        ;
+            TransitionBranch = none
+        )
+    ;
+        TransitionBranch = none
     ).
 
 % Transaction execution within sessions
@@ -264,35 +391,26 @@ abandon_session(_SessionId, BranchName, Result) :-
 % Execute transaction in session context
 execute_transaction(SessionId, Commands, Result) :-
     % Verify session exists by checking for session branch
-    format(string(BranchName), "session/~w", [SessionId]),
+    format(string(BranchName), "session-~w", [SessionId]),
     run(command(git(rev_parse(['--verify', BranchName]))), VerifyResult),
     (VerifyResult = ok(_) ->
-        uuid(TransactionId),
-
         % Switch to session branch
         run(command(git(checkout([BranchName]))), _),
 
-        % Record transaction start
-        assertz(session_transaction(SessionId, TransactionId, Commands, executing)),
-
-        % Execute commands
+        % Execute commands with Git-based transaction
         execute_commands_atomically(Commands, ExecuteResult),
 
         (ExecuteResult = ok(Results) ->
-            % Commit transaction
-            commit_transaction(SessionId, TransactionId, Commands, CommitResult),
+            % Commit transaction - this IS the transaction record
+            commit_transaction(SessionId, Commands, CommitResult),
             (CommitResult = ok(CommitHash) ->
-                retract(session_transaction(SessionId, TransactionId, Commands, executing)),
-                assertz(session_transaction(SessionId, TransactionId, Commands, committed)),
-                Result = ok(transaction_committed(TransactionId, CommitHash, Results))
+                Result = ok(transaction_committed(CommitHash, Results))
             ;
-                % Commit failed - rollback
-                rollback_transaction(SessionId, TransactionId),
+                % Commit failed - rollback already happened in execute_commands_atomically
                 Result = error(commit_failed(CommitResult))
             )
         ;
-            % Commands failed - rollback
-            rollback_transaction(SessionId, TransactionId),
+            % Commands failed - rollback already happened in execute_commands_atomically
             Result = error(commands_failed(ExecuteResult))
         )
     ;
@@ -313,15 +431,19 @@ execute_commands_atomically(Commands, Result) :-
         Result = ok(Results)
     ).
 
-% Commit transaction with simple message and individual src files
-commit_transaction(_SessionId, _TransactionId, _Commands, Result) :-
+% Commit transaction with Git commit as transaction record
+commit_transaction(SessionId, Commands, Result) :-
     % Find and add files in src directory
     find_src_files(SrcFiles),
     add_src_files(SrcFiles, AddResult),
 
     (AddResult = ok(_) ->
-        % Commit with simple message
-        run(command(git(commit(['-m', 'saving work']))), CommitResult),
+        % Create structured commit message with command summary
+        summarize_commands(Commands, CommandSummary),
+        format(string(CommitMsg), "Session ~w: ~w", [SessionId, CommandSummary]),
+
+        % Commit with descriptive message - this creates the transaction record
+        run(command(git(commit(['-m', CommitMsg]))), CommitResult),
         (CommitResult = ok(_) ->
             get_current_commit(CommitHash),
             Result = ok(CommitHash)
@@ -332,11 +454,7 @@ commit_transaction(_SessionId, _TransactionId, _Commands, Result) :-
         Result = error(AddResult)
     ).
 
-% Rollback transaction
-rollback_transaction(SessionId, TransactionId) :-
-    retract(session_transaction(SessionId, TransactionId, Commands, executing)),
-    assertz(session_transaction(SessionId, TransactionId, Commands, rolled_back)),
-    format("Transaction ~w rolled back~n", [TransactionId]).
+% No rollback tracking needed - Git reset --hard is the rollback
 
 % Helper predicates for staging src files
 find_src_files(SrcFiles) :-
@@ -389,15 +507,30 @@ session_branch_to_info(session(SessionId, BranchName), session(SessionId, Branch
     % We could enhance this to get start commit from git log if needed
     true.
 
-% List transactions for a session
+% List transactions for a session (Git-inferred from commits)
 list_session_transactions(SessionId, Transactions) :-
-    findall(transaction(TId, Commands, State),
-            session_transaction(SessionId, TId, Commands, State),
-            Transactions).
+    format(string(BranchName), "session-~w", [SessionId]),
+    run(command(git(rev_parse(['--verify', BranchName]))), VerifyResult),
+    (VerifyResult = ok(_) ->
+        % Get commits on session branch that aren't on main
+        run(command(git(log(['--format=%H|%s', '--reverse', BranchName, '^main']))), LogResult),
+        (LogResult = ok(LogOutput) ->
+            split_string(LogOutput, '\n', '\n \t', CommitLines),
+            findall(transaction(CommitHash, CommitMsg, committed),
+                    (member(Line, CommitLines),
+                     Line \= '',
+                     split_string(Line, '|', '', [CommitHash, CommitMsg])),
+                    Transactions)
+        ;
+            Transactions = []
+        )
+    ;
+        Transactions = []
+    ).
 
 % Show session history (Git log for session branch)
 show_session_history(SessionId) :-
-    format(string(BranchName), "session/~w", [SessionId]),
+    format(string(BranchName), "session-~w", [SessionId]),
     run(command(git(rev_parse(['--verify', BranchName]))), VerifyResult),
     (VerifyResult = ok(_) ->
         run(command(git(log(['--oneline', '--graph', BranchName]))), LogResult),
@@ -456,21 +589,80 @@ execute(transaction(Commands), Result) :-
 
 % Advanced session features
 
-% Switch between sessions
+% Switch between sessions with transition branch for unstaged changes
 switch_session(TargetSessionId, Result) :-
-    % Check if target session exists by checking for branch
-    format(string(TargetBranch), "session/~w", [TargetSessionId]),
+    switch_session_with_transition(TargetSessionId, Result).
+
+% Safe session switching with transition branches for dirty state
+switch_session_with_transition(TargetSessionId, Result) :-
+    % Check if target session exists
+    format(string(TargetBranch), "session-~w", [TargetSessionId]),
     run(command(git(rev_parse(['--verify', TargetBranch]))), VerifyResult),
     (VerifyResult = ok(_) ->
-        % Switch to target session branch
-        run(command(git(checkout([TargetBranch]))), SwitchResult),
-        (SwitchResult = ok(_) ->
-            Result = ok(switched_to_session(TargetSessionId, TargetBranch))
+        % Get current state
+        get_current_branch(CurrentBranch),
+        check_git_status(StatusResult),
+
+        (StatusResult = clean ->
+            % No changes - direct switch
+            run(command(git(checkout([TargetBranch]))), SwitchResult),
+            (SwitchResult = ok(_) ->
+                Result = ok(switched_to_session(TargetSessionId, TargetBranch, direct))
+            ;
+                Result = error(failed_to_switch(SwitchResult))
+            )
         ;
-            Result = error(failed_to_switch(SwitchResult))
+            % Has changes - use transition branch
+            create_transition_branch(CurrentBranch, TargetSessionId, TransitionResult),
+            (TransitionResult = ok(transition_created(TransitionBranch)) ->
+                % Now switch to target session
+                run(command(git(checkout([TargetBranch]))), SwitchResult),
+                (SwitchResult = ok(_) ->
+                    Result = ok(switched_to_session(TargetSessionId, TargetBranch, via_transition(TransitionBranch)))
+                ;
+                    Result = error(failed_to_switch_after_transition(SwitchResult, TransitionBranch))
+                )
+            ;
+                Result = error(failed_to_create_transition(TransitionResult))
+            )
         )
     ;
         Result = error(session_not_found(TargetSessionId))
+    ).
+
+% Create transition branch for current state before switching
+create_transition_branch(SourceBranch, TargetSessionId, Result) :-
+    % Generate transition branch name: transition_branch/source--target
+    format(string(TransitionBranch), "transition_branch/~w--~w", [SourceBranch, TargetSessionId]),
+
+    % Create and switch to transition branch
+    run(command(git(checkout(['-b', TransitionBranch]))), CreateResult),
+    (CreateResult = ok(_) ->
+        % Stage all changes (including untracked files)
+        run(command(git(add(['.']))), AddResult),
+        (AddResult = ok(_) ->
+            % Commit with descriptive message
+            format(string(CommitMsg), "Transition: ~w -> session-~w", [SourceBranch, TargetSessionId]),
+            run(command(git(commit(['-m', CommitMsg]))), CommitResult),
+            (CommitResult = ok(_) ->
+                Result = ok(transition_created(TransitionBranch))
+            ;
+                Result = error(failed_to_commit_transition(CommitResult))
+            )
+        ;
+            Result = error(failed_to_stage_changes(AddResult))
+        )
+    ;
+        Result = error(failed_to_create_transition_branch(CreateResult))
+    ).
+
+% Check git status - clean or dirty
+check_git_status(Status) :-
+    run(command(git(status(['--porcelain']))), StatusResult),
+    (StatusResult = ok("") ->
+        Status = clean
+    ;
+        Status = dirty
     ).
 
 % Suspend current session (switch back to main)
@@ -494,7 +686,7 @@ suspend_session(SessionId, Result) :-
 
 % Resume session (switch back to session branch)
 resume_session(SessionId, Result) :-
-    format(string(BranchName), "session/~w", [SessionId]),
+    format(string(BranchName), "session-~w", [SessionId]),
     run(command(git(rev_parse(['--verify', BranchName]))), VerifyResult),
     (VerifyResult = ok(_) ->
         run(command(git(checkout([BranchName]))), SwitchResult),
@@ -553,7 +745,7 @@ string_trim(String, Trimmed) :-
 kill_session(SessionId, Result) :-
     % Safety check: Don't kill current session
     get_current_branch(CurrentBranch),
-    format(string(SessionBranch), "session/~w", [SessionId]),
+    format(string(SessionBranch), "session-~w", [SessionId]),
 
     (CurrentBranch = SessionBranch ->
         Result = error(cannot_kill_current_session(SessionId, CurrentBranch))
@@ -564,8 +756,6 @@ kill_session(SessionId, Result) :-
             % Session exists and is not current - safe to kill
             kill_session_branch(SessionBranch, KillResult),
             (KillResult = ok(_) ->
-                % Clean up transaction tracking only
-                retractall(session_transaction(SessionId, _, _, _)),
                 Result = ok(session_killed(SessionId, SessionBranch))
             ;
                 Result = error(kill_failed(KillResult))
@@ -599,7 +789,7 @@ kill_all_inactive_sessions(Result) :-
 
 kill_inactive_sessions([], _, Acc, Acc).
 kill_inactive_sessions([SessionId|Rest], CurrentBranch, Acc, Results) :-
-    format(string(SessionBranch), "session/~w", [SessionId]),
+    format(string(SessionBranch), "session-~w", [SessionId]),
     (CurrentBranch = SessionBranch ->
         % Skip current session
         kill_inactive_sessions(Rest, CurrentBranch, [skipped(SessionId, current)|Acc], Results)
@@ -640,8 +830,6 @@ emergency_session_cleanup(Result) :-
     (CheckoutResult = ok(_) ->
         % Delete all session branches
         cleanup_all_session_branches(CleanupResult),
-        % Clear transaction tracking only (no session tracking to clear)
-        retractall(session_transaction(_, _, _, _)),
 
         % Restore original state if possible
         (CurrentBranch \= 'main' ->
@@ -715,9 +903,6 @@ abandon_current_session_safely(Result) :-
         % Switch to main and delete session
         run(command(git(checkout(['main']))), _),
         kill_session_branch(CurrentBranch, KillResult),
-
-        % Clean up transaction tracking only
-        retractall(session_transaction(SessionId, _, _, _)),
 
         Result = ok(session_abandoned_safely(SessionId, CurrentBranch, HasChanges, KillResult))
     ;
@@ -876,7 +1061,12 @@ session_stats(Stats) :-
     list_session_branches(SessionBranches),
     length(SessionBranches, SessionCount),
 
-    findall(TransactionId, session_transaction(_, TransactionId, _, _), AllTransactions),
+    % Count total transactions across all sessions (Git-inferred)
+    findall(Transaction,
+            (member(session(SessionId, _), SessionBranches),
+             list_session_transactions(SessionId, SessionTransactions),
+             member(Transaction, SessionTransactions)),
+            AllTransactions),
     length(AllTransactions, TransactionCount),
 
     get_current_branch(CurrentBranch),
@@ -906,15 +1096,13 @@ docstring(get_current_branch,
     ||}).
 
 get_current_branch(BranchName) :-
-    run(command(git(rev_parse(['--abbrev-ref', 'HEAD']))), RetVal),
-    return_value(RetVal, status(0)),
-    return_value(RetVal, stdout(Output)),
-    split_string(Output, '\n', '\n \t', [BranchName|_]).
+    run(command(git(rev_parse(['--abbrev-ref', 'HEAD']))), ok(Output)),
+    string_trim(Output, BranchName).
 
 docstring(parse_session_from_branch,
     {|string(_)||
     Parse session information from a branch name.
-    Session branches follow the pattern: session/<session_id>
+    Session branches follow the pattern: session-{session_id}
     Format: parse_session_from_branch(BranchName, SessionId, IsSessionBranch)
     Arguments:
       BranchName: Git branch name to parse
@@ -924,7 +1112,7 @@ docstring(parse_session_from_branch,
 
 parse_session_from_branch(BranchName, SessionId, true) :-
     atom_string(BranchName, BranchStr),
-    string_concat("session/", SessionId, BranchStr), !.
+    string_concat("session-", SessionId, BranchStr), !.
 parse_session_from_branch(_, _, false).
 
 docstring(is_session_branch,
@@ -948,9 +1136,7 @@ docstring(list_session_branches,
     ||}).
 
 list_session_branches(SessionBranches) :-
-    run(command(git(branch([--format='%(refname:short)']))), RetVal),
-    return_value(RetVal, status(0)),
-    return_value(RetVal, stdout(Output)),
+    run(command(git(branch(['--format=%(refname:short)']))), ok(Output)),
     split_string(Output, '\n', '\n \t', BranchLines),
     findall(session(SessionId, BranchName),
             (member(BranchName, BranchLines),

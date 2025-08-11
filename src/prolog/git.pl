@@ -144,6 +144,7 @@ git_args(branch(Args)) --> ["branch" | Args].  % Handle branch with args list
 git_args(checkout(Branch)) --> ["checkout", Branch].
 git_args(checkout(Args)) --> ["checkout" | Args].  % Handle checkout with args list
 git_args(status) --> ["status"].
+git_args(status(Args)) --> ["status" | Args].  % Handle status with args list
 git_args(diff) --> ["diff"].
 git_args(log) --> ["log"].
 git_args(log(Args)) --> ["log" | Args].  % Handle log with args list
