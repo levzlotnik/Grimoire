@@ -18,6 +18,15 @@ setup :-
 teardown :-
     % Clean up test sessions and branches
     cleanup_test_branches,
+    % Aggressively clean up any remaining transition branches
+    catch((
+        run(command(git(branch(['--format=%(refname:short)']))), BranchResult),
+        (BranchResult = ok(result(BranchOutput, _)) ->
+            split_string(BranchOutput, '\n', '\n \t', BranchLines),
+            include(is_transition_or_test_branch, BranchLines, TestBranches),
+            maplist(force_delete_branch, TestBranches)
+        ; true)
+    ), _, true),
     % Clean up any test files we created
     catch(delete_file('test_dirty_state.txt'), _, true),
     catch(delete_file('test_changes_new.txt'), _, true),
@@ -54,6 +63,15 @@ is_test_branch(BranchName) :-
      sub_atom(BranchAtom, 0, _, _, 'transition_branch/')).
 
 delete_test_branch(BranchName) :-
+    catch(run(command(git(branch(['-D', BranchName]))), _), _, true).
+
+% More aggressive cleanup helpers for teardown
+is_transition_or_test_branch(BranchName) :-
+    atom_string(BranchAtom, BranchName),
+    (sub_atom(BranchAtom, 0, _, _, 'session-test-') ;
+     sub_atom(BranchAtom, 0, _, _, 'transition_branch/')).
+
+force_delete_branch(BranchName) :-
     catch(run(command(git(branch(['-D', BranchName]))), _), _, true).
 
 test(clean_state_session_creation, [setup(setup), cleanup(teardown)]) :-
