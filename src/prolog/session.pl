@@ -530,7 +530,7 @@ get_current_commit(Commit) :-
 
 % Get current Git branch
 get_current_branch(Branch) :-
-    run(command(git(branch(['--show-current']))), ok(BranchOutput)),
+    run(command(git(branch(['--show-current']))), ok(result(BranchOutput, _))),
     string_trim(BranchOutput, Branch).
 
 % Create readable command summary
@@ -1193,7 +1193,7 @@ docstring(get_current_branch,
     ||}).
 
 get_current_branch(BranchName) :-
-    run(command(git(rev_parse(['--abbrev-ref', 'HEAD']))), ok(Output)),
+    run(command(git(rev_parse(['--abbrev-ref', 'HEAD']))), ok(result(Output, _))),
     string_trim(Output, BranchName).
 
 docstring(parse_session_from_branch,
