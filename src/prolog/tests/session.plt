@@ -1,5 +1,7 @@
 % Session and Tranteardown :-
-    % Clean up test sessions and branches
+    % Clean up test sessions and branis_test_branch(BranchName) :-
+    (sub_string(BranchName, 0, _, _, 'session-test-') ;
+     sub_string(BranchName, 0, _, _, 'transition_branch/main--session-test')).
     cleanup_test_branches,
     % Clean up any test files we created
     catch(delete_file('test_dirty_state.txt'), _, true),

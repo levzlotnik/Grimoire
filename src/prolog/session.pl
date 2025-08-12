@@ -386,8 +386,7 @@ find_transition_for_session(SessionId, TransitionBranch) :-
         format(string(Pattern), "--session-~w", [SessionId]),
 
         (member(Branch, BranchLines),
-         atom_string(BranchAtom, Branch),
-         sub_atom(BranchAtom, _, _, _, Pattern) ->
+         sub_string(Branch, _, _, _, Pattern) ->
             TransitionBranch = Branch
         ;
             TransitionBranch = none
@@ -408,8 +407,7 @@ list_transition_branches(TransitionBranches) :-
 
 % Helper: check if branch name is a transition branch
 is_transition_branch(BranchName) :-
-    atom_string(BranchAtom, BranchName),
-    sub_atom(BranchAtom, 0, _, _, 'transition_branch/').
+    sub_string(BranchName, 0, _, _, 'transition_branch/').
 
 % Cleanup orphaned transition branches (for sessions that no longer exist)
 cleanup_orphaned_transitions(Result) :-
@@ -420,12 +418,11 @@ cleanup_orphaned_transitions(Result) :-
 
 % Helper: check if transition branch is orphaned (session doesn't exist)
 is_orphaned_transition(TransitionBranch) :-
-    % Extract session ID from transition branch name
-    atom_string(BranchAtom, TransitionBranch),
-    sub_atom(BranchAtom, _, _, 0, Suffix),
-    sub_atom(Suffix, StartPos, _, 0, SessionPart),
-    sub_atom(SessionPart, 0, 8, _, 'session-'),
-    sub_atom(SessionPart, 8, _, 0, SessionId),
+    % Extract session ID from transition branch name using string operations
+    sub_string(TransitionBranch, _, _, 0, Suffix),
+    sub_string(Suffix, StartPos, _, 0, SessionPart),
+    sub_string(SessionPart, 0, 8, _, 'session-'),
+    sub_string(SessionPart, 8, _, 0, SessionId),
     % Check if session branch exists
     \+ session_exists(SessionId).
 
@@ -722,8 +719,7 @@ check_tracked_changes(Status) :-
     run(command(git(status(['--porcelain']))), StatusResult),
     (StatusResult = ok(result(Output, _)) ->
         % Parse porcelain output for tracked changes (modifications)
-        (atom_string(OutputAtom, Output),
-         atomic_list_concat(Lines, '\n', OutputAtom),
+        (split_string(Output, '\n', '\n \t', Lines),
          include(is_tracked_change, Lines, TrackedChanges),
          (TrackedChanges = [] ->
              Status = clean
@@ -970,14 +966,12 @@ cleanup_all_session_branches(Result) :-
 
 % Helper to identify session branches
 is_session_branch(Branch) :-
-    atom_string(BranchAtom, Branch),
-    sub_atom(BranchAtom, 0, 8, _, 'session-').
+    sub_string(Branch, 0, 8, _, 'session-').
 
 % Delete multiple session branches
 delete_session_branches([], []).
 delete_session_branches([Branch|Rest], [Result|Results]) :-
-    atom_string(BranchAtom, Branch),
-    kill_session_branch(BranchAtom, Result),
+    kill_session_branch(Branch, Result),
     delete_session_branches(Rest, Results).
 
 % Safe session abandonment (alternative to killing)
