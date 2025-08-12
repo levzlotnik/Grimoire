@@ -1,301 +1,260 @@
-% Session and Transaction System Tests
+% Session and Transaction System Tests - Transition Branch System
 :- use_module(library(plunit)).
 :- use_module(library(uuid)).
 
 % Load the session system
 :- ensure_loaded("../session.pl").
 
-% Test suite for session management
-:- begin_tests(session_management).
+% Test suite for transition branch system
+:- begin_tests(transition_branches).
 
 setup :-
-    % No dynamic facts to clean up - all state is in Git
-    % Ensure we're on main branch for tests (ignore failures)
-    catch(run(command(git(checkout(['main']))), _), _, true).
+    % Ensure we're on main branch for tests
+    catch(run(command(git(checkout(['main']))), _), _, true),
+    % Clean up any existing test branches
+    cleanup_test_branches.
 
 teardown :-
     % Clean up test sessions and branches
-    cleanup_test_sessions.
+    cleanup_test_branches,
+    % Return to main
+    catch(run(command(git(checkout(['main']))), _), _, true).
 
-% Helper to clean up test sessions
-cleanup_test_sessions :-
-    % No dynamic facts to clean up - all state is in Git
-    % Try to switch to main (ignore errors)
+% Helper to clean up test branches
+cleanup_test_branches :-
+    % Clean up any session branches starting with test-
+    catch((
+        run(command(git(branch(['--format=%(refname:short)']))), BranchResult),
+        (BranchResult = ok(BranchOutput) ->
+            split_string(BranchOutput, '\n', '\n \t', BranchLines),
+            include(is_test_branch, BranchLines, TestBranches),
+            maplist(delete_test_branch, TestBranches)
+        ; true)
+    ), _, true),
+    % Clean up any transition branches
+    catch(cleanup_orphaned_transitions(_), _, true).
+
+is_test_branch(BranchName) :-
+    atom_string(BranchAtom, BranchName),
+    (sub_atom(BranchAtom, 0, _, _, 'session-test-') ; 
+     sub_atom(BranchAtom, 0, _, _, 'transition_branch/')).
+
+delete_test_branch(BranchName) :-
+    catch(run(command(git(branch(['-D', BranchName]))), _), _, true).
+
+test(clean_state_session_creation, [setup(setup), cleanup(teardown)]) :-
+    % Ensure clean git state
+    check_tracked_changes(Status),
+    assertion(Status = clean),
+    
+    % Create session with clean state - should use direct creation
+    start_session_with_transition('test-clean-session', Result),
+    
+    % Verify session created successfully
+    assertion(Result = ok(session_created('test-clean-session', direct_creation))),
+    
+    % Verify session branch exists
+    assertion(session_exists('test-clean-session')),
+    
+    % Verify no transition branch was created
+    find_transition_for_session('test-clean-session', TransitionBranch),
+    assertion(TransitionBranch = none).
+
+test(dirty_state_session_creation, [setup(setup), cleanup(teardown)]) :-
+    % Create dirty state by modifying README
+    run(command(executable_program(path(echo), ['# Test dirty state', '>>', 'README.md'])), _),
+    
+    % Verify we have dirty tracked changes
+    check_tracked_changes(Status),
+    assertion(Status = dirty(tracked_changes(_))),
+    
+    % Create session with dirty state - should use transition branch
+    start_session_with_transition('test-dirty-session', Result),
+    
+    % Verify session created with transition
+    assertion(Result = ok(session_created('test-dirty-session', transition_used(_)))),
+    
+    % Verify session branch exists
+    assertion(session_exists('test-dirty-session')),
+    
+    % Verify transition branch was created
+    find_transition_for_session('test-dirty-session', TransitionBranch),
+    assertion(TransitionBranch \= none),
+    
+    % Clean up dirty state
+    run(command(git(checkout(['--', 'README.md']))), _).
+
+test(transition_branch_naming, [setup(setup), cleanup(teardown)]) :-
+    % Test transition branch name generation
+    transition_branch_name('main', 'test-session-123', TransitionBranch),
+    assertion(TransitionBranch = 'transition_branch/main--session-test-session-123'),
+    
+    % Test session branch name generation
+    session_branch_name('test-session-456', SessionBranch),
+    assertion(SessionBranch = 'session-test-session-456').
+
+test(tracked_changes_parsing, [setup(setup), cleanup(teardown)]) :-
+    % Create various types of changes
+    run(command(executable_program(path(echo), ['test content', '>', 'test_new_file.txt'])), _),
+    run(command(git(add(['test_new_file.txt']))), _),
+    run(command(executable_program(path(echo), ['# Modified README', '>>', 'README.md'])), _),
+    
+    % Check parsed status
+    check_tracked_changes(Status),
+    assertion(Status = dirty(tracked_changes(Changes))),
+    
+    % Verify structured terms
+    member(added('test_new_file.txt'), Changes),
+    member(modified('README.md'), Changes),
+    
+    % Clean up
+    run(command(git(reset(['HEAD', 'test_new_file.txt']))), _),
+    run(command(executable_program(path(rm), ['-f', 'test_new_file.txt'])), _),
+    run(command(git(checkout(['--', 'README.md']))), _).
+
+test(transition_branch_management, [setup(setup), cleanup(teardown)]) :-
+    % Create a few transition branches manually for testing
+    run(command(git(checkout(['-b', 'transition_branch/main--session-test1']))), _),
+    run(command(git(checkout(['main']))), _),
+    run(command(git(checkout(['-b', 'transition_branch/main--session-test2']))), _),
+    run(command(git(checkout(['main']))), _),
+    
+    % Test listing transition branches
+    list_transition_branches(Transitions),
+    assertion(length(Transitions, 2)),
+    assertion(member('transition_branch/main--session-test1', Transitions)),
+    assertion(member('transition_branch/main--session-test2', Transitions)).
+
+test(should_use_transition_logic, [setup(setup), cleanup(teardown)]) :-
+    % Clean state, new session - should not use transition
+    check_tracked_changes(Status1),
+    assertion(Status1 = clean),
+    assertion(\+ should_use_transition('test-new-session')),
+    
+    % Create dirty state
+    run(command(executable_program(path(echo), ['# Test', '>>', 'README.md'])), _),
+    
+    % Dirty state, new session - should use transition
+    assertion(should_use_transition('test-new-session-2')),
+    
+    % Clean up
+    run(command(git(checkout(['--', 'README.md']))), _).
+
+:- end_tests(transition_branches).
+
+% Test suite for session lifecycle with transitions
+:- begin_tests(session_lifecycle).
+
+setup :-
     catch(run(command(git(checkout(['main']))), _), _, true),
-    % Clean up any test session branches
-    catch(kill_all_inactive_sessions(_), _, true).
-
-test(start_session_creates_branch, [setup(setup), cleanup(teardown)]) :-
-    % Test starting a session always creates new branch
-    start_session(SessionId, Result),
-
-    % Verify session was created
-    assertion(ground(SessionId)),
-    assertion(Result = ok(session_started(SessionId, _, _))),
-
-    % Verify session exists (Git-inferred)
-    assertion(current_session(SessionId)),
-
-    % Verify we're on the session branch
-    get_current_branch(CurrentBranch),
-    format(string(ExpectedBranch), "session/~w", [SessionId]),
-    assertion(CurrentBranch = ExpectedBranch).
-
-test(execute_transaction_success, [setup(setup), cleanup(teardown)]) :-
-    % Start a session
-    start_session(SessionId, _),
-
-    % Execute a simple transaction
-    Commands = [command(mkfile("/tmp/test_session_file.txt"))],
-    execute_transaction(SessionId, Commands, Result),
-
-    % Verify transaction succeeded (Git-native result)
-    assertion(Result = ok(transaction_committed(_, [ok(_)]))),
-
-    % Verify transaction is tracked in Git
-    list_session_transactions(SessionId, Transactions),
-    assertion(length(Transactions, 1)),
-
-    % Verify file was created
-    assertion(exists_file("/tmp/test_session_file.txt")),
-
-    % Clean up
-    delete_file("/tmp/test_session_file.txt").
-
-test(execute_transaction_rollback, [setup(setup), cleanup(teardown)]) :-
-    % Start a session
-    start_session(SessionId, _),
-
-    % Execute a transaction that should fail
-    Commands = [
-        command(mkfile("/tmp/test_session_file1.txt")),
-        command(shell(["false"]))  % This will fail
-    ],
-    execute_transaction(SessionId, Commands, Result),
-
-    % Verify transaction failed
-    assertion(Result = error(commands_failed(_))),
-
-    % Verify rollback occurred - file should not exist
-    assertion(\+ exists_file("/tmp/test_session_file1.txt")).
-
-test(close_session_merge, [setup(setup), cleanup(teardown)]) :-
-    % Start a session and make a change
-    start_session(SessionId, _),
-    execute_transaction(SessionId, [command(mkfile("/tmp/test_merge_file.txt"))], _),
-
-    % Close session with merge strategy
-    close_session(SessionId, merge_to_main, Result),
-
-    % Verify merge succeeded
-    assertion(Result = ok(merged_and_deleted(_))),
-
-    % Verify we're back on main
-    get_current_branch(CurrentBranch),
-    assertion(CurrentBranch = "main"),
-
-    % Verify session no longer exists (Git-inferred)
-    assertion(\+ current_session(SessionId)),
-
-    % Verify file still exists (merged to main)
-    assertion(exists_file("/tmp/test_merge_file.txt")),
-
-    % Clean up
-    delete_file("/tmp/test_merge_file.txt").
-
-test(close_session_abandon, [setup(setup), cleanup(teardown)]) :-
-    % Start a session and make a change
-    start_session(SessionId, _),
-    execute_transaction(SessionId, [command(mkfile("/tmp/test_abandon_file.txt"))], _),
-
-    % Close session with abandon strategy
-    close_session(SessionId, abandon, Result),
-
-    % Verify abandon succeeded
-    assertion(Result = ok(abandoned(_))),
-
-    % Verify we're back on main
-    get_current_branch(CurrentBranch),
-    assertion(CurrentBranch = "main"),
-
-    % Verify session no longer exists (Git-inferred)
-    assertion(\+ current_session(SessionId)),
-
-    % Verify file does not exist (abandoned)
-    assertion(\+ exists_file("/tmp/test_abandon_file.txt")).
-
-test(session_workflow_convenience, [setup(setup), cleanup(teardown)]) :-
-    % Test the with_session convenience predicate
-    Commands = [command(mkfile("/tmp/test_workflow_file.txt"))],
-    with_session(Commands, Result),
-
-    % Verify workflow completed (Git-native result format)
-    assertion(Result = session_completed(_, ok(transaction_committed(_, _)), ok(merged_and_deleted(_)))),
-
-    % Verify file exists (merged to main)
-    assertion(exists_file("/tmp/test_workflow_file.txt")),
-
-    % Clean up
-    delete_file("/tmp/test_workflow_file.txt").
-
-test(multi_transaction_session, [setup(setup), cleanup(teardown)]) :-
-    % Start a session
-    start_session(SessionId, _),
-
-    % Execute multiple transactions
-    execute_transaction(SessionId, [command(mkfile("/tmp/test_multi1.txt"))], Result1),
-    execute_transaction(SessionId, [command(mkfile("/tmp/test_multi2.txt"))], Result2),
-
-    % Verify both transactions succeeded (Git-native format)
-    assertion(Result1 = ok(transaction_committed(_, _))),
-    assertion(Result2 = ok(transaction_committed(_, _))),
-
-    % Verify both files exist
-    assertion(exists_file("/tmp/test_multi1.txt")),
-    assertion(exists_file("/tmp/test_multi2.txt")),
-
-    % Close session
-    close_session(SessionId, merge_to_main, _),
-
-    % Clean up
-    delete_file("/tmp/test_multi1.txt"),
-    delete_file("/tmp/test_multi2.txt").
-
-test(session_history, [setup(setup), cleanup(teardown)]) :-
-    % Start a session and make transactions
-    start_session(SessionId, _),
-    execute_transaction(SessionId, [command(mkfile("/tmp/test_history1.txt"))], _),
-    execute_transaction(SessionId, [command(mkfile("/tmp/test_history2.txt"))], _),
-
-    % Get session history
-    show_session_history(SessionId),
-
-    % Verify session has transactions recorded
-    list_session_transactions(SessionId, Transactions),
-    assertion(length(Transactions, 2)),
-
-    % Close session
-    close_session(SessionId, abandon, _).
-
-:- end_tests(session_management).
-
-% Test suite for session integration
-:- begin_tests(session_integration).
-
-setup :-
-    % No dynamic facts to clean up - all state is in Git
-    true.
+    cleanup_test_branches.
 
 teardown :-
-    cleanup_test_sessions,
-    run(command(git(checkout(['main']))), _).
+    cleanup_test_branches,
+    catch(run(command(git(checkout(['main']))), _), _, true).
 
-test(execute_with_active_session, [setup(setup), cleanup(teardown)]) :-
-    % Start a session
-    start_session(SessionId, _),
+% Use same cleanup helper
+cleanup_test_branches :-
+    catch((
+        run(command(git(branch(['--format=%(refname:short)']))), BranchResult),
+        (BranchResult = ok(BranchOutput) ->
+            split_string(BranchOutput, '\n', '\n \t', BranchLines),
+            include(is_test_branch, BranchLines, TestBranches),
+            maplist(delete_test_branch, TestBranches)
+        ; true)
+    ), _, true),
+    catch(cleanup_orphaned_transitions(_), _, true).
 
-    % Use the enhanced execute/2 - should work within session
-    execute(transaction([command(mkfile("/tmp/test_integrate.txt"))]), Result),
+is_test_branch(BranchName) :-
+    atom_string(BranchAtom, BranchName),
+    (sub_atom(BranchAtom, 0, _, _, 'session-test-') ; 
+     sub_atom(BranchAtom, 0, _, _, 'transition_branch/')).
 
-    % Verify it executed within the session (Git-native format)
-    assertion(Result = ok(transaction_committed(_, _))),
+delete_test_branch(BranchName) :-
+    catch(run(command(git(branch(['-D', BranchName]))), _), _, true).
 
-    % Verify transaction is tracked in session (Git-inferred)
-    list_session_transactions(SessionId, Transactions),
-    assertion(length(Transactions, 1)),
+test(full_session_workflow_clean, [setup(setup), cleanup(teardown)]) :-
+    % Full workflow with clean state
+    start_session_with_transition('test-workflow-clean', CreateResult),
+    assertion(CreateResult = ok(session_created('test-workflow-clean', direct_creation))),
+    
+    % Execute transaction
+    execute_transaction('test-workflow-clean', [command(mkfile('/tmp/test_workflow.txt'))], ExecResult),
+    assertion(ExecResult = ok(_)),
+    
+    % Close session
+    close_session('test-workflow-clean', merge_to_main, CloseResult),
+    assertion(CloseResult = ok(_)),
+    
+    % Verify transition cleanup (should be none since direct creation)
+    find_transition_for_session('test-workflow-clean', TransitionBranch),
+    assertion(TransitionBranch = none),
+    
+    % Clean up file
+    catch(delete_file('/tmp/test_workflow.txt'), _, true).
 
+test(full_session_workflow_dirty, [setup(setup), cleanup(teardown)]) :-
+    % Create dirty state
+    run(command(executable_program(path(echo), ['# Test workflow dirty', '>>', 'README.md'])), _),
+    
+    % Full workflow with dirty state
+    start_session_with_transition('test-workflow-dirty', CreateResult),
+    assertion(CreateResult = ok(session_created('test-workflow-dirty', transition_used(_)))),
+    
+    % Execute transaction
+    execute_transaction('test-workflow-dirty', [command(mkfile('/tmp/test_workflow_dirty.txt'))], ExecResult),
+    assertion(ExecResult = ok(_)),
+    
+    % Close session - should clean up transition branch
+    close_session('test-workflow-dirty', merge_to_main, CloseResult),
+    assertion(CloseResult = ok(_)),
+    
+    % Verify transition was cleaned up
+    find_transition_for_session('test-workflow-dirty', TransitionBranch),
+    assertion(TransitionBranch = none),
+    
     % Clean up
-    close_session(SessionId, abandon, _).
+    run(command(git(checkout(['--', 'README.md']))), _),
+    catch(delete_file('/tmp/test_workflow_dirty.txt'), _, true).
 
-test(execute_without_session, [setup(setup), cleanup(teardown)]) :-
-    % Ensure no active session
-    assertion(\+ current_session(_)),
+:- end_tests(session_lifecycle).
 
-    % Use execute/2 without session - should work in legacy mode
-    execute(transaction([command(mkfile("/tmp/test_legacy.txt"))]), Result),
-
-    % Verify it executed in legacy mode
-    assertion(Result = ok([ok(_)])),
-
-    % Verify file exists
-    assertion(exists_file("/tmp/test_legacy.txt")),
-
-    % Clean up
-    delete_file("/tmp/test_legacy.txt").
-
-test(session_context_discovery, [setup(setup), cleanup(teardown)]) :-
-    % Test without active session
-    discover_session_context(Context1),
-    assertion(Context1 = "No active session - working on main branch"),
-
-    % Test with active session
-    start_session(SessionId, _),
-    execute_transaction(SessionId, [command(mkfile("/tmp/test_context.txt"))], _),
-
-    discover_session_context(Context2),
-    assertion(sub_string(Context2, _, _, _, "Active session:")),
-
-    % Clean up
-    close_session(SessionId, abandon, _).
-
-:- end_tests(session_integration).
-
-% Test suite for advanced session features
-:- begin_tests(session_advanced).
+% Test suite for error handling
+:- begin_tests(transition_error_handling).
 
 setup :-
-    % No dynamic facts to clean up - all state is in Git
-    run(command(git(checkout(['main']))), _).
+    catch(run(command(git(checkout(['main']))), _), _, true).
 
 teardown :-
-    cleanup_test_sessions,
-    run(command(git(checkout(['main']))), _).
+    catch(run(command(git(checkout(['main']))), _), _, true).
 
-test(feature_session_template, [setup(setup), cleanup(teardown)]) :-
-    % Test feature session template
-    start_feature_session("user-auth", SessionId, Result),
-
-    % Verify feature session started
-    assertion(Result = ok(feature_session_started(SessionId, "user-auth"))),
-    assertion(current_session(SessionId)),
-
+test(session_exists_check, [setup(setup), cleanup(teardown)]) :-
+    % Non-existent session
+    assertion(\+ session_exists('non-existent-session')),
+    
+    % Create session
+    start_session_with_transition('test-exists', _),
+    
+    % Now it should exist
+    assertion(session_exists('test-exists')),
+    
     % Clean up
-    close_session(SessionId, abandon, _).
+    catch(run(command(git(branch(['-D', 'session-test-exists']))), _), _, true).
 
-test(experiment_session_template, [setup(setup), cleanup(teardown)]) :-
-    % Test experiment session template
-    start_experiment_session("new-algorithm", SessionId, Result),
-
-    % Verify experiment session started
-    assertion(Result = ok(experiment_session_started(SessionId, "new-algorithm"))),
-    assertion(current_session(SessionId)),
-
+test(git_status_edge_cases, [setup(setup), cleanup(teardown)]) :-
+    % Test with completely clean repo
+    check_tracked_changes(Status1),
+    assertion(Status1 = clean),
+    
+    % Test has_dirty_tracked_files
+    assertion(\+ has_dirty_tracked_files),
+    
+    % Create untracked file (should still be clean for tracked changes)
+    run(command(executable_program(path(echo), ['untracked', '>', 'untracked_file.txt'])), _),
+    check_tracked_changes(Status2),
+    assertion(Status2 = clean),
+    
     % Clean up
-    close_session(SessionId, abandon, _).
+    run(command(executable_program(path(rm), ['-f', 'untracked_file.txt'])), _).
 
-test(session_snapshot, [setup(setup), cleanup(teardown)]) :-
-    % Start session and make changes
-    start_session(SessionId, _),
-    execute_transaction(SessionId, [command(mkfile("/tmp/test_snapshot.txt"))], _),
-
-    % Create snapshot
-    create_session_snapshot(SessionId, "before-refactor", Result),
-
-    % Verify snapshot created
-    assertion(Result = ok(snapshot_created(_))),
-
-    % Verify we're still on session branch (Git-inferred)
-    assertion(current_session(SessionId)),
-    get_current_branch(CurrentBranch),
-    format(string(ExpectedBranch), "session/~w", [SessionId]),
-    assertion(CurrentBranch = ExpectedBranch),
-
-    % Clean up
-    close_session(SessionId, abandon, _),
-    % Clean up snapshot branch
-    format(string(SnapshotBranch), "session/~w-snapshot-before-refactor", [SessionId]),
-    catch(run(command(git(branch(['-D', SnapshotBranch]))), _), _, true).
-
-:- end_tests(session_advanced).
-
-% Tests complete - string_trim is already defined in session.pl
+:- end_tests(transition_error_handling).

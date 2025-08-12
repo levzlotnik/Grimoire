@@ -187,11 +187,11 @@ format_session_subcommand(experiment, "session(experiment(Name)) - Start experim
 
 % Generate session branch name from session ID
 session_branch_name(SessionId, BranchName) :-
-    format(string(BranchName), "session-~w", [SessionId]).
+    format(atom(BranchName), "session-~w", [SessionId]).
 
 % Generate transition branch name
 transition_branch_name(SourceBranch, SessionId, TransitionBranch) :-
-    format(string(TransitionBranch), "transition_branch/~w--session-~w", [SourceBranch, SessionId]).
+    format(atom(TransitionBranch), "transition_branch/~w--session-~w", [SourceBranch, SessionId]).
 
 % Session management predicates
 
