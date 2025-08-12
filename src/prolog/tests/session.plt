@@ -15,7 +15,9 @@
     % Restore any tracked files that were modified
     catch(run(command(git(checkout(['--', '.']))), _), _, true),
     % Ensure we're on main branch
-    catch(run(command(git(checkout(['main']))), _), _, true).m Tests - Transition Branch System
+    catch(run(command(git(checkout(['main']))), _), _, true).
+
+% Session and Transaction System Tests - Transition Branch System
 :- use_module(library(plunit)).
 :- use_module(library(uuid)).
 
