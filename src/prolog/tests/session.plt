@@ -98,8 +98,9 @@ test(dirty_state_session_creation, [setup(setup), cleanup(teardown)]) :-
     find_transition_for_session('test-dirty-session', TransitionBranch),
     assertion(TransitionBranch \= none),
 
-    % Clean up
-    catch(close_session('test-dirty-session', discard, _), _, true),
+    % CRITICAL: Close the session properly
+    close_session('test-dirty-session', abandon, _),
+    % Clean up git state
     run(command(git(reset(['HEAD', 'test_dirty_state.txt']))), _),
     catch(delete_file('test_dirty_state.txt'), _, true).
 
