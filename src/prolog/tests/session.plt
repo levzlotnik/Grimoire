@@ -230,12 +230,14 @@ test(full_session_workflow_clean, [setup(setup), cleanup(teardown)]) :-
     catch(delete_file('/tmp/test_workflow.txt'), _, true).
 
 test(full_session_workflow_dirty, [setup(setup), cleanup(teardown)]) :-
-    % Create dirty state
-    run(command(executable_program(path(echo), ['# Test workflow dirty', '>>', 'README.md'])), _),
+    % Create dirty state using proper method
+    write_file('test_workflow_dirty.txt', 'initial content'),
+    run(command(git(add(['test_workflow_dirty.txt']))), _),
+    write_file('test_workflow_dirty.txt', 'modified content'),
 
     % Full workflow with dirty state
     start_session_with_transition('test-workflow-dirty', CreateResult),
-    assertion(CreateResult = ok(session_started('test-workflow-dirty', _, _, transition_used(_)))),
+    assertion(CreateResult = ok(session_started('test-workflow-dirty', _, _, via_transition(_)))),
 
     % Execute transaction
     execute_transaction('test-workflow-dirty', [command(mkfile('/tmp/test_workflow_dirty.txt'))], ExecResult),
@@ -250,7 +252,7 @@ test(full_session_workflow_dirty, [setup(setup), cleanup(teardown)]) :-
     assertion(TransitionBranch = none),
 
     % Clean up
-    run(command(git(checkout(['--', 'README.md']))), _),
+    run(command(git(checkout(['--', 'test_workflow_dirty.txt']))), _),
     catch(delete_file('/tmp/test_workflow_dirty.txt'), _, true).
 
 :- end_tests(session_lifecycle).
