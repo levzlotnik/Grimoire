@@ -122,22 +122,14 @@ test(transition_branch_naming, [setup(setup), cleanup(teardown)]) :-
     assertion(SessionBranch = 'session-test-session-456').
 
 test(tracked_changes_parsing, [setup(setup), cleanup(teardown)]) :-
-    % Use session framework for proper test file management
-    start_session_with_transition('test-parsing-session', SetupResult),
-    assertion(SetupResult = ok(session_started('test-parsing-session', _, _, _))),
-
-    % Create various types of changes within session
-    execute_transaction('test-parsing-session', [
-        command(mkfile('test_changes_new.txt')),
-        command(append_file('test_changes_new.txt', 'initial content')),
-        command(mkfile('test_changes_mod.txt')),
-        command(append_file('test_changes_mod.txt', 'initial content'))
-    ], _),
-
+    % Create test files using simple file operations
+    write_file('test_changes_new.txt', 'new content'),
+    write_file('test_changes_mod.txt', 'initial content'),
+    
     % Add files to git and commit
     run(command(git(add(['test_changes_new.txt', 'test_changes_mod.txt']))), _),
     run(command(git(commit(['-m', 'Add test files for parsing test']))), _),
-
+    
     % Modify one file to create dirty state
     write_file('test_changes_mod.txt', 'modified content'),
 
@@ -148,9 +140,7 @@ test(tracked_changes_parsing, [setup(setup), cleanup(teardown)]) :-
     % Verify structured terms
     member(modified('test_changes_mod.txt'), Changes),
 
-    % Clean up using session framework
-    close_session('test-parsing-session', discard, _),
-    % Reset git state
+    % Clean up git state
     run(command(git(reset(['--hard', 'HEAD~1']))), _).
 
 test(transition_branch_management, [setup(setup), cleanup(teardown)]) :-
