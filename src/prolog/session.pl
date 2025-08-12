@@ -522,7 +522,7 @@ add_src_files(SrcFiles, Result) :-
 
 % Get current Git commit hash
 get_current_commit(Commit) :-
-    run(command(git(rev_parse(['HEAD']))), ok(CommitOutput)),
+    run(command(git(rev_parse(['HEAD']))), ok(result(CommitOutput, _))),
     string_trim(CommitOutput, Commit).
 
 % Get current Git branch
@@ -563,7 +563,7 @@ list_session_transactions(SessionId, Transactions) :-
     (VerifyResult = ok(_) ->
         % Get commits on session branch that aren't on main
         run(command(git(log(['--format=%H|%s', '--reverse', BranchName, '^main']))), LogResult),
-        (LogResult = ok(LogOutput) ->
+        (LogResult = ok(result(LogOutput, _)) ->
             split_string(LogOutput, '\n', '\n \t', CommitLines),
             findall(transaction(CommitHash, CommitMsg, committed),
                     (member(Line, CommitLines),
@@ -708,7 +708,7 @@ create_transition_branch(SourceBranch, TargetSessionId, Result) :-
 % Check git status - clean or dirty
 check_git_status(Status) :-
     run(command(git(status(['--porcelain']))), StatusResult),
-    (StatusResult = ok("") ->
+    (StatusResult = ok(result("", _)) ->
         Status = clean
     ;
         Status = dirty
@@ -755,7 +755,7 @@ should_use_transition(SessionId) :-
 session_exists(SessionId) :-
     session_branch_name(SessionId, BranchName),
     run(command(git(branch(['--list', BranchName]))), Result),
-    Result = ok(Output),
+    Result = ok(result(Output, _)),
     Output \= "".
 
 % Suspend current session (switch back to main)
@@ -955,7 +955,7 @@ emergency_session_cleanup(Result) :-
 cleanup_all_session_branches(Result) :-
     % Get all branches and filter session branches
     run(command(git(branch(['--format=%(refname:short)']))), BranchResult),
-    (BranchResult = ok(BranchOutput) ->
+    (BranchResult = ok(result(BranchOutput, _)) ->
         split_string(BranchOutput, '\n', ' \t', BranchLines),
         include(is_session_branch, BranchLines, SessionBranches),
         delete_session_branches(SessionBranches, DeleteResults),
@@ -1227,7 +1227,7 @@ docstring(list_session_branches,
     ||}).
 
 list_session_branches(SessionBranches) :-
-    run(command(git(branch(['--format=%(refname:short)']))), ok(Output)),
+    run(command(git(branch(['--format=%(refname:short)']))), ok(result(Output, _))),
     split_string(Output, '\n', '\n \t', BranchLines),
     findall(session(SessionId, BranchName),
             (member(BranchName, BranchLines),
