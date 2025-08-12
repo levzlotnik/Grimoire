@@ -70,7 +70,10 @@ test(clean_state_session_creation, [setup(setup), cleanup(teardown)]) :-
 
     % Verify no transition branch was created
     find_transition_for_session('test-clean-session', TransitionBranch),
-    assertion(TransitionBranch = none).
+    assertion(TransitionBranch = none),
+
+    % CRITICAL: Close the session properly
+    close_session('test-clean-session', abandon, _).
 
 test(dirty_state_session_creation, [setup(setup), cleanup(teardown)]) :-
     % Create dirty state using simple file operations
