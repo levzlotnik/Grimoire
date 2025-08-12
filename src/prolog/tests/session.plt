@@ -20,7 +20,10 @@ teardown :-
     % Clean up test sessions and branches
     cleanup_test_branches,
     % Clean up any test files we created
-    catch(delete_file('test_dirty.txt'), _, true),
+    catch(delete_file('test_dirty_state.txt'), _, true),
+    catch(delete_file('test_changes_new.txt'), _, true),
+    catch(delete_file('test_changes_mod.txt'), _, true),
+    catch(delete_file('test_logic_check.txt'), _, true),
     catch(delete_file('test_new_file.txt'), _, true),
     catch(delete_file('test_modified.txt'), _, true),
     catch(delete_file('test_dirty_check.txt'), _, true),
@@ -70,8 +73,19 @@ test(clean_state_session_creation, [setup(setup), cleanup(teardown)]) :-
     assertion(TransitionBranch = none).
 
 test(dirty_state_session_creation, [setup(setup), cleanup(teardown)]) :-
-    % Create dirty state by modifying README - append text to it
-    append_to_file('README.md', '\n# Test dirty state\n'),
+    % Use session framework to create dirty state properly
+    start_session_with_transition('test-setup-session', SetupResult),
+    assertion(SetupResult = ok(session_started('test-setup-session', _, _, _))),
+    
+    % Create and modify a test file within session
+    execute_transaction('test-setup-session', [
+        command(mkfile('test_dirty_state.txt')),
+        command(append_file('test_dirty_state.txt', 'initial content'))
+    ], _),
+    
+    % Add to git and then modify to create dirty state
+    run(command(git(add(['test_dirty_state.txt']))), _),
+    write_file('test_dirty_state.txt', 'modified content'),
 
     % Verify we have dirty tracked changes
     check_tracked_changes(Status),
@@ -90,8 +104,12 @@ test(dirty_state_session_creation, [setup(setup), cleanup(teardown)]) :-
     find_transition_for_session('test-dirty-session', TransitionBranch),
     assertion(TransitionBranch \= none),
 
-    % Clean up dirty state
-    run(command(git(checkout(['--', 'README.md']))), _).
+    % Clean up using session framework
+    close_session('test-setup-session', discard, _),
+    close_session('test-dirty-session', discard, _),
+    % Clean up git state
+    run(command(git(reset(['HEAD', 'test_dirty_state.txt']))), _),
+    catch(delete_file('test_dirty_state.txt'), _, true).
 
 % Helper to append text to file
 append_to_file(Path, Text) :-
@@ -113,23 +131,36 @@ test(transition_branch_naming, [setup(setup), cleanup(teardown)]) :-
     assertion(SessionBranch = 'session-test-session-456').
 
 test(tracked_changes_parsing, [setup(setup), cleanup(teardown)]) :-
-    % Create various types of changes
-    write_file('test_new_file.txt', 'test content'),
-    run(command(git(add(['test_new_file.txt']))), _),
-    append_to_file('README.md', '\n# Modified README\n'),
+    % Use session framework for proper test file management
+    start_session_with_transition('test-parsing-session', SetupResult),
+    assertion(SetupResult = ok(session_started('test-parsing-session', _, _, _))),
+    
+    % Create various types of changes within session
+    execute_transaction('test-parsing-session', [
+        command(mkfile('test_changes_new.txt')),
+        command(append_file('test_changes_new.txt', 'initial content')),
+        command(mkfile('test_changes_mod.txt')),
+        command(append_file('test_changes_mod.txt', 'initial content'))
+    ], _),
+    
+    % Add files to git and commit
+    run(command(git(add(['test_changes_new.txt', 'test_changes_mod.txt']))), _),
+    run(command(git(commit(['-m', 'Add test files for parsing test']))), _),
+    
+    % Modify one file to create dirty state
+    write_file('test_changes_mod.txt', 'modified content'),
 
     % Check parsed status
     check_tracked_changes(Status),
     assertion(Status = dirty(tracked_changes(Changes))),
 
     % Verify structured terms
-    member(added('test_new_file.txt'), Changes),
-    member(modified('README.md'), Changes),
+    member(modified('test_changes_mod.txt'), Changes),
 
-    % Clean up
-    run(command(git(reset(['HEAD', 'test_new_file.txt']))), _),
-    delete_file('test_new_file.txt'),
-    run(command(git(checkout(['--', 'README.md']))), _).
+    % Clean up using session framework
+    close_session('test-parsing-session', discard, _),
+    % Reset git state
+    run(command(git(reset(['--hard', 'HEAD~1']))), _).
 
 test(transition_branch_management, [setup(setup), cleanup(teardown)]) :-
     % Create a few transition branches manually for testing
@@ -150,14 +181,28 @@ test(should_use_transition_logic, [setup(setup), cleanup(teardown)]) :-
     assertion(Status1 = clean),
     assertion(\+ should_use_transition('test-new-session')),
 
-    % Create dirty state
-    append_to_file('README.md', '\n# Test\n'),
+    % Use session framework to create dirty state properly
+    start_session_with_transition('test-logic-session', SetupResult),
+    assertion(SetupResult = ok(session_started('test-logic-session', _, _, _))),
+    
+    % Create and modify file within session to make dirty state
+    execute_transaction('test-logic-session', [
+        command(mkfile('test_logic_check.txt')),
+        command(append_file('test_logic_check.txt', 'content'))
+    ], _),
+    
+    % Add to git and modify to create dirty state
+    run(command(git(add(['test_logic_check.txt']))), _),
+    write_file('test_logic_check.txt', 'modified content'),
 
     % Dirty state, new session - should use transition
     assertion(should_use_transition('test-new-session-2')),
 
-    % Clean up
-    run(command(git(checkout(['--', 'README.md']))), _).
+    % Clean up using session framework
+    close_session('test-logic-session', discard, _),
+    % Clean up git state
+    run(command(git(reset(['HEAD', 'test_logic_check.txt']))), _),
+    catch(delete_file('test_logic_check.txt'), _, true).
 
 :- end_tests(transition_branches).
 
