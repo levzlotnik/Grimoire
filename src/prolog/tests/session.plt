@@ -9,23 +9,8 @@
 
 % Pre-cleanup: ensure completely clean state before each test
 pre_cleanup :-
-    % Ensure we're on main branch
-    catch(run(command(git(checkout(['main']))), _), _, true),
-    % Aggressively clean up any test or transition branches
-    catch((
-        run(command(git(branch(['--format=%(refname:short)']))), BranchResult),
-        (BranchResult = ok(result(BranchOutput, _)) ->
-            split_string(BranchOutput, '\n', '\n \t', BranchLines),
-            include(is_transition_or_test_branch, BranchLines, TestBranches),
-            maplist(force_delete_branch, TestBranches)
-        ; true)
-    ), _, true),
-    % Reset any staged changes
-    catch(run(command(git(reset(['HEAD']))), _), _, true),
-    % Restore any tracked files that were modified
-    catch(run(command(git(checkout(['--', '.']))), _), _, true),
-    % Clean any untracked files
-    catch(run(command(git(clean(['-fd']))), _), _, true).
+    % Simplified cleanup - just ensure we're on main branch
+    catch(run(command(git(checkout(['main']))), _), _, true).
 
 % Post-cleanup: ensure clean state after each test
 post_cleanup :-
