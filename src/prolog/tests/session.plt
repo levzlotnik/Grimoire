@@ -1,8 +1,23 @@
-% Session and Tranteardown :-
-    % Clean up test sessions and branis_test_branch(BranchName) :-
-    (sub_string(BranchName, 0, _, _, 'session-test-') ;
-     sub_string(BranchName, 0, _, _, 'transition_branch/main--session-test')).
+% Session and Transaction System Tests - Transition Branch System
+:- use_module(library(plunit)).
+:- use_module(library(uuid)).
+
+% Load the session system
+:- ensure_loaded("../session.pl").
+
+% Test suite for transition branch system
+:- begin_tests(transition_branches).
+
+setup :-
+    % Ensure we're on main branch for tests
+    catch(run(command(git(checkout(['main']))), _), _, true),
+    % Clean up any existing test branches
     cleanup_test_branches,
+    % Reset any staged changes but preserve working directory
+    catch(run(command(git(reset(['HEAD']))), _), _, true).
+
+teardown :-
+    % Clean up test sessions and branches
     % Clean up any test files we created
     catch(delete_file('test_dirty_state.txt'), _, true),
     catch(delete_file('test_changes_new.txt'), _, true),
@@ -208,7 +223,7 @@ teardown :-
 cleanup_test_branches :-
     catch((
         run(command(git(branch(['--format=%(refname:short)']))), BranchResult),
-        (BranchResult = ok(BranchOutput) ->
+        (BranchResult = ok(result(BranchOutput, _)) ->
             split_string(BranchOutput, '\n', '\n \t', BranchLines),
             include(is_test_branch, BranchLines, TestBranches),
             maplist(delete_test_branch, TestBranches)
