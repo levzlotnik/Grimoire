@@ -125,11 +125,11 @@ test(tracked_changes_parsing, [setup(setup), cleanup(teardown)]) :-
     % Create test files using simple file operations
     write_file('test_changes_new.txt', 'new content'),
     write_file('test_changes_mod.txt', 'initial content'),
-    
+
     % Add files to git and commit
     run(command(git(add(['test_changes_new.txt', 'test_changes_mod.txt']))), _),
     run(command(git(commit(['-m', 'Add test files for parsing test']))), _),
-    
+
     % Modify one file to create dirty state
     write_file('test_changes_mod.txt', 'modified content'),
 
