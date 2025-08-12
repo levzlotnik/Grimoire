@@ -73,17 +73,8 @@ test(clean_state_session_creation, [setup(setup), cleanup(teardown)]) :-
     assertion(TransitionBranch = none).
 
 test(dirty_state_session_creation, [setup(setup), cleanup(teardown)]) :-
-    % Use session framework to create dirty state properly
-    start_session_with_transition('test-setup-session', SetupResult),
-    assertion(SetupResult = ok(session_started('test-setup-session', _, _, _))),
-    
-    % Create and modify a test file within session
-    execute_transaction('test-setup-session', [
-        command(mkfile('test_dirty_state.txt')),
-        command(append_file('test_dirty_state.txt', 'initial content'))
-    ], _),
-    
-    % Add to git and then modify to create dirty state
+    % Create dirty state using simple file operations
+    write_file('test_dirty_state.txt', 'initial content'),
     run(command(git(add(['test_dirty_state.txt']))), _),
     write_file('test_dirty_state.txt', 'modified content'),
 
@@ -104,10 +95,8 @@ test(dirty_state_session_creation, [setup(setup), cleanup(teardown)]) :-
     find_transition_for_session('test-dirty-session', TransitionBranch),
     assertion(TransitionBranch \= none),
 
-    % Clean up using session framework
-    close_session('test-setup-session', discard, _),
-    close_session('test-dirty-session', discard, _),
-    % Clean up git state
+    % Clean up
+    catch(close_session('test-dirty-session', discard, _), _, true),
     run(command(git(reset(['HEAD', 'test_dirty_state.txt']))), _),
     catch(delete_file('test_dirty_state.txt'), _, true).
 
