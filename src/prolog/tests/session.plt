@@ -12,11 +12,20 @@ setup :-
     % Ensure we're on main branch for tests
     catch(run(command(git(checkout(['main']))), _), _, true),
     % Clean up any existing test branches
-    cleanup_test_branches.
+    cleanup_test_branches,
+    % Reset any staged changes but preserve working directory
+    catch(run(command(git(reset(['HEAD']))), _), _, true).
 
 teardown :-
     % Clean up test sessions and branches
     cleanup_test_branches,
+    % Clean up any test files we created
+    catch(delete_file('test_dirty.txt'), _, true),
+    catch(delete_file('test_new_file.txt'), _, true),
+    catch(delete_file('test_modified.txt'), _, true),
+    catch(delete_file('test_dirty_check.txt'), _, true),
+    % Reset any staged changes
+    catch(run(command(git(reset(['HEAD']))), _), _, true),
     % Return to main
     catch(run(command(git(checkout(['main']))), _), _, true).
 
