@@ -100,13 +100,11 @@ test(dirty_state_session_creation, [setup(setup), cleanup(teardown)]) :-
     run(command(git(reset(['HEAD', 'test_dirty_state.txt']))), _),
     catch(delete_file('test_dirty_state.txt'), _, true).
 
-% Helper to append text to file
-append_to_file(Path, Text) :-
-    read_file_to_string(Path, Content, []),
-    string_concat(Content, Text, NewContent),
+% Helper to write content to file
+write_file(Path, Content) :-
     setup_call_cleanup(
         open(Path, write, Stream),
-        write(Stream, NewContent),
+        write(Stream, Content),
         close(Stream)
     ).
 
