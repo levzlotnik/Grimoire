@@ -159,25 +159,25 @@ docstring(command(executable_program),
 ).
 
 run(command(executable_program(Program, Args)), RetVal) :-
-    % Non-interactive mode - capture output
+    % Non-interactive mode - capture output and exit code
     setup_call_cleanup(
         process_create(
             Program,
             Args,
-            [stdout(pipe(Out)), stderr(pipe(Err))]
+            [stdout(pipe(Out)), stderr(pipe(Err)), process(PID)]
         ),
-        % Read output
+        % Read output and wait for process
         (read_string(Out, _, Stdout),
-         read_string(Err, _, Stderr)),
+         read_string(Err, _, Stderr),
+         process_wait(PID, exit(ExitCode))),
         % Cleanup
         (close(Out), close(Err))
     ),
-    % Return result
-    (Stderr = "" ->
-        RetVal = ok(Stdout)
+    % Return structured result based on exit code
+    (ExitCode = 0 ->
+        RetVal = ok(result(Stdout, Stderr))
     ;
-        % RetVal = error(Stderr) % this is wrong...
-        true
+        RetVal = error(process_error(Program, exit(ExitCode), Stdout, Stderr))
     ).
 
 run(command(executable_program(Program, Args, interactive)), RetVal) :-
