@@ -212,7 +212,7 @@ delete_test_branch(BranchName) :-
 test(full_session_workflow_clean, [setup(setup), cleanup(teardown)]) :-
     % Full workflow with clean state
     start_session_with_transition('test-workflow-clean', CreateResult),
-    assertion(CreateResult = ok(session_created('test-workflow-clean', direct_creation))),
+    assertion(CreateResult = ok(session_started('test-workflow-clean', _, _, direct))),
 
     % Execute transaction
     execute_transaction('test-workflow-clean', [command(mkfile('/tmp/test_workflow.txt'))], ExecResult),
@@ -235,7 +235,7 @@ test(full_session_workflow_dirty, [setup(setup), cleanup(teardown)]) :-
 
     % Full workflow with dirty state
     start_session_with_transition('test-workflow-dirty', CreateResult),
-    assertion(CreateResult = ok(session_created('test-workflow-dirty', transition_used(_)))),
+    assertion(CreateResult = ok(session_started('test-workflow-dirty', _, _, transition_used(_)))),
 
     % Execute transaction
     execute_transaction('test-workflow-dirty', [command(mkfile('/tmp/test_workflow_dirty.txt'))], ExecResult),
