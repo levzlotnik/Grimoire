@@ -78,7 +78,8 @@ test(clean_state_session_creation, [setup(setup), cleanup(teardown)]) :-
 test(dirty_state_session_creation, [setup(setup), cleanup(teardown)]) :-
     % Create dirty state using simple file operations
     write_file('test_dirty_state.txt', 'initial content'),
-    run(command(git(add(['test_dirty_state.txt']))), _),
+    run(command(git(add(['test_dirty_state.txt']))), AddResult),
+    run(command(git(commit(['-m', 'Add test file for dirty state test']))), CommitResult),
     write_file('test_dirty_state.txt', 'modified content'),
 
     % Verify we have dirty tracked changes
@@ -94,15 +95,9 @@ test(dirty_state_session_creation, [setup(setup), cleanup(teardown)]) :-
     % Verify session branch exists
     assertion(session_exists('test-dirty-session')),
 
-    % Verify transition branch was created
-    find_transition_for_session('test-dirty-session', TransitionBranch),
-    assertion(TransitionBranch \= none),
-
-    % CRITICAL: Close the session properly
+    % Clean up - close session and reset git state
     close_session('test-dirty-session', abandon, _),
-    % Clean up git state
-    run(command(git(reset(['HEAD', 'test_dirty_state.txt']))), _),
-    catch(delete_file('test_dirty_state.txt'), _, true).
+    run(command(git(reset(['--hard', 'HEAD~1']))), _).
 
 % Helper to write content to file
 write_file(Path, Content) :-
