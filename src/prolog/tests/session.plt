@@ -17,6 +17,7 @@ setup :-
 
 teardown :-
     % Clean up test sessions and branches
+    cleanup_test_branches,
     % Clean up any test files we created
     catch(delete_file('test_dirty_state.txt'), _, true),
     catch(delete_file('test_changes_new.txt'), _, true),
@@ -31,21 +32,6 @@ teardown :-
     % Restore any tracked files that were modified
     catch(run(command(git(checkout(['--', '.']))), _), _, true),
     % Ensure we're on main branch
-    catch(run(command(git(checkout(['main']))), _), _, true).
-
-% Helper to clean up test branches
-    cleanup_test_branches,
-    % Clean up any test files we created
-    catch(delete_file('test_dirty_state.txt'), _, true),
-    catch(delete_file('test_changes_new.txt'), _, true),
-    catch(delete_file('test_changes_mod.txt'), _, true),
-    catch(delete_file('test_logic_check.txt'), _, true),
-    catch(delete_file('test_new_file.txt'), _, true),
-    catch(delete_file('test_modified.txt'), _, true),
-    catch(delete_file('test_dirty_check.txt'), _, true),
-    % Reset any staged changes
-    catch(run(command(git(reset(['HEAD']))), _), _, true),
-    % Return to main
     catch(run(command(git(checkout(['main']))), _), _, true).
 
 % Helper to clean up test branches
