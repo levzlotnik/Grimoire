@@ -2,8 +2,7 @@
 :- use_module(library(plunit)).
 :- use_module(library(uuid)).
 
-% Load the session system
-:- ensure_loaded("../session.pl").
+% Note: session.pl is already loaded by grimoire.pl, no need to load it again
 
 % Test suite for transition branch system
 :- begin_tests(transition_branches).
@@ -34,26 +33,7 @@ teardown :-
     % Ensure we're on main branch
     catch(run(command(git(checkout(['main']))), _), _, true).
 
-% Session and Transaction System Tests - Transition Branch System
-:- use_module(library(plunit)).
-:- use_module(library(uuid)).
-
-% Load the session system
-:- ensure_loaded("../session.pl").
-
-% Test suite for transition branch system
-:- begin_tests(transition_branches).
-
-setup :-
-    % Ensure we're on main branch for tests
-    catch(run(command(git(checkout(['main']))), _), _, true),
-    % Clean up any existing test branches
-    cleanup_test_branches,
-    % Reset any staged changes but preserve working directory
-    catch(run(command(git(reset(['HEAD']))), _), _, true).
-
-teardown :-
-    % Clean up test sessions and branches
+% Helper to clean up test branches
     cleanup_test_branches,
     % Clean up any test files we created
     catch(delete_file('test_dirty_state.txt'), _, true),
