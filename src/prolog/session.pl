@@ -381,7 +381,7 @@ find_transition_for_session(SessionId, TransitionBranch) :-
     % Look for transition branch matching pattern
     run(command(git(branch(['--format=%(refname:short)']))), BranchResult),
 
-    (BranchResult = ok(BranchOutput) ->
+    (BranchResult = ok(result(BranchOutput, _)) ->
         split_string(BranchOutput, '\n', '\n \t', BranchLines),
         format(string(Pattern), "--session-~w", [SessionId]),
 
@@ -399,7 +399,7 @@ find_transition_for_session(SessionId, TransitionBranch) :-
 % List all transition branches
 list_transition_branches(TransitionBranches) :-
     run(command(git(branch(['--format=%(refname:short)']))), BranchResult),
-    (BranchResult = ok(BranchOutput) ->
+    (BranchResult = ok(result(BranchOutput, _)) ->
         split_string(BranchOutput, '\n', '\n \t', BranchLines),
         include(is_transition_branch, BranchLines, TransitionBranches)
     ;
@@ -720,7 +720,7 @@ check_git_status(Status) :-
 % Check for tracked unstaged changes specifically
 check_tracked_changes(Status) :-
     run(command(git(status(['--porcelain']))), StatusResult),
-    (StatusResult = ok(Output) ->
+    (StatusResult = ok(result(Output, _)) ->
         % Parse porcelain output for tracked changes (modifications)
         (atom_string(OutputAtom, Output),
          atomic_list_concat(Lines, '\n', OutputAtom),
