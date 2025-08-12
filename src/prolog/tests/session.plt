@@ -123,7 +123,7 @@ test(tracked_changes_parsing, [setup(setup), cleanup(teardown)]) :-
     % Use session framework for proper test file management
     start_session_with_transition('test-parsing-session', SetupResult),
     assertion(SetupResult = ok(session_started('test-parsing-session', _, _, _))),
-    
+
     % Create various types of changes within session
     execute_transaction('test-parsing-session', [
         command(mkfile('test_changes_new.txt')),
@@ -131,11 +131,11 @@ test(tracked_changes_parsing, [setup(setup), cleanup(teardown)]) :-
         command(mkfile('test_changes_mod.txt')),
         command(append_file('test_changes_mod.txt', 'initial content'))
     ], _),
-    
+
     % Add files to git and commit
     run(command(git(add(['test_changes_new.txt', 'test_changes_mod.txt']))), _),
     run(command(git(commit(['-m', 'Add test files for parsing test']))), _),
-    
+
     % Modify one file to create dirty state
     write_file('test_changes_mod.txt', 'modified content'),
 
@@ -173,13 +173,13 @@ test(should_use_transition_logic, [setup(setup), cleanup(teardown)]) :-
     % Use session framework to create dirty state properly
     start_session_with_transition('test-logic-session', SetupResult),
     assertion(SetupResult = ok(session_started('test-logic-session', _, _, _))),
-    
+
     % Create and modify file within session to make dirty state
     execute_transaction('test-logic-session', [
         command(mkfile('test_logic_check.txt')),
         command(append_file('test_logic_check.txt', 'content'))
     ], _),
-    
+
     % Add to git and modify to create dirty state
     run(command(git(add(['test_logic_check.txt']))), _),
     write_file('test_logic_check.txt', 'modified content'),
