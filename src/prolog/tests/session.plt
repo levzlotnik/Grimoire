@@ -56,7 +56,7 @@ cleanup_test_branches :-
     % Clean up any session branches starting with test-
     catch((
         run(command(git(branch(['--format=%(refname:short)']))), BranchResult),
-        (BranchResult = ok(BranchOutput) ->
+        (BranchResult = ok(result(BranchOutput, _)) ->
             split_string(BranchOutput, '\n', '\n \t', BranchLines),
             include(is_test_branch, BranchLines, TestBranches),
             maplist(delete_test_branch, TestBranches)
