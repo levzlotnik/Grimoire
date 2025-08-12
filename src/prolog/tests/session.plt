@@ -7,15 +7,28 @@
 % Test suite for transition branch system
 :- begin_tests(transition_branches).
 
-setup :-
-    % Ensure we're on main branch for tests
+% Pre-cleanup: ensure completely clean state before each test
+pre_cleanup :-
+    % Ensure we're on main branch
     catch(run(command(git(checkout(['main']))), _), _, true),
-    % Clean up any existing test branches
-    cleanup_test_branches,
-    % Reset any staged changes but preserve working directory
-    catch(run(command(git(reset(['HEAD']))), _), _, true).
+    % Aggressively clean up any test or transition branches
+    catch((
+        run(command(git(branch(['--format=%(refname:short)']))), BranchResult),
+        (BranchResult = ok(result(BranchOutput, _)) ->
+            split_string(BranchOutput, '\n', '\n \t', BranchLines),
+            include(is_transition_or_test_branch, BranchLines, TestBranches),
+            maplist(force_delete_branch, TestBranches)
+        ; true)
+    ), _, true),
+    % Reset any staged changes
+    catch(run(command(git(reset(['HEAD']))), _), _, true),
+    % Restore any tracked files that were modified
+    catch(run(command(git(checkout(['--', '.']))), _), _, true),
+    % Clean any untracked files
+    catch(run(command(git(clean(['-fd']))), _), _, true).
 
-teardown :-
+% Post-cleanup: ensure clean state after each test
+post_cleanup :-
     % Clean up test sessions and branches
     cleanup_test_branches,
     % Aggressively clean up any remaining transition branches
@@ -44,6 +57,13 @@ teardown :-
     catch(run(command(git(clean(['-fd']))), _), _, true),
     % Ensure we're on main branch
     catch(run(command(git(checkout(['main']))), _), _, true).
+
+% Legacy setup/teardown for compatibility
+setup :-
+    pre_cleanup.
+
+teardown :-
+    post_cleanup.
 
 % Helper to clean up test branches
 cleanup_test_branches :-
@@ -76,7 +96,7 @@ is_transition_or_test_branch(BranchName) :-
 force_delete_branch(BranchName) :-
     catch(run(command(git(branch(['-D', BranchName]))), _), _, true).
 
-test(clean_state_session_creation, [setup(setup), cleanup(teardown)]) :-
+test(clean_state_session_creation, [setup(pre_cleanup), cleanup(post_cleanup)]) :-
     % Ensure clean git state
     check_tracked_changes(Status),
     assertion(Status = clean),
@@ -97,7 +117,7 @@ test(clean_state_session_creation, [setup(setup), cleanup(teardown)]) :-
     % CRITICAL: Close the session properly
     close_session('test-clean-session', abandon, _).
 
-test(dirty_state_session_creation, [setup(setup), cleanup(teardown)]) :-
+test(dirty_state_session_creation, [setup(pre_cleanup), cleanup(post_cleanup)]) :-
     % Create dirty state without permanent commits
     write_file('test_dirty_state.txt', 'initial content'),
     run(command(git(add(['test_dirty_state.txt']))), AddResult),
@@ -128,7 +148,7 @@ write_file(Path, Content) :-
         close(Stream)
     ).
 
-test(transition_branch_naming, [setup(setup), cleanup(teardown)]) :-
+test(transition_branch_naming, [setup(pre_cleanup), cleanup(post_cleanup)]) :-
     % Test transition branch name generation
     transition_branch_name('main', 'test-session-123', TransitionBranch),
     assertion(TransitionBranch = 'transition_branch/main--session-test-session-123'),
@@ -137,7 +157,7 @@ test(transition_branch_naming, [setup(setup), cleanup(teardown)]) :-
     session_branch_name('test-session-456', SessionBranch),
     assertion(SessionBranch = 'session-test-session-456').
 
-test(tracked_changes_parsing, [setup(setup), cleanup(teardown)]) :-
+test(tracked_changes_parsing, [setup(pre_cleanup), cleanup(post_cleanup)]) :-
     % Create test files using simple file operations
     write_file('test_changes_new.txt', 'new content'),
     write_file('test_changes_mod.txt', 'initial content'),
@@ -159,7 +179,7 @@ test(tracked_changes_parsing, [setup(setup), cleanup(teardown)]) :-
     % Clean up git state
     run(command(git(reset(['--hard', 'HEAD~1']))), _).
 
-test(transition_branch_management, [setup(setup), cleanup(teardown)]) :-
+test(transition_branch_management, [setup(pre_cleanup), cleanup(post_cleanup)]) :-
     % Create a few transition branches manually for testing
     run(command(git(checkout(['-b', 'transition_branch/main--session-test1']))), _),
     run(command(git(checkout(['main']))), _),
@@ -172,7 +192,7 @@ test(transition_branch_management, [setup(setup), cleanup(teardown)]) :-
     assertion(member("transition_branch/main--session-test1", Transitions)),
     assertion(member("transition_branch/main--session-test2", Transitions)).
 
-test(should_use_transition_logic, [setup(setup), cleanup(teardown)]) :-
+test(should_use_transition_logic, [setup(pre_cleanup), cleanup(post_cleanup)]) :-
     % Clean state, new session - should not use transition
     check_tracked_changes(Status1),
     assertion(Status1 = clean),
@@ -225,7 +245,7 @@ is_test_branch(BranchName) :-
 delete_test_branch(BranchName) :-
     catch(run(command(git(branch(['-D', BranchName]))), _), _, true).
 
-test(full_session_workflow_clean, [setup(setup), cleanup(teardown)]) :-
+test(full_session_workflow_clean, [setup(pre_cleanup), cleanup(post_cleanup)]) :-
     % Full workflow with clean state
     start_session_with_transition('test-workflow-clean', CreateResult),
     assertion(CreateResult = ok(session_started('test-workflow-clean', _, _, direct))),
@@ -244,7 +264,7 @@ test(full_session_workflow_clean, [setup(setup), cleanup(teardown)]) :-
     % Clean up file
     catch(delete_file('/tmp/test_workflow.txt'), _, true).
 
-test(full_session_workflow_dirty, [setup(setup), cleanup(teardown)]) :-
+test(full_session_workflow_dirty, [setup(pre_cleanup), cleanup(post_cleanup)]) :-
     % Create dirty state using proper method
     write_file('test_workflow_dirty.txt', 'initial content'),
     run(command(git(add(['test_workflow_dirty.txt']))), _),
@@ -280,7 +300,7 @@ setup :-
 teardown :-
     catch(run(command(git(checkout(['main']))), _), _, true).
 
-test(session_exists_check, [setup(setup), cleanup(teardown)]) :-
+test(session_exists_check, [setup(pre_cleanup), cleanup(post_cleanup)]) :-
     % Non-existent session
     assertion(\+ session_exists('non-existent-session')),
 
@@ -293,7 +313,7 @@ test(session_exists_check, [setup(setup), cleanup(teardown)]) :-
     % Clean up
     catch(run(command(git(branch(['-D', 'session-test-exists']))), _), _, true).
 
-test(git_status_edge_cases, [setup(setup), cleanup(teardown)]) :-
+test(git_status_edge_cases, [setup(pre_cleanup), cleanup(post_cleanup)]) :-
     % Test with completely clean repo
     check_tracked_changes(Status1),
     assertion(Status1 = clean),
