@@ -153,8 +153,8 @@ test(transition_branch_management, [setup(setup), cleanup(teardown)]) :-
     % Test listing transition branches
     list_transition_branches(Transitions),
     assertion(length(Transitions, 2)),
-    assertion(member('transition_branch/main--session-test1', Transitions)),
-    assertion(member('transition_branch/main--session-test2', Transitions)).
+    assertion(member("transition_branch/main--session-test1", Transitions)),
+    assertion(member("transition_branch/main--session-test2", Transitions)).
 
 test(should_use_transition_logic, [setup(setup), cleanup(teardown)]) :-
     % Clean state, new session - should not use transition
