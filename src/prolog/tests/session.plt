@@ -51,7 +51,7 @@ test(clean_state_session_creation, [setup(setup), cleanup(teardown)]) :-
     start_session_with_transition('test-clean-session', Result),
     
     % Verify session created successfully
-    assertion(Result = ok(session_created('test-clean-session', direct_creation))),
+    assertion(Result = ok(session_started('test-clean-session', _, _, direct))),
     
     % Verify session branch exists
     assertion(session_exists('test-clean-session')),
@@ -62,7 +62,7 @@ test(clean_state_session_creation, [setup(setup), cleanup(teardown)]) :-
 
 test(dirty_state_session_creation, [setup(setup), cleanup(teardown)]) :-
     % Create dirty state by modifying README
-    run(command(executable_program(path(echo), ['# Test dirty state', '>>', 'README.md'])), _),
+    run(command(shell(['echo "# Test dirty state" >> README.md'])), _),
     
     % Verify we have dirty tracked changes
     check_tracked_changes(Status),
@@ -72,7 +72,7 @@ test(dirty_state_session_creation, [setup(setup), cleanup(teardown)]) :-
     start_session_with_transition('test-dirty-session', Result),
     
     % Verify session created with transition
-    assertion(Result = ok(session_created('test-dirty-session', transition_used(_)))),
+    assertion(Result = ok(session_started('test-dirty-session', _, _, via_transition(_)))),
     
     % Verify session branch exists
     assertion(session_exists('test-dirty-session')),
@@ -95,9 +95,9 @@ test(transition_branch_naming, [setup(setup), cleanup(teardown)]) :-
 
 test(tracked_changes_parsing, [setup(setup), cleanup(teardown)]) :-
     % Create various types of changes
-    run(command(executable_program(path(echo), ['test content', '>', 'test_new_file.txt'])), _),
+    run(command(shell(['echo "test content" > test_new_file.txt'])), _),
     run(command(git(add(['test_new_file.txt']))), _),
-    run(command(executable_program(path(echo), ['# Modified README', '>>', 'README.md'])), _),
+    run(command(shell(['echo "# Modified README" >> README.md'])), _),
     
     % Check parsed status
     check_tracked_changes(Status),
@@ -109,7 +109,7 @@ test(tracked_changes_parsing, [setup(setup), cleanup(teardown)]) :-
     
     % Clean up
     run(command(git(reset(['HEAD', 'test_new_file.txt']))), _),
-    run(command(executable_program(path(rm), ['-f', 'test_new_file.txt'])), _),
+    run(command(shell(['rm -f test_new_file.txt'])), _),
     run(command(git(checkout(['--', 'README.md']))), _).
 
 test(transition_branch_management, [setup(setup), cleanup(teardown)]) :-
@@ -132,7 +132,7 @@ test(should_use_transition_logic, [setup(setup), cleanup(teardown)]) :-
     assertion(\+ should_use_transition('test-new-session')),
     
     % Create dirty state
-    run(command(executable_program(path(echo), ['# Test', '>>', 'README.md'])), _),
+    run(command(shell(['echo "# Test" >> README.md'])), _),
     
     % Dirty state, new session - should use transition
     assertion(should_use_transition('test-new-session-2')),
