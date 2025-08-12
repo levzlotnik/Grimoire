@@ -40,6 +40,8 @@ teardown :-
     catch(run(command(git(reset(['HEAD']))), _), _, true),
     % Restore any tracked files that were modified
     catch(run(command(git(checkout(['--', '.']))), _), _, true),
+    % Clean any untracked files that might be test artifacts
+    catch(run(command(git(clean(['-fd']))), _), _, true),
     % Ensure we're on main branch
     catch(run(command(git(checkout(['main']))), _), _, true).
 
