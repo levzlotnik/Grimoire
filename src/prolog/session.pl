@@ -183,6 +183,16 @@ format_session_subcommand(workflow, "session(workflow(TransactionsList)) - Multi
 format_session_subcommand(feature, "session(feature(Name)) - Start feature development session").
 format_session_subcommand(experiment, "session(experiment(Name)) - Start experimental session").
 
+% Utility predicates
+
+% Generate session branch name from session ID
+session_branch_name(SessionId, BranchName) :-
+    format(string(BranchName), "session-~w", [SessionId]).
+
+% Generate transition branch name
+transition_branch_name(SourceBranch, SessionId, TransitionBranch) :-
+    format(string(TransitionBranch), "transition_branch/~w--session-~w", [SourceBranch, SessionId]).
+
 % Session management predicates
 
 % Start a new session with transition branch support
@@ -384,6 +394,48 @@ find_transition_for_session(SessionId, TransitionBranch) :-
         )
     ;
         TransitionBranch = none
+    ).
+
+% List all transition branches
+list_transition_branches(TransitionBranches) :-
+    run(command(git(branch(['--format=%(refname:short)']))), BranchResult),
+    (BranchResult = ok(BranchOutput) ->
+        split_string(BranchOutput, '\n', '\n \t', BranchLines),
+        include(is_transition_branch, BranchLines, TransitionBranches)
+    ;
+        TransitionBranches = []
+    ).
+
+% Helper: check if branch name is a transition branch
+is_transition_branch(BranchName) :-
+    atom_string(BranchAtom, BranchName),
+    sub_atom(BranchAtom, 0, _, _, 'transition_branch/').
+
+% Cleanup orphaned transition branches (for sessions that no longer exist)
+cleanup_orphaned_transitions(Result) :-
+    list_transition_branches(TransitionBranches),
+    include(is_orphaned_transition, TransitionBranches, OrphanedBranches),
+    maplist(delete_transition_branch, OrphanedBranches, DeleteResults),
+    Result = ok(cleaned_up_transitions(OrphanedBranches, DeleteResults)).
+
+% Helper: check if transition branch is orphaned (session doesn't exist)
+is_orphaned_transition(TransitionBranch) :-
+    % Extract session ID from transition branch name
+    atom_string(BranchAtom, TransitionBranch),
+    sub_atom(BranchAtom, _, _, 0, Suffix),
+    sub_atom(Suffix, StartPos, _, 0, SessionPart),
+    sub_atom(SessionPart, 0, 8, _, 'session-'),
+    sub_atom(SessionPart, 8, _, 0, SessionId),
+    % Check if session branch exists
+    \+ session_exists(SessionId).
+
+% Helper: delete a transition branch
+delete_transition_branch(TransitionBranch, Result) :-
+    run(command(git(branch(['-D', TransitionBranch]))), DeleteResult),
+    (DeleteResult = ok(_) ->
+        Result = ok(deleted(TransitionBranch))
+    ;
+        Result = error(failed_to_delete(TransitionBranch, DeleteResult))
     ).
 
 % Transaction execution within sessions
@@ -664,6 +716,51 @@ check_git_status(Status) :-
     ;
         Status = dirty
     ).
+
+% Check for tracked unstaged changes specifically
+check_tracked_changes(Status) :-
+    run(command(git(status(['--porcelain']))), StatusResult),
+    (StatusResult = ok(Output) ->
+        % Parse porcelain output for tracked changes (modifications)
+        (atom_string(OutputAtom, Output),
+         atomic_list_concat(Lines, '\n', OutputAtom),
+         include(is_tracked_change, Lines, TrackedChanges),
+         (TrackedChanges = [] ->
+             Status = clean
+         ;
+             Status = dirty(tracked_changes(TrackedChanges))
+         ))
+    ;
+        Status = error(git_status_failed)
+    ).
+
+% Helper: identify tracked change lines (M, A, D, R, C at position 1 or 2)
+is_tracked_change(Line) :-
+    atom_length(Line, Len),
+    Len >= 3,
+    sub_atom(Line, 0, 1, _, First),
+    sub_atom(Line, 1, 1, _, Second),
+    (member(First, [' ', 'M', 'A', 'D', 'R', 'C']) ; member(Second, ['M', 'A', 'D', 'R', 'C'])),
+    % Exclude untracked files (starts with ??)
+    \+ sub_atom(Line, 0, 2, _, '??').
+
+% Simple predicate to check if we have dirty tracked files
+has_dirty_tracked_files :-
+    check_tracked_changes(Status),
+    Status = dirty(_).
+
+% Decide whether to use transition branch for new session creation
+should_use_transition(SessionId) :-
+    % Only use transitions for new sessions with dirty state
+    \+ session_exists(SessionId),
+    has_dirty_tracked_files.
+
+% Check if a session branch exists
+session_exists(SessionId) :-
+    session_branch_name(SessionId, BranchName),
+    run(command(git(branch(['--list', BranchName]))), Result),
+    Result = ok(Output),
+    Output \= "".
 
 % Suspend current session (switch back to main)
 suspend_session(SessionId, Result) :-
