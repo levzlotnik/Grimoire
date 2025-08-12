@@ -1,4 +1,21 @@
-% Session and Transaction System Tests - Transition Branch System
+% Session and Tranteardown :-
+    % Clean up test sessions and branches
+    cleanup_test_branches,
+    % Clean up any test files we created
+    catch(delete_file('test_dirty_state.txt'), _, true),
+    catch(delete_file('test_changes_new.txt'), _, true),
+    catch(delete_file('test_changes_mod.txt'), _, true),
+    catch(delete_file('test_logic_check.txt'), _, true),
+    catch(delete_file('test_new_file.txt'), _, true),
+    catch(delete_file('test_modified.txt'), _, true),
+    catch(delete_file('test_dirty_check.txt'), _, true),
+    catch(delete_file('test_workflow_dirty.txt'), _, true),
+    % Reset any staged changes and unstage everything
+    catch(run(command(git(reset(['HEAD']))), _), _, true),
+    % Restore any tracked files that were modified
+    catch(run(command(git(checkout(['--', '.']))), _), _, true),
+    % Ensure we're on main branch
+    catch(run(command(git(checkout(['main']))), _), _, true).m Tests - Transition Branch System
 :- use_module(library(plunit)).
 :- use_module(library(uuid)).
 
@@ -76,10 +93,10 @@ test(clean_state_session_creation, [setup(setup), cleanup(teardown)]) :-
     close_session('test-clean-session', abandon, _).
 
 test(dirty_state_session_creation, [setup(setup), cleanup(teardown)]) :-
-    % Create dirty state using simple file operations
+    % Create dirty state without permanent commits
     write_file('test_dirty_state.txt', 'initial content'),
     run(command(git(add(['test_dirty_state.txt']))), AddResult),
-    run(command(git(commit(['-m', 'Add test file for dirty state test']))), CommitResult),
+    % Modify file to create dirty state (don't commit yet)
     write_file('test_dirty_state.txt', 'modified content'),
 
     % Verify we have dirty tracked changes
@@ -96,8 +113,7 @@ test(dirty_state_session_creation, [setup(setup), cleanup(teardown)]) :-
     assertion(session_exists('test-dirty-session')),
 
     % Clean up - close session and reset git state
-    close_session('test-dirty-session', abandon, _),
-    run(command(git(reset(['--hard', 'HEAD~1']))), _).
+    close_session('test-dirty-session', abandon, _).
 
 % Helper to write content to file
 write_file(Path, Content) :-
