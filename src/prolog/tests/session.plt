@@ -162,28 +162,19 @@ test(should_use_transition_logic, [setup(setup), cleanup(teardown)]) :-
     assertion(Status1 = clean),
     assertion(\+ should_use_transition('test-new-session')),
 
-    % Use session framework to create dirty state properly
-    start_session_with_transition('test-logic-session', SetupResult),
-    assertion(SetupResult = ok(session_started('test-logic-session', _, _, _))),
-
-    % Create and modify file within session to make dirty state
-    execute_transaction('test-logic-session', [
-        command(mkfile('test_logic_check.txt')),
-        command(append_file('test_logic_check.txt', 'content'))
-    ], _),
-
-    % Add to git and modify to create dirty state
+    % Create file and add to git to establish tracking
+    write_file('test_logic_check.txt', 'initial content'),
     run(command(git(add(['test_logic_check.txt']))), _),
+    run(command(git(commit(['-m', 'Add test file for logic check']))), _),
+
+    % Modify file to create dirty state
     write_file('test_logic_check.txt', 'modified content'),
 
     % Dirty state, new session - should use transition
     assertion(should_use_transition('test-new-session-2')),
 
-    % Clean up using session framework
-    close_session('test-logic-session', discard, _),
     % Clean up git state
-    run(command(git(reset(['HEAD', 'test_logic_check.txt']))), _),
-    catch(delete_file('test_logic_check.txt'), _, true).
+    run(command(git(reset(['--hard', 'HEAD~1']))), _).
 
 :- end_tests(transition_branches).
 
