@@ -217,6 +217,57 @@ test(should_use_transition_logic, [setup(pre_cleanup), cleanup(post_cleanup)]) :
 % Test suite for session lifecycle with transitions
 :- begin_tests(session_lifecycle).
 
+% Pre-cleanup: ensure completely clean state before each test
+pre_cleanup :-
+    % Ensure we're on main branch
+    catch(run(command(git(checkout(['main']))), _), _, true),
+    % Aggressively clean up any test or transition branches
+    catch((
+        run(command(git(branch(['--format=%(refname:short)']))), BranchResult),
+        (BranchResult = ok(result(BranchOutput, _)) ->
+            split_string(BranchOutput, '\n', '\n \t', BranchLines),
+            include(is_transition_or_test_branch, BranchLines, TestBranches),
+            maplist(force_delete_branch, TestBranches)
+        ; true)
+    ), _, true),
+    % Reset any staged changes
+    catch(run(command(git(reset(['HEAD']))), _), _, true),
+    % Restore any tracked files that were modified
+    catch(run(command(git(checkout(['--', '.']))), _), _, true),
+    % Clean any untracked files
+    catch(run(command(git(clean(['-fd']))), _), _, true).
+
+% Post-cleanup: ensure clean state after each test
+post_cleanup :-
+    % Clean up test sessions and branches
+    cleanup_test_branches,
+    % Aggressively clean up any remaining transition branches
+    catch((
+        run(command(git(branch(['--format=%(refname:short)']))), BranchResult),
+        (BranchResult = ok(result(BranchOutput, _)) ->
+            split_string(BranchOutput, '\n', '\n \t', BranchLines),
+            include(is_transition_or_test_branch, BranchLines, TestBranches),
+            maplist(force_delete_branch, TestBranches)
+        ; true)
+    ), _, true),
+    % Clean up any test files we created
+    catch(delete_file('test_dirty_state.txt'), _, true),
+    catch(delete_file('test_changes_new.txt'), _, true),
+    catch(delete_file('test_changes_mod.txt'), _, true),
+    catch(delete_file('test_logic_check.txt'), _, true),
+    catch(delete_file('test_new_file.txt'), _, true),
+    catch(delete_file('test_modified.txt'), _, true),
+    catch(delete_file('test_dirty_check.txt'), _, true),
+    catch(delete_file('test_workflow_dirty.txt'), _, true),
+    % Reset any staged changes and unstage everything
+    catch(run(command(git(reset(['HEAD']))), _), _, true),
+    % Restore any tracked files that were modified
+    catch(run(command(git(checkout(['--', '.']))), _), _, true),
+    % Clean any untracked files that might be test artifacts
+    catch(run(command(git(clean(['-fd']))), _), _, true),
+    % Ensure we're on main branch
+    catch(run(command(git(checkout(['main']))), _), _, true).
+
 setup :-
     catch(run(command(git(checkout(['main']))), _), _, true),
     cleanup_test_branches.
@@ -293,6 +344,57 @@ test(full_session_workflow_dirty, [setup(pre_cleanup), cleanup(post_cleanup)]) :
 
 % Test suite for error handling
 :- begin_tests(transition_error_handling).
+
+% Pre-cleanup: ensure completely clean state before each test
+pre_cleanup :-
+    % Ensure we're on main branch
+    catch(run(command(git(checkout(['main']))), _), _, true),
+    % Aggressively clean up any test or transition branches
+    catch((
+        run(command(git(branch(['--format=%(refname:short)']))), BranchResult),
+        (BranchResult = ok(result(BranchOutput, _)) ->
+            split_string(BranchOutput, '\n', '\n \t', BranchLines),
+            include(is_transition_or_test_branch, BranchLines, TestBranches),
+            maplist(force_delete_branch, TestBranches)
+        ; true)
+    ), _, true),
+    % Reset any staged changes
+    catch(run(command(git(reset(['HEAD']))), _), _, true),
+    % Restore any tracked files that were modified
+    catch(run(command(git(checkout(['--', '.']))), _), _, true),
+    % Clean any untracked files
+    catch(run(command(git(clean(['-fd']))), _), _, true).
+
+% Post-cleanup: ensure clean state after each test
+post_cleanup :-
+    % Clean up test sessions and branches
+    cleanup_test_branches,
+    % Aggressively clean up any remaining transition branches
+    catch((
+        run(command(git(branch(['--format=%(refname:short)']))), BranchResult),
+        (BranchResult = ok(result(BranchOutput, _)) ->
+            split_string(BranchOutput, '\n', '\n \t', BranchLines),
+            include(is_transition_or_test_branch, BranchLines, TestBranches),
+            maplist(force_delete_branch, TestBranches)
+        ; true)
+    ), _, true),
+    % Clean up any test files we created
+    catch(delete_file('test_dirty_state.txt'), _, true),
+    catch(delete_file('test_changes_new.txt'), _, true),
+    catch(delete_file('test_changes_mod.txt'), _, true),
+    catch(delete_file('test_logic_check.txt'), _, true),
+    catch(delete_file('test_new_file.txt'), _, true),
+    catch(delete_file('test_modified.txt'), _, true),
+    catch(delete_file('test_dirty_check.txt'), _, true),
+    catch(delete_file('test_workflow_dirty.txt'), _, true),
+    % Reset any staged changes and unstage everything
+    catch(run(command(git(reset(['HEAD']))), _), _, true),
+    % Restore any tracked files that were modified
+    catch(run(command(git(checkout(['--', '.']))), _), _, true),
+    % Clean any untracked files that might be test artifacts
+    catch(run(command(git(clean(['-fd']))), _), _, true),
+    % Ensure we're on main branch
+    catch(run(command(git(checkout(['main']))), _), _, true).
 
 setup :-
     catch(run(command(git(checkout(['main']))), _), _, true).
