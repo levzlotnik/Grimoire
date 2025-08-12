@@ -122,17 +122,17 @@ test(dirty_state_session_creation, [setup(pre_cleanup), cleanup(post_cleanup)]) 
     check_tracked_changes(Status),
     assertion(Status = dirty(tracked_changes(_))),
 
-    % Create session with dirty state - should use transition branch
-    start_session_with_transition('test-dirty-session', Result),
+    % Create session with dirty state - use auto-generated UUID
+    start_session(SessionId, Result),
 
     % Verify session created with transition
-    assertion(Result = ok(session_started('test-dirty-session', _, _, via_transition(_)))),
+    assertion(Result = ok(session_started(SessionId, _, _, via_transition(_)))),
 
     % Verify session branch exists
-    assertion(session_exists('test-dirty-session')),
+    assertion(session_exists(SessionId)),
 
     % Clean up - close session and reset git state
-    close_session('test-dirty-session', abandon, _).
+    close_session(SessionId, abandon, _).
 
 % Helper to write content to file
 write_file(Path, Content) :-
@@ -283,19 +283,19 @@ test(full_session_workflow_dirty, [setup(pre_cleanup), cleanup(post_cleanup)]) :
     run(command(git(add(['test_workflow_dirty.txt']))), _),
     write_file('test_workflow_dirty.txt', 'modified content'),
 
-    % Full workflow with dirty state
-    start_session_with_transition('test-workflow-dirty', CreateResult),
-    assertion(CreateResult = ok(session_started('test-workflow-dirty', _, _, via_transition(_)))),
+    % Full workflow with dirty state - use auto-generated UUID
+    start_session(SessionId, CreateResult),
+    assertion(CreateResult = ok(session_started(SessionId, _, _, via_transition(_)))),
 
     % Create a test file using simple operations instead of execute_transaction
     write_file('/tmp/test_workflow_dirty.txt', 'test content'),
 
     % Close session - should clean up transition branch
-    close_session('test-workflow-dirty', merge_to_main, CloseResult),
+    close_session(SessionId, merge_to_main, CloseResult),
     assertion(CloseResult = ok(_)),
 
     % Verify transition was cleaned up
-    find_transition_for_session('test-workflow-dirty', TransitionBranch),
+    find_transition_for_session(SessionId, TransitionBranch),
     assertion(TransitionBranch = none),
 
     % Clean up
