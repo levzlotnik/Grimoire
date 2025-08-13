@@ -273,15 +273,19 @@ create_transition_with_retry(SourceBranch, SessionId, RetriesLeft, Result) :-
 
             (CommitResult = ok(CommitHash) ->
                 Result = ok(transition_created(TransitionBranch, CommitHash))
+            ; CommitResult = error(no_tracked_changes) ->
+                % No changes to commit, but transition branch was created - skip transition
+                Result = error(no_tracked_changes)
             ;
                 % Commit failed - clean up transition branch
                 run(command(git(checkout([SourceBranch]))), _),
                 run(command(git(branch(['-D', TransitionBranch]))), _),
                 Result = error(failed_to_commit_transition(CommitResult))
             )
-        ; CreateResult = error(process_error(path(git), exit(128), _, _)) ->
+        ; CreateResult = error(process_error(path(git), exit(128), "", ErrorMsg)), 
+          sub_string(ErrorMsg, _, _, _, 'already exists') ->
             % Branch collision - retry with different name
-            format('Branch collision detected, retrying...~n', []),
+            format('Branch collision detected (~w), retrying...~n', [ErrorMsg]),
             NextRetries is RetriesLeft - 1,
             create_transition_with_retry(SourceBranch, SessionId, NextRetries, Result)
         ;
