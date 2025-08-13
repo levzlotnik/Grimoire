@@ -26,14 +26,12 @@ post_cleanup :-
     % Clean up test sessions and branches
     cleanup_test_branches,
     % Aggressively clean up any remaining transition branches
-    catch((
-        run(command(git(branch(['--format=%(refname:short)']))), BranchResult),
-        (BranchResult = ok(result(BranchOutput, _)) ->
-            split_string(BranchOutput, '\n', '\n \t', BranchLines),
-            include(is_transition_or_test_branch, BranchLines, TestBranches),
-            maplist(force_delete_branch, TestBranches)
-        ; true)
-    ), _, true),
+    run(command(git(branch(['--format=%(refname:short)']))), BranchResult),
+    (BranchResult = ok(result(BranchOutput, _)) ->
+        split_string(BranchOutput, '\n', '\n \t', BranchLines),
+        include(is_transition_or_test_branch, BranchLines, TestBranches),
+        maplist(force_delete_branch, TestBranches)
+    ; true),
     % Clean up any test files we created
     catch(delete_file('test_dirty_state.txt'), _, true),
     catch(delete_file('test_changes_new.txt'), _, true),
@@ -50,7 +48,9 @@ post_cleanup :-
     % Clean any untracked files that might be test artifacts
     catch(run(command(git(clean(['-fd']))), _), _, true),
     % Ensure we're on main branch
-    catch(run(command(git(checkout(['main']))), _), _, true).
+    catch(run(command(git(checkout(['main']))), _), _, true),
+    % Verify cleanup actually worked
+    verify_cleanup_worked.
 
 % Legacy setup/teardown for compatibility
 setup :-
@@ -75,20 +75,49 @@ cleanup_test_branches :-
 
 is_test_branch(BranchName) :-
     atom_string(BranchAtom, BranchName),
-    (sub_atom(BranchAtom, 0, _, _, 'session-test-') ;
+    (sub_atom(BranchAtom, 0, _, _, 'session-') ;
      sub_atom(BranchAtom, 0, _, _, 'transition_branch/')).
 
 delete_test_branch(BranchName) :-
-    catch(run(command(git(branch(['-D', BranchName]))), _), _, true).
+    format('Attempting to delete branch: ~w~n', [BranchName]),
+    run(command(git(branch(['-D', BranchName]))), Result),
+    (Result = ok(_) ->
+        format('Successfully deleted branch: ~w~n', [BranchName])
+    ;
+        format('Failed to delete branch ~w: ~w~n', [BranchName, Result])
+    ).
 
 % More aggressive cleanup helpers for teardown
 is_transition_or_test_branch(BranchName) :-
     atom_string(BranchAtom, BranchName),
-    (sub_atom(BranchAtom, 0, _, _, 'session-test-') ;
+    (sub_atom(BranchAtom, 0, _, _, 'session-') ;
      sub_atom(BranchAtom, 0, _, _, 'transition_branch/')).
 
 force_delete_branch(BranchName) :-
-    catch(run(command(git(branch(['-D', BranchName]))), _), _, true).
+    format('Force deleting branch: ~w~n', [BranchName]),
+    run(command(git(branch(['-D', BranchName]))), Result),
+    (Result = ok(_) ->
+        format('Successfully force deleted branch: ~w~n', [BranchName])
+    ;
+        format('Failed to force delete branch ~w: ~w~n', [BranchName, Result])
+    ).
+
+% Verify cleanup worked - no session/transition branches should remain
+verify_cleanup_worked :-
+    run(command(git(branch(['--format=%(refname:short)']))), BranchResult),
+    (BranchResult = ok(result(BranchOutput, _)) ->
+        split_string(BranchOutput, '\n', '\n \t', BranchLines),
+        include(is_transition_or_test_branch, BranchLines, RemainingBranches),
+        (RemainingBranches = [] ->
+            format('Cleanup verification: SUCCESS - no test branches remain~n', [])
+        ;
+            format('Cleanup verification: FAILED - branches remain: ~w~n', [RemainingBranches]),
+            fail
+        )
+    ;
+        format('Cleanup verification: ERROR - could not list branches: ~w~n', [BranchResult]),
+        fail
+    ).
 
 test(clean_state_session_creation, [setup(pre_cleanup), cleanup(post_cleanup)]) :-
     % Ensure clean git state
@@ -252,11 +281,17 @@ cleanup_test_branches :-
 
 is_test_branch(BranchName) :-
     atom_string(BranchAtom, BranchName),
-    (sub_atom(BranchAtom, 0, _, _, 'session-test-') ;
+    (sub_atom(BranchAtom, 0, _, _, 'session-') ;
      sub_atom(BranchAtom, 0, _, _, 'transition_branch/')).
 
 delete_test_branch(BranchName) :-
-    catch(run(command(git(branch(['-D', BranchName]))), _), _, true).
+    format('Attempting to delete branch: ~w~n', [BranchName]),
+    run(command(git(branch(['-D', BranchName]))), Result),
+    (Result = ok(_) ->
+        format('Successfully deleted branch: ~w~n', [BranchName])
+    ;
+        format('Failed to delete branch ~w: ~w~n', [BranchName, Result])
+    ).
 
 test(full_session_workflow_clean, [setup(pre_cleanup), cleanup(post_cleanup)]) :-
     % Full workflow with clean state
