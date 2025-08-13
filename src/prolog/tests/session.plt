@@ -1,404 +1,221 @@
-% Session and Transaction System Tests - Transition Branch System
+% Clean Session System Tests
 :- use_module(library(plunit)).
 :- use_module(library(uuid)).
 
-% Note: session.pl is already loaded by grimoire.pl, no need to load it again
+% Test suite for clean session system
+:- begin_tests(clean_session_system).
 
-% Test suite for transition branch system
-:- begin_tests(transition_branches).
+% === SETUP AND CLEANUP ===
 
-% Pre-cleanup: ensure completely clean state before each test
-pre_cleanup :-
-    format('=== PRE-CLEANUP STARTING ===~n', []),
-    % Ensure we're on main branch
-    run(command(git(checkout(['main']))), _),
-    % Simple branch cleanup - only delete branches we know are safe
-    run(command(git(branch(['--format=%(refname:short)']))), BranchResult),
-    (BranchResult = ok(result(BranchOutput, _)) ->
-        split_string(BranchOutput, '\n', '\n \t', BranchLines),
-        include(is_transition_or_test_branch, BranchLines, TestBranches),
-        format('Pre-cleanup found branches to delete: ~w~n', [TestBranches]),
-        maplist(force_delete_branch, TestBranches)
-    ; 
-        format('Pre-cleanup: could not list branches: ~w~n', [BranchResult])
-    ),
-    % Verify pre-cleanup worked
-    verify_cleanup_worked,
-    format('=== PRE-CLEANUP COMPLETE ===~n', []).
-
-% Post-cleanup: ensure clean state after each test
-post_cleanup :-
-    % Clean up test sessions and branches
-    cleanup_test_branches,
-    % Aggressively clean up any remaining transition branches
-    run(command(git(branch(['--format=%(refname:short)']))), BranchResult),
-    (BranchResult = ok(result(BranchOutput, _)) ->
-        split_string(BranchOutput, '\n', '\n \t', BranchLines),
-        include(is_transition_or_test_branch, BranchLines, TestBranches),
-        maplist(force_delete_branch, TestBranches)
-    ; true),
-    % Clean up any test files we created
-    catch(delete_file('test_dirty_state.txt'), _, true),
-    catch(delete_file('test_changes_new.txt'), _, true),
-    catch(delete_file('test_changes_mod.txt'), _, true),
-    catch(delete_file('test_logic_check.txt'), _, true),
-    catch(delete_file('test_new_file.txt'), _, true),
-    catch(delete_file('test_modified.txt'), _, true),
-    catch(delete_file('test_dirty_check.txt'), _, true),
-    catch(delete_file('test_workflow_dirty.txt'), _, true),
-    % Reset any staged changes and unstage everything
-    catch(run(command(git(reset(['HEAD']))), _), _, true),
-    % Restore any tracked files that were modified
-    catch(run(command(git(checkout(['--', '.']))), _), _, true),
-    % Clean any untracked files that might be test artifacts
-    catch(run(command(git(clean(['-fd']))), _), _, true),
-    % Ensure we're on main branch
-    catch(run(command(git(checkout(['main']))), _), _, true),
-    % Verify cleanup actually worked
-    verify_cleanup_worked.
-
-% Legacy setup/teardown for compatibility
 setup :-
-    pre_cleanup.
+    % Ensure clean state before each test
+    catch(run(command(git(checkout(['main']))), _), _, true),
+    cleanup_all_test_branches.
 
 teardown :-
-    post_cleanup.
+    % Clean up after each test
+    catch(run(command(git(checkout(['main']))), _), _, true),
+    cleanup_all_test_branches.
 
-% Helper to clean up test branches
-cleanup_test_branches :-
-    % Clean up any session branches starting with test-
-    catch((
-        run(command(git(branch(['--format=%(refname:short)']))), BranchResult),
-        (BranchResult = ok(result(BranchOutput, _)) ->
-            split_string(BranchOutput, '\n', '\n \t', BranchLines),
-            include(is_test_branch, BranchLines, TestBranches),
-            maplist(delete_test_branch, TestBranches)
-        ; true)
-    ), _, true),
-    % Clean up any transition branches
-    catch(cleanup_orphaned_transitions(_), _, true).
-
-is_test_branch(BranchName) :-
-    atom_string(BranchAtom, BranchName),
-    (sub_atom(BranchAtom, 0, _, _, 'session-') ;
-     sub_atom(BranchAtom, 0, _, _, 'transition_branch/')).
-
-delete_test_branch(BranchName) :-
-    format('Attempting to delete branch: ~w~n', [BranchName]),
-    run(command(git(branch(['-D', BranchName]))), Result),
-    (Result = ok(_) ->
-        format('Successfully deleted branch: ~w~n', [BranchName])
-    ;
-        format('Failed to delete branch ~w: ~w~n', [BranchName, Result])
-    ).
-
-% More aggressive cleanup helpers for teardown
-is_transition_or_test_branch(BranchName) :-
-    atom_string(BranchAtom, BranchName),
-    (sub_atom(BranchAtom, 0, _, _, 'session-') ;
-     sub_atom(BranchAtom, 0, _, _, 'transition_branch/')).
-
-force_delete_branch(BranchName) :-
-    format('Force deleting branch: ~w~n', [BranchName]),
-    run(command(git(branch(['-D', BranchName]))), Result),
-    (Result = ok(_) ->
-        format('Successfully force deleted branch: ~w~n', [BranchName])
-    ;
-        format('Failed to force delete branch ~w: ~w~n', [BranchName, Result])
-    ).
-
-% Verify cleanup worked - no session/transition branches should remain
-verify_cleanup_worked :-
+cleanup_all_test_branches :-
+    % Clean up any session or transition branches from tests
     run(command(git(branch(['--format=%(refname:short)']))), BranchResult),
     (BranchResult = ok(result(BranchOutput, _)) ->
         split_string(BranchOutput, '\n', '\n \t', BranchLines),
-        include(is_transition_or_test_branch, BranchLines, RemainingBranches),
-        (RemainingBranches = [] ->
-            format('Cleanup verification: SUCCESS - no test branches remain~n', [])
-        ;
-            format('Cleanup verification: FAILED - branches remain: ~w~n', [RemainingBranches]),
-            fail
-        )
-    ;
-        format('Cleanup verification: ERROR - could not list branches: ~w~n', [BranchResult]),
-        fail
+        include(is_test_branch, BranchLines, TestBranches),
+        maplist(force_delete_branch, TestBranches)
+    ; 
+        true
     ).
 
-test(clean_state_session_creation, [setup(pre_cleanup), cleanup(post_cleanup)]) :-
-    % Ensure clean git state
-    check_tracked_changes(Status),
-    assertion(Status = clean),
+is_test_branch(BranchName) :-
+    string_concat("session-", _, BranchName) ;
+    string_concat("transition_branch/", _, BranchName).
 
-    % Create session with clean state - should use direct creation
-    start_session_with_transition('test-clean-session', Result),
+force_delete_branch(BranchName) :-
+    run(command(git(branch(['-D', BranchName]))), _).
 
-    % Verify session created successfully
-    assertion(Result = ok(session_started('test-clean-session', _, _, direct))),
-
-    % Verify session branch exists
-    assertion(session_exists('test-clean-session')),
-
-    % Verify no transition branch was created
-    find_transition_for_session('test-clean-session', TransitionBranch),
-    assertion(TransitionBranch = none),
-
-    % CRITICAL: Close the session properly
-    close_session('test-clean-session', abandon, _).
-
-test(dirty_state_session_creation, [setup(pre_cleanup), cleanup(post_cleanup)]) :-
-    % Create dirty state without permanent commits
-    write_file('test_dirty_state.txt', 'initial content'),
-    run(command(git(add(['test_dirty_state.txt']))), AddResult),
-    % Modify file to create dirty state (don't commit yet)
-    write_file('test_dirty_state.txt', 'modified content'),
-
-    % Verify we have dirty tracked changes
-    check_tracked_changes(Status),
-    assertion(Status = dirty(tracked_changes(_))),
-
-    % Create session with dirty state - use auto-generated UUID
-    start_session(SessionId, Result),
-
-    % Verify session created with transition
-    assertion(Result = ok(session_started(SessionId, _, _, via_transition(_)))),
-
-    % Verify session branch exists
-    assertion(session_exists(SessionId)),
-
-    % Clean up - close session and reset git state
-    close_session(SessionId, abandon, _).
-
-% Helper to write content to file
-write_file(Path, Content) :-
+% Helper to create test file
+create_test_file(FileName, Content) :-
     setup_call_cleanup(
-        open(Path, write, Stream),
+        open(FileName, write, Stream),
         write(Stream, Content),
         close(Stream)
     ).
 
-test(transition_branch_naming, [setup(pre_cleanup), cleanup(post_cleanup)]) :-
-    % Test transition branch name generation
-    transition_branch_name('main', 'test-session-123', TransitionBranch),
-    assertion(TransitionBranch = 'transition_branch/main--session-test-session-123'),
+% === PATTERN 1 TESTS: Clean state → any session ===
 
-    % Test session branch name generation
-    session_branch_name('test-session-456', SessionBranch),
-    assertion(SessionBranch = 'session-test-session-456').
+test(clean_to_new_session, [setup(setup), cleanup(teardown)]) :-
+    % Verify clean state
+    check_working_tree_status(Status),
+    assertion(Status = clean),
+    
+    % Start new session from clean state
+    start_session('test-new-session', Result),
+    
+    % Should use direct checkout pattern
+    assertion(Result = ok(session_started('test-new-session', new, clean, direct))),
+    
+    % Verify session branch was created and we're on it
+    get_current_branch(CurrentBranch),
+    assertion(CurrentBranch = 'session-test-new-session').
 
-test(tracked_changes_parsing, [setup(pre_cleanup), cleanup(post_cleanup)]) :-
-    % Create test files using simple file operations
-    write_file('test_changes_new.txt', 'new content'),
-    write_file('test_changes_mod.txt', 'initial content'),
-
-    % Add files to git and commit
-    run(command(git(add(['test_changes_new.txt', 'test_changes_mod.txt']))), _),
-    run(command(git(commit(['-m', 'Add test files for parsing test']))), _),
-
-    % Modify one file to create dirty state
-    write_file('test_changes_mod.txt', 'modified content'),
-
-    % Check parsed status
-    check_tracked_changes(Status),
-    assertion(Status = dirty(tracked_changes(Changes))),
-
-    % Verify structured terms
-    member(modified('test_changes_mod.txt'), Changes),
-
-    % Clean up git state
-    run(command(git(reset(['--hard', 'HEAD~1']))), _).
-
-test(transition_branch_management, [setup(pre_cleanup), cleanup(post_cleanup)]) :-
-    % Create a few transition branches manually for testing
-    run(command(git(checkout(['-b', 'transition_branch/main--session-test1']))), _),
+test(clean_to_existing_session, [setup(setup), cleanup(teardown)]) :-
+    % Create a session first
+    start_session('test-existing', _),
+    close_session('test-existing', keep_branch, _),
+    
+    % Return to main with clean state
     run(command(git(checkout(['main']))), _),
-    run(command(git(checkout(['-b', 'transition_branch/main--session-test2']))), _),
+    check_working_tree_status(Status),
+    assertion(Status = clean),
+    
+    % Start existing session from clean state
+    start_session('test-existing', Result),
+    
+    % Should use direct checkout to existing
+    assertion(Result = ok(session_started('test-existing', existing, clean, direct))),
+    
+    % Verify we're on the existing session branch
+    get_current_branch(CurrentBranch),
+    assertion(CurrentBranch = 'session-test-existing').
+
+% === PATTERN 2 TESTS: Dirty state → existing session ===
+
+test(dirty_to_existing_session, [setup(setup), cleanup(teardown)]) :-
+    % Create a session and keep it
+    start_session('test-dirty-existing', _),
+    close_session('test-dirty-existing', keep_branch, _),
+    
+    % Return to main and create dirty state
     run(command(git(checkout(['main']))), _),
+    create_test_file('dirty_test.txt', 'dirty content'),
+    run(command(git(add(['dirty_test.txt']))), _),
+    
+    % Verify dirty state
+    check_working_tree_status(Status),
+    assertion(Status = dirty),
+    
+    % Start existing session from dirty state
+    start_session('test-dirty-existing', Result),
+    
+    % Should use direct checkout (let git handle merge)
+    assertion(Result = ok(session_started('test-dirty-existing', existing, dirty, direct_with_merge))),
+    
+    % Clean up test file
+    catch(delete_file('dirty_test.txt'), _, true).
 
-    % Test listing transition branches
-    list_transition_branches(Transitions),
-    assertion(length(Transitions, 2)),
-    assertion(member("transition_branch/main--session-test1", Transitions)),
-    assertion(member("transition_branch/main--session-test2", Transitions)).
+% === PATTERN 3 TESTS: Dirty state → NEW session (via transition) ===
 
-test(should_use_transition_logic, [setup(pre_cleanup), cleanup(post_cleanup)]) :-
-    % Clean state, new session - should not use transition
-    check_tracked_changes(Status1),
-    assertion(Status1 = clean),
-    assertion(\+ should_use_transition('test-new-session')),
+test(dirty_to_new_session_via_transition, [setup(setup), cleanup(teardown)]) :-
+    % Create dirty state
+    create_test_file('dirty_transition_test.txt', 'dirty content'),
+    run(command(git(add(['dirty_transition_test.txt']))), _),
+    
+    % Verify dirty state
+    check_working_tree_status(Status),
+    assertion(Status = dirty),
+    
+    % Start NEW session from dirty state
+    start_session('test-transition-new', Result),
+    
+    % Should use transition branch workflow
+    assertion(Result = ok(session_started('test-transition-new', new, dirty, via_transition(_)))),
+    
+    % Verify we're on the new session branch
+    get_current_branch(CurrentBranch),
+    assertion(CurrentBranch = 'session-test-transition-new'),
+    
+    % Verify transition branch was created (extract from Result)
+    Result = ok(session_started(_, _, _, via_transition(TransitionBranch))),
+    run(command(git(branch(['--list', TransitionBranch]))), BranchCheck),
+    BranchCheck = ok(result(BranchOutput, _)),
+    assertion(BranchOutput \= ""),
+    
+    % Clean up test file
+    catch(delete_file('dirty_transition_test.txt'), _, true).
 
-    % Create file and add to git to establish tracking
-    write_file('test_logic_check.txt', 'initial content'),
-    run(command(git(add(['test_logic_check.txt']))), _),
-    run(command(git(commit(['-m', 'Add test file for logic check']))), _),
+% === SESSION MANAGEMENT TESTS ===
 
-    % Modify file to create dirty state
-    write_file('test_logic_check.txt', 'modified content'),
-
-    % Dirty state, new session - should use transition
-    assertion(should_use_transition('test-new-session-2')),
-
-    % Clean up git state
-    run(command(git(reset(['--hard', 'HEAD~1']))), _).
-
-:- end_tests(transition_branches).
-
-% Test suite for session lifecycle with transitions
-:- begin_tests(session_lifecycle).
-
-% Pre-cleanup: ensure completely clean state before each test
-pre_cleanup :-
-    % Ensure we're on main branch
-    catch(run(command(git(checkout(['main']))), _), _, true),
-    % Simple branch cleanup - only delete branches we know are safe
-    catch((
-        run(command(git(branch(['--format=%(refname:short)']))), BranchResult),
-        (BranchResult = ok(result(BranchOutput, _)) ->
-            split_string(BranchOutput, '\n', '\n \t', BranchLines),
-            include(is_transition_or_test_branch, BranchLines, TestBranches),
-            maplist(force_delete_branch, TestBranches)
-        ; true)
-    ), _, true).
-
-% Post-cleanup: ensure clean state after each test
-post_cleanup :-
-    % Clean up test sessions and branches
-    cleanup_test_branches.
-
-setup :-
-    catch(run(command(git(checkout(['main']))), _), _, true),
-    cleanup_test_branches.
-
-teardown :-
-    cleanup_test_branches,
-    catch(run(command(git(checkout(['main']))), _), _, true).
-
-% Use same cleanup helper
-cleanup_test_branches :-
-    catch((
-        run(command(git(branch(['--format=%(refname:short)']))), BranchResult),
-        (BranchResult = ok(result(BranchOutput, _)) ->
-            split_string(BranchOutput, '\n', '\n \t', BranchLines),
-            include(is_test_branch, BranchLines, TestBranches),
-            maplist(delete_test_branch, TestBranches)
-        ; true)
-    ), _, true),
-    catch(cleanup_orphaned_transitions(_), _, true).
-
-is_test_branch(BranchName) :-
-    atom_string(BranchAtom, BranchName),
-    (sub_atom(BranchAtom, 0, _, _, 'session-') ;
-     sub_atom(BranchAtom, 0, _, _, 'transition_branch/')).
-
-delete_test_branch(BranchName) :-
-    format('Attempting to delete branch: ~w~n', [BranchName]),
-    run(command(git(branch(['-D', BranchName]))), Result),
-    (Result = ok(_) ->
-        format('Successfully deleted branch: ~w~n', [BranchName])
-    ;
-        format('Failed to delete branch ~w: ~w~n', [BranchName, Result])
-    ).
-
-test(full_session_workflow_clean, [setup(pre_cleanup), cleanup(post_cleanup)]) :-
-    % Full workflow with clean state
-    start_session_with_transition('test-workflow-clean', CreateResult),
-    assertion(CreateResult = ok(session_started('test-workflow-clean', _, _, direct))),
-
-    % Create a test file using simple operations instead of execute_transaction
-    write_file('/tmp/test_workflow.txt', 'test content'),
-
-    % Close session
-    close_session('test-workflow-clean', merge_to_main, CloseResult),
-    assertion(CloseResult = ok(_)),
-
-    % Verify transition cleanup (should be none since direct creation)
-    find_transition_for_session('test-workflow-clean', TransitionBranch),
-    assertion(TransitionBranch = none),
-
-    % Clean up file
-    catch(delete_file('/tmp/test_workflow.txt'), _, true).
-
-test(full_session_workflow_dirty, [setup(pre_cleanup), cleanup(post_cleanup)]) :-
-    % Create dirty state using proper method
-    write_file('test_workflow_dirty.txt', 'initial content'),
-    run(command(git(add(['test_workflow_dirty.txt']))), _),
-    write_file('test_workflow_dirty.txt', 'modified content'),
-
-    % Full workflow with dirty state - use auto-generated UUID
-    start_session(SessionId, CreateResult),
-    assertion(CreateResult = ok(session_started(SessionId, _, _, via_transition(_)))),
-
-    % Create a test file using simple operations instead of execute_transaction
-    write_file('/tmp/test_workflow_dirty.txt', 'test content'),
-
-    % Close session - should clean up transition branch
-    close_session(SessionId, merge_to_main, CloseResult),
-    assertion(CloseResult = ok(_)),
-
-    % Verify transition was cleaned up
-    find_transition_for_session(SessionId, TransitionBranch),
-    assertion(TransitionBranch = none),
-
-    % Clean up
-    run(command(git(checkout(['--', 'test_workflow_dirty.txt']))), _),
-    catch(delete_file('/tmp/test_workflow_dirty.txt'), _, true).
-
-:- end_tests(session_lifecycle).
-
-% Test suite for error handling
-:- begin_tests(transition_error_handling).
-
-% Pre-cleanup: ensure completely clean state before each test
-pre_cleanup :-
-    % Ensure we're on main branch
-    catch(run(command(git(checkout(['main']))), _), _, true),
-    % Simple branch cleanup - only delete branches we know are safe
-    catch((
-        run(command(git(branch(['--format=%(refname:short)']))), BranchResult),
-        (BranchResult = ok(result(BranchOutput, _)) ->
-            split_string(BranchOutput, '\n', '\n \t', BranchLines),
-            include(is_transition_or_test_branch, BranchLines, TestBranches),
-            maplist(force_delete_branch, TestBranches)
-        ; true)
-    ), _, true).
-
-% Post-cleanup: ensure clean state after each test
-post_cleanup :-
-    % Clean up test sessions and branches
-    cleanup_test_branches.
-
-setup :-
-    catch(run(command(git(checkout(['main']))), _), _, true).
-
-teardown :-
-    catch(run(command(git(checkout(['main']))), _), _, true).
-
-test(session_exists_check, [setup(pre_cleanup), cleanup(post_cleanup)]) :-
+test(session_exists_check, [setup(setup), cleanup(teardown)]) :-
     % Non-existent session
-    assertion(\+ session_exists('non-existent-session')),
-
+    assertion(\+ session_exists('non-existent')),
+    
     % Create session
-    start_session_with_transition('test-exists', _),
+    start_session('test-exists', _),
+    
+    % Now should exist
+    assertion(session_exists('test-exists')).
 
-    % Now it should exist
-    assertion(session_exists('test-exists')),
+test(session_branch_naming, [setup(setup), cleanup(teardown)]) :-
+    % Test session branch name generation
+    session_branch_name('my-session', BranchName),
+    assertion(BranchName = 'session-my-session').
 
-    % Clean up
-    catch(run(command(git(branch(['-D', 'session-test-exists']))), _), _, true).
+test(transition_branch_naming, [setup(setup), cleanup(teardown)]) :-
+    % Test transition branch name generation
+    transition_branch_name('main', 'new-session', TransitionName),
+    assertion(TransitionName = 'transition_branch/main--new-session').
 
-test(git_status_edge_cases, [setup(pre_cleanup), cleanup(post_cleanup)]) :-
-    % Test with completely clean repo
-    check_tracked_changes(Status1),
+% === SESSION CLOSURE TESTS ===
+
+test(session_merge_to_main, [setup(setup), cleanup(teardown)]) :-
+    % Create and work in session
+    start_session('test-merge', _),
+    create_test_file('session_work.txt', 'session content'),
+    run(command(git(add(['session_work.txt']))), _),
+    run(command(git(commit(['-m', 'Session work']))), _),
+    
+    % Close with merge
+    close_session('test-merge', merge_to_main, Result),
+    assertion(Result = ok(session_closed('test-merge', merged_to_main))),
+    
+    % Verify we're back on main
+    get_current_branch(CurrentBranch),
+    assertion(CurrentBranch = 'main'),
+    
+    % Verify session branch was deleted
+    assertion(\+ session_exists('test-merge')),
+    
+    % Clean up test file
+    catch(delete_file('session_work.txt'), _, true).
+
+test(session_abandon, [setup(setup), cleanup(teardown)]) :-
+    % Create session
+    start_session('test-abandon', _),
+    create_test_file('abandon_test.txt', 'abandon content'),
+    run(command(git(add(['abandon_test.txt']))), _),
+    run(command(git(commit(['-m', 'Work to abandon']))), _),
+    
+    % Abandon session
+    close_session('test-abandon', abandon, Result),
+    assertion(Result = ok(session_closed('test-abandon', abandoned))),
+    
+    % Verify we're back on main
+    get_current_branch(CurrentBranch),
+    assertion(CurrentBranch = 'main'),
+    
+    % Verify session branch was deleted
+    assertion(\+ session_exists('test-abandon')),
+    
+    % Clean up any remaining test file
+    catch(delete_file('abandon_test.txt'), _, true).
+
+% === WORKING TREE STATUS TESTS ===
+
+test(working_tree_status_detection, [setup(setup), cleanup(teardown)]) :-
+    % Clean state
+    check_working_tree_status(Status1),
     assertion(Status1 = clean),
-
-    % Test has_dirty_tracked_files
-    assertion(\+ has_dirty_tracked_files),
-
-    % Create untracked file (should still be clean for tracked changes)
-    run(command(executable_program(path(echo), ['untracked', '>', 'untracked_file.txt'])), _),
-    check_tracked_changes(Status2),
-    assertion(Status2 = clean),
-
+    
+    % Create dirty state
+    create_test_file('status_test.txt', 'test content'),
+    run(command(git(add(['status_test.txt']))), _),
+    check_working_tree_status(Status2),
+    assertion(Status2 = dirty),
+    
     % Clean up
-    run(command(executable_program(path(rm), ['-f', 'untracked_file.txt'])), _).
+    run(command(git(reset(['HEAD']))), _),
+    catch(delete_file('status_test.txt'), _, true).
 
-:- end_tests(transition_error_handling).
+:- end_tests(clean_session_system).
