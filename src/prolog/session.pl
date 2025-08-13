@@ -117,15 +117,17 @@ session_exists(SessionId) :-
     Output \= "".
 
 session_branch_name(SessionId, BranchName) :-
-    format(string(BranchName), "session-~w", [SessionId]).
+    format(atom(BranchName), 'session-~w', [SessionId]).
 
 transition_branch_name(SourceBranch, SessionId, TransitionBranch) :-
-    format(string(TransitionBranch), "transition_branch/~w--~w", [SourceBranch, SessionId]).
+    format(atom(TransitionBranch), 'transition_branch/~w--~w', [SourceBranch, SessionId]).
 
 get_current_branch(Branch) :-
     run(command(git(['branch', '--show-current'])), Result),
     Result = ok(result(BranchOutput, _)),
-    string_concat(Branch, "\n", BranchOutput).
+    % Strip newline and convert to atom
+    string_concat(BranchStr, "\n", BranchOutput),
+    atom_string(Branch, BranchStr).
 
 % === WORKING TREE STATUS ===
 
