@@ -250,11 +250,9 @@ transition_based_session_creation(SessionId, SourceBranch, Result) :-
 
 % Create transition branch for new session with tracked changes
 create_transition_for_new_session(SourceBranch, SessionId, Result) :-
-    % Generate transition branch name
-    format(string(TransitionBranch), "transition_branch/~w--session-~w", [SourceBranch, SessionId]),
-
-    % Clean up any existing transition branch with same name (defensive)
-    catch(run(command(git(branch(['-D', TransitionBranch]))), _), _, true),
+    % Generate unique transition branch name with timestamp to avoid any conflicts
+    get_time(Timestamp),
+    format(string(TransitionBranch), "transition_branch/~w--session-~w--~w", [SourceBranch, SessionId, Timestamp]),
 
     % Create transition branch from source
     run(command(git(checkout(['-b', TransitionBranch]))), CreateResult),
