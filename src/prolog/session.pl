@@ -6,16 +6,61 @@
 entity(session).
 entity(transaction).
 
-% Session components
-component(session, state, active).
-component(session, state, closed).
-component(session, close_strategy, merge_to_main).
-component(session, close_strategy, abandon).
-component(session, close_strategy, keep_branch).
+% Session concepts
+component(session, concept, session(state)).
+component(session, concept, close_strategy).
+component(session, concept, transition_branch).
+component(session, concept, working_tree_status).
 
-% Transaction states  
-component(transaction, state, committed).
-component(transaction, state, failed).
+% Session state entity and constructors
+entity(session(state)).
+component(session(state), ctor, active).
+component(session(state), ctor, closed).
+
+docstring(session(state), 
+    "Session state represents the lifecycle stage of a Git-backed session branch."
+).
+
+% Close strategy entity and constructors  
+entity(close_strategy).
+component(close_strategy, ctor, merge_to_main).
+component(close_strategy, ctor, abandon).
+component(close_strategy, ctor, keep_branch).
+
+docstring(close_strategy,
+    "Close strategy determines how a session branch is handled when closing the session."
+).
+
+% Transition branch entity
+entity(transition_branch).
+component(transition_branch, concept, creation).
+component(transition_branch, concept, integration). 
+component(transition_branch, concept, restoration).
+
+docstring(transition_branch,
+    "Transition branch provides a context-aware stash mechanism for moving dirty state to new sessions."
+).
+
+% Working tree status entity
+entity(working_tree_status).
+component(working_tree_status, ctor, clean).
+component(working_tree_status, ctor, dirty).
+
+docstring(working_tree_status,
+    "Working tree status indicates whether there are uncommitted changes in the repository."
+).
+
+% Transaction concepts
+component(transaction, concept, transaction(state)).
+
+% Transaction state entity and constructors
+entity(transaction(state)).
+component(transaction(state), ctor, committed).
+component(transaction(state), ctor, failed).
+
+docstring(transaction(state),
+    "Transaction state represents the outcome of atomic operations within a session."
+).
 
 % Session commands
 component(command, ctor, session).
