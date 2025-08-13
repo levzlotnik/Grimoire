@@ -24,11 +24,7 @@ component(session, subcommand, close).
 component(session, subcommand, execute).
 
 docstring(session, 
-    "Clean session system where sessions are Git branches and transactions are Git commits.\n" +
-    "Three transition patterns:\n" +
-    "1. Clean state → any session: Direct git checkout\n" +
-    "2. Dirty state → existing session: Git checkout (let git handle conflicts)\n" +
-    "3. Dirty state → NEW session: Via transition branch workflow"
+    "Clean session system where sessions are Git branches and transactions are Git commits.\nThree transition patterns:\n1. Clean state → any session: Direct git checkout\n2. Dirty state → existing session: Git checkout (let git handle conflicts)\n3. Dirty state → NEW session: Via transition branch workflow"
 ).
 
 % === CORE SESSION TRANSITIONS ===
@@ -101,7 +97,7 @@ create_transition_workflow(SessionId, Result) :-
         Result = error(failed_to_create_transition_branch(CreateResult))
     ).
 
-commit_dirty_changes(TransitionBranch, SessionId, Result) :-
+commit_dirty_changes(_, SessionId, Result) :-
     % Add tracked changes only (not untracked files)
     run(command(git(add(['-u']))), AddResult),
     (AddResult = ok(_) ->
@@ -272,13 +268,4 @@ create_transaction_commit(Commands, Result) :-
     run(command(git(commit(['-a', '-m', CommitMsg]))), Result).
 
 % === COMMAND EXECUTION ===
-% Reuse existing execute_commands from core system
-
-execute_commands([], []).
-execute_commands([Cmd|Rest], [Res|Results]) :-
-    run(Cmd, Res),
-    (Res = error(_) ->
-        Results = []  % Stop on first error
-    ;
-        execute_commands(Rest, Results)
-    ).
+% Uses execute_commands/2 from grimoire.pl core system
