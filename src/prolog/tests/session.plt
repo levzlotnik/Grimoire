@@ -9,17 +9,22 @@
 
 % Pre-cleanup: ensure completely clean state before each test
 pre_cleanup :-
+    format('=== PRE-CLEANUP STARTING ===~n', []),
     % Ensure we're on main branch
-    catch(run(command(git(checkout(['main']))), _), _, true),
+    run(command(git(checkout(['main']))), _),
     % Simple branch cleanup - only delete branches we know are safe
-    catch((
-        run(command(git(branch(['--format=%(refname:short)']))), BranchResult),
-        (BranchResult = ok(result(BranchOutput, _)) ->
-            split_string(BranchOutput, '\n', '\n \t', BranchLines),
-            include(is_transition_or_test_branch, BranchLines, TestBranches),
-            maplist(force_delete_branch, TestBranches)
-        ; true)
-    ), _, true).
+    run(command(git(branch(['--format=%(refname:short)']))), BranchResult),
+    (BranchResult = ok(result(BranchOutput, _)) ->
+        split_string(BranchOutput, '\n', '\n \t', BranchLines),
+        include(is_transition_or_test_branch, BranchLines, TestBranches),
+        format('Pre-cleanup found branches to delete: ~w~n', [TestBranches]),
+        maplist(force_delete_branch, TestBranches)
+    ; 
+        format('Pre-cleanup: could not list branches: ~w~n', [BranchResult])
+    ),
+    % Verify pre-cleanup worked
+    verify_cleanup_worked,
+    format('=== PRE-CLEANUP COMPLETE ===~n', []).
 
 % Post-cleanup: ensure clean state after each test
 post_cleanup :-
