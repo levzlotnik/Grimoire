@@ -250,22 +250,24 @@ transition_based_session_creation(SessionId, SourceBranch, Result) :-
 
 % Create transition branch for new session with tracked changes
 create_transition_for_new_session(SourceBranch, SessionId, Result) :-
-    % Generate unique transition branch name with timestamp to avoid any conflicts
-    get_time(Timestamp),
-    format(string(TransitionBranch), "transition_branch/~w--session-~w--~w", [SourceBranch, SessionId, Timestamp]),
-    format('Creating transition branch: ~w~n', [TransitionBranch]),
+    create_transition_with_retry(SourceBranch, SessionId, 3, Result).
 
-    % Check if branch already exists before creating
-    run(command(git(rev_parse(['--verify', TransitionBranch]))), CheckResult),
-    (CheckResult = ok(_) ->
-        format('ERROR: Transition branch ~w already exists!~n', [TransitionBranch]),
-        Result = error(branch_already_exists(TransitionBranch))
+% Retry logic for transition branch creation
+create_transition_with_retry(SourceBranch, SessionId, RetriesLeft, Result) :-
+    (RetriesLeft =< 0 ->
+        Result = error(too_many_retries_for_transition_branch)
     ;
-        format('Branch ~w does not exist, creating...~n', [TransitionBranch]),
-        % Create transition branch from source
+        % Generate unique transition branch name with timestamp and random suffix
+        get_time(Timestamp),
+        random(10000, RandomSuffix),  % Add random component
+        format(string(TransitionBranch), "transition_branch/~w--session-~w--~w--~w", [SourceBranch, SessionId, Timestamp, RandomSuffix]),
+        format('Attempting to create transition branch: ~w (retries left: ~w)~n', [TransitionBranch, RetriesLeft]),
+
+        % Try to create transition branch directly, handle collision gracefully
         run(command(git(checkout(['-b', TransitionBranch]))), CreateResult),
 
         (CreateResult = ok(_) ->
+            format('Successfully created transition branch: ~w~n', [TransitionBranch]),
             % Stage and commit tracked changes only
             commit_tracked_changes_only(TransitionBranch, SessionId, CommitResult),
 
@@ -277,6 +279,11 @@ create_transition_for_new_session(SourceBranch, SessionId, Result) :-
                 run(command(git(branch(['-D', TransitionBranch]))), _),
                 Result = error(failed_to_commit_transition(CommitResult))
             )
+        ; CreateResult = error(process_error(path(git), exit(128), _, _)) ->
+            % Branch collision - retry with different name
+            format('Branch collision detected, retrying...~n', []),
+            NextRetries is RetriesLeft - 1,
+            create_transition_with_retry(SourceBranch, SessionId, NextRetries, Result)
         ;
             Result = error(failed_to_create_transition_branch(CreateResult))
         )
