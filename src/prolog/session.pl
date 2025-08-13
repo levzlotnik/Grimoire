@@ -257,10 +257,10 @@ create_transition_with_retry(SourceBranch, SessionId, RetriesLeft, Result) :-
     (RetriesLeft =< 0 ->
         Result = error(too_many_retries_for_transition_branch)
     ;
-        % Generate unique transition branch name with timestamp and random suffix
+        % Generate unique transition branch name with timestamp and retry counter
         get_time(Timestamp),
-        random(10000, RandomSuffix),  % Add random component
-        format(string(TransitionBranch), "transition_branch/~w--session-~w--~w--~w", [SourceBranch, SessionId, Timestamp, RandomSuffix]),
+        RetrySuffix is 3 - RetriesLeft + 1,  % Use retry attempt as suffix
+        format(string(TransitionBranch), "transition_branch/~w--session-~w--~w--retry~w", [SourceBranch, SessionId, Timestamp, RetrySuffix]),
         format('Attempting to create transition branch: ~w (retries left: ~w)~n', [TransitionBranch, RetriesLeft]),
 
         % Try to create transition branch directly, handle collision gracefully
