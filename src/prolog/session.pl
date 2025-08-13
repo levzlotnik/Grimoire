@@ -37,7 +37,8 @@ start_session(SessionId, Result) :-
 % Pattern 1: Clean state → any session (existing or new)
 transition_to_session(SessionId, clean, Result) :-
     (session_exists(SessionId) ->
-        run(command(git(checkout([SessionId]))), GitResult),
+        session_branch_name(SessionId, BranchName),
+        run(command(git(checkout([BranchName]))), GitResult),
         (GitResult = ok(_) ->
             Result = ok(session_started(SessionId, existing, clean, direct))
         ;
