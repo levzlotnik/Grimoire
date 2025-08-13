@@ -118,6 +118,27 @@ docstring(git(log),
     |}
 ).
 
+docstring(git(rev_parse),
+    {|string(_)||
+    Parse and verify Git revision/object names.
+    Format: git(rev_parse(Args))
+    |}
+).
+
+docstring(git(reset),
+    {|string(_)||
+    Reset current HEAD to the specified state.
+    Format: git(reset(Args))
+    |}
+).
+
+docstring(git(merge),
+    {|string(_)||
+    Join two or more development histories together.
+    Format: git(merge(Args))
+    |}
+).
+
 docstring(git, S) :-
     make_ctors_docstring(git, CtorsDoc),
     S = {|string(CtorsDoc)||
