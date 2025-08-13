@@ -253,24 +253,33 @@ create_transition_for_new_session(SourceBranch, SessionId, Result) :-
     % Generate unique transition branch name with timestamp to avoid any conflicts
     get_time(Timestamp),
     format(string(TransitionBranch), "transition_branch/~w--session-~w--~w", [SourceBranch, SessionId, Timestamp]),
+    format('Creating transition branch: ~w~n', [TransitionBranch]),
 
-    % Create transition branch from source
-    run(command(git(checkout(['-b', TransitionBranch]))), CreateResult),
-
-    (CreateResult = ok(_) ->
-        % Stage and commit tracked changes only
-        commit_tracked_changes_only(TransitionBranch, SessionId, CommitResult),
-
-        (CommitResult = ok(CommitHash) ->
-            Result = ok(transition_created(TransitionBranch, CommitHash))
-        ;
-            % Commit failed - clean up transition branch
-            run(command(git(checkout([SourceBranch]))), _),
-            run(command(git(branch(['-D', TransitionBranch]))), _),
-            Result = error(failed_to_commit_transition(CommitResult))
-        )
+    % Check if branch already exists before creating
+    run(command(git(rev_parse(['--verify', TransitionBranch]))), CheckResult),
+    (CheckResult = ok(_) ->
+        format('ERROR: Transition branch ~w already exists!~n', [TransitionBranch]),
+        Result = error(branch_already_exists(TransitionBranch))
     ;
-        Result = error(failed_to_create_transition_branch(CreateResult))
+        format('Branch ~w does not exist, creating...~n', [TransitionBranch]),
+        % Create transition branch from source
+        run(command(git(checkout(['-b', TransitionBranch]))), CreateResult),
+
+        (CreateResult = ok(_) ->
+            % Stage and commit tracked changes only
+            commit_tracked_changes_only(TransitionBranch, SessionId, CommitResult),
+
+            (CommitResult = ok(CommitHash) ->
+                Result = ok(transition_created(TransitionBranch, CommitHash))
+            ;
+                % Commit failed - clean up transition branch
+                run(command(git(checkout([SourceBranch]))), _),
+                run(command(git(branch(['-D', TransitionBranch]))), _),
+                Result = error(failed_to_commit_transition(CommitResult))
+            )
+        ;
+            Result = error(failed_to_create_transition_branch(CreateResult))
+        )
     ).
 
 % Commit only tracked changes to transition branch
