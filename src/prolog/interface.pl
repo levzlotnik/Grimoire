@@ -1,0 +1,191 @@
+% Interface layer for ECS exploration and system interaction
+% Returns structured data - frontends (CLI/API/MCP) handle formatting
+
+% Interface entity
+entity(interface).
+component(interface, source, source(semantic(file("src/prolog/interface.pl")))).
+
+% Interface subcommands (following git pattern)
+component(interface, subcommand, compt).
+component(interface, subcommand, comp).  
+component(interface, subcommand, doc).
+component(interface, subcommand, repl).
+component(interface, subcommand, status).
+component(interface, subcommand, test).
+
+% Make interface subcommands available as command constructors (like git does)
+component(command, ctor, interface(C)) :- component(interface, subcommand, C).
+
+% Also make them available as interface constructors
+component(interface, ctor, C) :- component(interface, subcommand, C).
+
+% Namespaced entities for each interface command
+entity(interface(compt)).
+entity(interface(comp)).
+entity(interface(doc)).
+entity(interface(repl)).
+entity(interface(status)).
+entity(interface(test)).
+
+% Docstrings follow namespacing pattern
+docstring(interface(compt), "List all component types of current entity").
+docstring(interface(comp), "List components of specific type for current entity").  
+docstring(interface(doc), "Show docstring of current entity").
+docstring(interface(repl), "Start interactive REPL with context awareness").
+docstring(interface(status), "Show session/transaction status").
+docstring(interface(test), "Run the test suite").
+
+% Main interface docstring
+docstring(interface, S) :-
+    make_ctors_docstring(interface, CtorsDoc),
+    S = {|string(CtorsDoc)||\n    Interface commands for ECS exploration and system interaction.\n    Format: interface(subcommand(...))\n\n    Available subcommands:\n    {CtorsDoc}\n    |}.
+
+% === CONTEXT MANAGEMENT ===
+
+% Auto-detect current working context
+current_entity(Entity) :-
+    (exists_file('./semantics.pl') ->
+        % Get entity name from working directory
+        working_directory(Cwd, Cwd),
+        file_base_name(Cwd, DirName),
+        atom_string(Entity, DirName),
+        % Ensure local project is loaded
+        ensure_local_project_loaded(Entity)
+    ;
+        % Default to system entity
+        Entity = system
+    ).
+
+% Load local semantics.pl if not already loaded  
+ensure_local_project_loaded(ProjectEntity) :-
+    (entity(ProjectEntity) ->
+        true  % Already loaded
+    ;
+        load_entity(semantic(file('./semantics.pl')))
+    ).
+
+% === INTERFACE COMMAND IMPLEMENTATIONS ===
+
+% Component types listing
+run(command(interface(compt)), RetVal) :-
+    current_entity(Entity),
+    interface_compt(Entity, Types),
+    RetVal = ok(component_types(Entity, Types)).
+
+run(command(interface(compt(Entity))), RetVal) :-
+    interface_compt(Entity, Types),
+    RetVal = ok(component_types(Entity, Types)).
+
+% Component listing of specific type
+run(command(interface(comp(Type))), RetVal) :-
+    current_entity(Entity),
+    interface_comp(Entity, Type, Components),
+    RetVal = ok(components(Entity, Type, Components)).
+
+run(command(interface(comp(Type, Entity))), RetVal) :-
+    interface_comp(Entity, Type, Components),
+    RetVal = ok(components(Entity, Type, Components)).
+
+% Documentation retrieval
+run(command(interface(doc)), RetVal) :-
+    current_entity(Entity),
+    interface_doc(Entity, Doc),
+    RetVal = ok(documentation(Entity, Doc)).
+
+run(command(interface(doc(Entity))), RetVal) :-
+    interface_doc(Entity, Doc),
+    RetVal = ok(documentation(Entity, Doc)).
+
+% REPL command - delegate to existing implementation
+run(command(interface(repl)), RetVal) :-
+    % Load and call existing REPL functionality
+    catch(
+        (ensure_loaded('repl.pl'), grimoire_repl_command, RetVal = ok(repl_completed))
+    ,
+        Error,
+        RetVal = error(repl_failed(Error))
+    ).
+
+% Status command - show session/transaction status
+run(command(interface(status)), RetVal) :-
+    get_session_status(Status),
+    RetVal = ok(session_status(Status)).
+
+% Test command - delegate to existing implementation
+run(command(interface(test)), RetVal) :-
+    catch(
+        (ensure_loaded('src/prolog/tests/run_tests.pl'), run_all_tests, RetVal = ok(tests_passed))
+    ,
+        Error,
+        RetVal = error(tests_failed(Error))
+    ).
+
+% === CORE INTERFACE FUNCTIONS ===
+% These return structured data, no printing
+
+% List component types for entity
+interface_compt(Entity, Types) :-
+    findall(Type, component(Entity, Type, _), AllTypes),
+    sort(AllTypes, Types).
+
+% List components of specific type with entity flags
+interface_comp(Entity, Type, ComponentsWithFlags) :-
+    findall(comp_entry(Comp, Flag), (
+        component(Entity, Type, Comp),
+        (entity(Comp) -> Flag = entity ; Flag = value)
+    ), ComponentsWithFlags).
+
+% Get entity documentation
+interface_doc(Entity, Doc) :-
+    (docstring(Entity, Doc) ->
+        true
+    ;
+        Doc = no_docstring_available
+    ).
+
+% Get comprehensive session status  
+get_session_status(Status) :-
+    % Use git directly instead of session.pl predicates to avoid hanging
+    run(command(git(branch(['--show-current']))), BranchResult),
+    (BranchResult = ok(result(BranchOutput, _)) ->
+        string_concat(BranchStr, "\n", BranchOutput),
+        atom_string(CurrentBranch, BranchStr)
+    ;
+        CurrentBranch = main
+    ),
+    run(command(git(status(['--porcelain']))), StatusResult),
+    (StatusResult = ok(result("", _)) ->
+        WorkingStatus = clean
+    ;
+        WorkingStatus = dirty
+    ),
+    % For now, just show current session to avoid parsing issues
+    Sessions = [CurrentBranch],
+    Status = status_info(CurrentBranch, WorkingStatus, Sessions).
+
+% Find all session branches
+find_all_sessions(Sessions) :-
+    run(command(git(branch(['--list']))), Result),
+    (Result = ok(result(BranchOutput, _)) ->
+        string_lines(BranchOutput, BranchLines),
+        include_session_branches(BranchLines, Sessions)
+    ;
+        Sessions = []
+    ).
+
+% Filter branch list to only session branches
+include_session_branches([], []).
+include_session_branches([Line|Rest], Sessions) :-
+    atom_string(LineAtom, Line),
+    include_session_branches(Rest, RestSessions),  % Process rest first to avoid issues
+    (atom_concat('  session-', SessionId, LineAtom) ->
+        Sessions = [SessionId|RestSessions]
+    ; atom_concat('* session-', SessionId, LineAtom) ->
+        Sessions = [active(SessionId)|RestSessions]
+    ; atom_string('  main', Line) ->
+        Sessions = [main|RestSessions]  
+    ; atom_string('* main', Line) ->
+        Sessions = [active(main)|RestSessions]
+    ;
+        Sessions = RestSessions
+    ).

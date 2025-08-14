@@ -1,15 +1,198 @@
-#!/usr/bin/env bash
-# Grimoire OS executable wrapper
-# Boots SWI-Prolog with the core system pre-loaded
+#!/usr/bin/env swipl
+% Grimoire - Knowledge-Based Operating System CLI
+% Interface wrapper that formats results from interface.pl
 
-# Get the directory where this script is located
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-GRIMOIRE_CORE="$SCRIPT_DIR/src/prolog/grimoire.pl"
+:- initialization(main, main).
 
-# Check if grimoire.pl exists
-if [[ ! -f "$GRIMOIRE_CORE" ]]; then
-    echo "Error: Cannot find grimoire.pl at $GRIMOIRE_CORE" >&2
-    exit 1
-fi
+% Load grimoire system + interface layer
+:- ensure_loaded('src/prolog/grimoire.pl').
+:- ensure_loaded('src/prolog/interface.pl').
 
-exec swipl --quiet -l "$GRIMOIRE_CORE" "$@"
+% Main entry point - parse command line arguments
+main(Args) :-
+    (Args = [] ->
+        show_usage,
+        halt(1)
+    ; Args = [Command|RestArgs] ->
+        (handle_command(Command, RestArgs) ->
+            halt(0)
+        ;
+            halt(1)
+        )
+    ; 
+        show_usage,
+        halt(1)
+    ).
+
+% Auto-generated usage from interface components
+show_usage :-
+    writeln(''),
+    writeln('🔮 Grimoire - Knowledge-Based Operating System'),
+    writeln(''),
+    catch(current_entity(CurrentEntity), _, CurrentEntity = system),
+    format('Context: ~w~n~n', [CurrentEntity]),
+    writeln('Available commands:'),
+    findall(Cmd, component(interface, subcommand, Cmd), Commands),
+    forall(member(Cmd, Commands), (
+        (docstring(interface(Cmd), Doc) ->
+            true
+        ;
+            Doc = "No documentation available"
+        ),
+        format('  ~w~t~12| - ~w~n', [Cmd, Doc])
+    )),
+    writeln(''),
+    writeln('Usage patterns:'),
+    writeln('  grimoire compt [entity]         # List component types'),
+    writeln('  grimoire comp <type> [entity]   # List components of type'),
+    writeln('  grimoire doc [entity]           # Show documentation'),
+    writeln('').
+
+% === COMMAND DISPATCH ===
+
+% Component types command
+handle_command(compt, []) :-
+    !,
+    run(command(interface(compt)), Result),
+    format_cli_result(Result).
+
+handle_command(compt, [EntityStr]) :-
+    !,
+    atom_string(EntityAtom, EntityStr),
+    run(command(interface(compt(EntityAtom))), Result),
+    format_cli_result(Result).
+
+% Component listing command
+handle_command(comp, [TypeStr]) :-
+    !,
+    atom_string(TypeAtom, TypeStr),
+    run(command(interface(comp(TypeAtom))), Result),
+    format_cli_result(Result).
+
+handle_command(comp, [TypeStr, EntityStr]) :-
+    !,
+    atom_string(TypeAtom, TypeStr),
+    atom_string(EntityAtom, EntityStr),
+    run(command(interface(comp(TypeAtom, EntityAtom))), Result),
+    format_cli_result(Result).
+
+% Documentation command
+handle_command(doc, []) :-
+    !,
+    run(command(interface(doc)), Result),
+    format_cli_result(Result).
+
+handle_command(doc, [EntityStr]) :-
+    !,
+    atom_string(EntityAtom, EntityStr),
+    run(command(interface(doc(EntityAtom))), Result),
+    format_cli_result(Result).
+
+% REPL command
+handle_command(repl, _) :-
+    !,
+    run(command(interface(repl)), Result),
+    format_cli_result(Result).
+
+% Status command  
+handle_command(status, _) :-
+    !,
+    run(command(interface(status)), Result),
+    format_cli_result(Result).
+
+% Test command
+handle_command(test, _) :-
+    !,
+    run(command(interface(test)), Result),
+    format_cli_result(Result).
+
+% Unknown command
+handle_command(Command, _) :-
+    format('Unknown command: ~w~n~n', [Command]),
+    show_usage,
+    fail.
+
+% === CLI FORMATTING FUNCTIONS ===
+
+% Format component types result
+format_cli_result(ok(component_types(Entity, Types))) :-
+    !,
+    format('~w component types:~n', [Entity]),
+    forall(member(Type, Types), format('  ~w~n', [Type])).
+
+% Format components listing result
+format_cli_result(ok(components(Entity, Type, Components))) :-
+    !,
+    format('~w components of type "~w":~n~n', [Entity, Type]),
+    format('Component~t~28| | v/e~n'),
+    format('~`-t~32|~n'),
+    forall(member(comp_entry(Comp, Flag), Components), (
+        (Flag = entity -> DisplayFlag = 'e' ; DisplayFlag = 'v'),
+        format('~w~t~28| | ~w~n', [Comp, DisplayFlag])
+    )).
+
+% Format documentation result - no docstring available
+format_cli_result(ok(documentation(Entity, no_docstring_available))) :-
+    !,
+    format('No docstring available for ~w~n', [Entity]).
+
+% Format documentation result - has docstring
+format_cli_result(ok(documentation(Entity, Doc))) :-
+    !,
+    format('~w:~n~w~n', [Entity, Doc]).
+
+% Format session status result
+format_cli_result(ok(session_status(status_info(CurrentBranch, WorkingStatus, Sessions)))) :-
+    !,
+    format('🔮 Grimoire Session Status~n~n'),
+    format('Current Branch: ~w~n', [CurrentBranch]),
+    format('Working Tree: ~w~n~n', [WorkingStatus]),
+    format('Available Sessions:~n'),
+    format_sessions(Sessions).
+
+% Format success results
+format_cli_result(ok(repl_completed)) :-
+    !,
+    true.  % REPL handles its own output
+
+format_cli_result(ok(tests_passed)) :-
+    !,
+    writeln('All tests passed ✓').
+
+% Format error results
+format_cli_result(error(Reason)) :-
+    !,
+    format('Error: ~w~n', [Reason]).
+
+% Fallback for unexpected results
+format_cli_result(Result) :-
+    format('Unexpected result: ~w~n', [Result]).
+
+% === SESSION FORMATTING HELPERS ===
+
+format_sessions([]) :-
+    writeln('  (no sessions found)').
+    
+format_sessions(Sessions) :-
+    Sessions \= [],
+    format_all_sessions(Sessions).
+
+format_all_sessions([]).
+format_all_sessions([Session|Rest]) :-
+    format_single_session(Session),
+    format_all_sessions(Rest).
+
+format_single_session(active(main)) :-
+    !,
+    writeln('  * main (active, main session)').
+    
+format_single_session(main) :-
+    !,
+    writeln('    main (main session)').
+    
+format_single_session(active(SessionId)) :-
+    !,
+    format('  * session-~w (active)~n', [SessionId]).
+    
+format_single_session(SessionId) :-
+    format('    session-~w~n', [SessionId]).
