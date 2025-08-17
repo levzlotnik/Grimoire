@@ -7,10 +7,10 @@
 % Test basic cross-domain functionality (simplified)
 test(project_creation_workflow, [true]) :-
     % Test that we can access basic entities across domains
-    entity(git),
-    entity(nix),
-    component(command, ctor, git(init)),
-    component(command, ctor, nix(build)).
+    entity(git), !,
+    entity(nix), !,
+    component(command, ctor, git(init)), !,
+    component(command, ctor, nix(build)), !.
 
 % Test basic semantic relationships (simplified)
 test(transaction_execution, [true]) :-
@@ -29,10 +29,10 @@ test(cross_domain_docstrings, [true]) :-
 % Test semantic mounting across domains
 test(cross_domain_mounting, [true]) :-
     % Verify that git and nix domains are properly loaded
-    entity(git),
-    entity(nix),
-    component(command, ctor, git(clone)),
-    component(command, ctor, nix(build)).
+    entity(git), !,
+    entity(nix), !,
+    component(command, ctor, git(clone)), !,
+    component(command, ctor, nix(build)), !.
 
 setup_test_workspace :-
     % Clean up any existing test workspace

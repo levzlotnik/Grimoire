@@ -23,28 +23,28 @@ component(rust_template, subcommand, clippy).
 component(rust_template, subcommand, fmt).
 
 % Docstrings for Nix-based subcommands
-docstring(rust_template(build), "Build the Rust project using 'nix run .#build'").
-docstring(rust_template(test), "Run tests for the Rust project using 'nix run .#test'").
+docstring(rust_template(build), "Build the Rust project using 'nix build'").
+docstring(rust_template(test), "Run tests for the Rust project using 'nix flake check'").
 docstring(rust_template(run), "Run the Rust project using 'nix run .#run'").
-docstring(rust_template(check), "Check the Rust project using 'nix run .#check'").
+docstring(rust_template(check), "Check the Rust project using 'nix flake check'").
 docstring(rust_template(clippy), "Run clippy linter using 'nix run .#clippy'").
 docstring(rust_template(fmt), "Format the Rust code using 'nix run .#fmt'").
 
 % Make subcommands available as ctors too
 component(rust_template, ctor, C) :- component(rust_template, subcommand, C).
 
-% Command implementations using Nix
+% Command implementations using proper Nix CLI semantics
 run(command(rust_template(build)), RetVal) :-
-    run(command(nix(run(['.#build']))), RetVal).
+    run(command(nix(build(['.']))), RetVal).
 
 run(command(rust_template(test)), RetVal) :-
-    run(command(nix(run(['.#test']))), RetVal).
+    run(command(nix(flake(['check']))), RetVal).
 
 run(command(rust_template(run)), RetVal) :-
     run(command(nix(run(['.#run']))), RetVal).
 
 run(command(rust_template(check)), RetVal) :-
-    run(command(nix(run(['.#check']))), RetVal).
+    run(command(nix(flake(['check']))), RetVal).
 
 run(command(rust_template(clippy)), RetVal) :-
     run(command(nix(run(['.#clippy']))), RetVal).

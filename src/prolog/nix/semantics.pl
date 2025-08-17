@@ -410,8 +410,7 @@ nix_flake_templates(Pairs) :-
 %% component/3 now yields one template/2 per backtrack
 component(nix(flake(template)), instance, nix(flake(template(Id))))  :-
     nix_flake_templates(Pairs),
-    member(Id-V, Pairs),
-    Desc = V.description.
+    member(Id-_V, Pairs).
 
 %% entity/1 and docstring/2 for nix(flake(template(Id)))
 entity(nix(flake(template(Id)))) :-

@@ -8,12 +8,12 @@ test(entity_declaration) :-
 test(component_relation) :-
     % Test component relationship
     load_entity(semantic(file('src/prolog/git.pl'))),
-    component(command, ctor, git).
+    component(command, ctor, git), !.
 
 test(constructor_pattern) :-
     % Test constructor pattern
     load_entity(semantic(file('src/prolog/git.pl'))),
-    component(git, subcommand, status).
+    component(git, subcommand, status), !.
 
 test(docstring_exists) :-
     % Test docstring availability

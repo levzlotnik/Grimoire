@@ -25,11 +25,11 @@ test(haskell_project_subcommands) :-
     load_entity(semantic(file('src/prolog/nix/templates/haskell/semantics.pl'))),
 
     % Verify all expected subcommands
-    component(haskell_template, subcommand, build),
-    component(haskell_template, subcommand, test),
-    component(haskell_template, subcommand, run),
-    component(haskell_template, subcommand, ghci),
-    component(haskell_template, subcommand, hlint).
+    component(haskell_template, subcommand, build), !,
+    component(haskell_template, subcommand, test), !,
+    component(haskell_template, subcommand, run), !,
+    component(haskell_template, subcommand, ghci), !,
+    component(haskell_template, subcommand, hlint), !.
 
 test(haskell_project_docstrings) :-
     load_entity(semantic(file('src/prolog/nix/templates/haskell/semantics.pl'))),
@@ -46,17 +46,17 @@ test(haskell_project_patterns) :-
     load_entity(semantic(file('src/prolog/nix/templates/haskell/semantics.pl'))),
 
     % Verify filesystem patterns for Haskell detection
-    component(haskell_template, file_pattern, glob("*.hs")),
-    component(haskell_template, file_pattern, glob("*.cabal")),
-    component(haskell_template, discovery_pattern, include(_)),
-    component(haskell_template, discovery_pattern, exclude(_)).
+    component(haskell_template, file_pattern, glob("*.hs")), !,
+    component(haskell_template, file_pattern, glob("*.cabal")), !,
+    component(haskell_template, discovery_pattern, include(_)), !,
+    component(haskell_template, discovery_pattern, exclude(_)), !.
 
 test(haskell_nix_command_delegation) :-
     load_entity(semantic(file('src/prolog/nix/templates/haskell/semantics.pl'))),
 
     % Verify that Haskell commands delegate to Nix
     % This tests the Nix-centric approach
-    component(haskell_template, build_system, nix),
-    component(haskell_template, subcommand, build).
+    component(haskell_template, build_system, nix), !,
+    component(haskell_template, subcommand, build), !.
 
 :- end_tests(haskell_project_semantics).

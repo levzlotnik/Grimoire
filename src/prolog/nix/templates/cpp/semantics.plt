@@ -25,22 +25,22 @@ test(cpp_project_subcommands) :-
     load_entity(semantic(file('src/prolog/nix/templates/cpp/semantics.pl'))),
 
     % Verify all expected subcommands
-    component(cpp_template, subcommand, run),
-    component(cpp_template, subcommand, build),
-    component(cpp_template, subcommand, develop).
+    component(cpp_template, subcommand, run), !,
+    component(cpp_template, subcommand, build), !,
+    component(cpp_template, subcommand, develop), !.
 
 test(cpp_project_docstrings) :-
     load_entity(semantic(file('src/prolog/nix/templates/cpp/semantics.pl'))),
 
     % Verify main docstring exists and mentions C++
     docstring(cpp_template, MainDoc),
-    sub_string(MainDoc, _, _, _, "C++"),
+    sub_string(MainDoc, _, _, _, "C++"), !,
 
     % Verify subcommand docstrings use Nix
     docstring(cpp_template(run), RunDoc),
-    sub_string(RunDoc, _, _, _, "nix run"),
+    sub_string(RunDoc, _, _, _, "nix run"), !,
 
     docstring(cpp_template(build), BuildDoc),
-    sub_string(BuildDoc, _, _, _, "nix build").
+    sub_string(BuildDoc, _, _, _, "nix build"), !.
 
 :- end_tests(cpp_project_semantics).

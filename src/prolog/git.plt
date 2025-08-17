@@ -9,18 +9,18 @@ test(git_entity_exists, [true]) :-
 
 % Test Git command constructors
 test(git_command_constructors, [true]) :-
-    component(command, ctor, git(clone)),
-    component(command, ctor, git(init)),
-    component(command, ctor, git(add)),
-    component(command, ctor, git(commit)),
-    component(command, ctor, git(status)).
+    component(command, ctor, git(clone)), !,
+    component(command, ctor, git(init)), !,
+    component(command, ctor, git(add)), !,
+    component(command, ctor, git(commit)), !,
+    component(command, ctor, git(status)), !.
 
 % Test Git subcommand declarations
 test(git_subcommands, [true]) :-
-    component(git, subcommand, clone),
-    component(git, subcommand, status),
-    component(git, subcommand, diff),
-    component(git, subcommand, log).
+    component(git, subcommand, clone), !,
+    component(git, subcommand, status), !,
+    component(git, subcommand, diff), !,
+    component(git, subcommand, log), !.
 
 % Test Git docstrings exist
 test(git_docstrings_exist, [
@@ -39,8 +39,8 @@ test(git_args_parsing, [true]) :-
 test(git_command_validation, [true]) :-
     % Test that we can validate git commands exist
     functor(clone("url", "path"), clone, 2),
-    component(git, subcommand, clone),
+    component(git, subcommand, clone), !,
     functor(status, status, 0),
-    component(git, subcommand, status).
+    component(git, subcommand, status), !.
 
 :- end_tests(git_semantics).

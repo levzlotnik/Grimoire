@@ -98,8 +98,10 @@ Persistence model:
 ## Current Status
 
 - All 41 tests passing (27 core + 14 template tests)
+- **Phase 6 Complete: Session System** - Git-backed session management with transaction support
+- **Interface Layer Complete** - Multi-frontend interface system (`./grimoire` CLI, API, MCP ready)
 - Simplified entity loading system implemented (`load_entity/1`)
-- Core subsystems (git, nix, fs, project) load on boot
+- Core subsystems (git, nix, fs, project, session) load on boot
 - External projects use `passive_load/2` for on-demand loading
 - All language templates now use Nix-provided canonical commands
 
@@ -109,27 +111,28 @@ Persistence model:
 - Phase 3: Testing infrastructure – PLUnit suite and cross-domain coverage
 - Phase 4: Simplified entity loading – explicit entities + `load_entity/1`
 - Phase 5.1–5.4: Nix-centric template revolution – 6 templates completed
+- **Phase 6: Session System** – Git-backed session management with clean ontology
+- **Interface Layer**: Multi-frontend ECS-native interface (`./grimoire` CLI, API/MCP ready)
 
 ### Implemented Features
 - Core ECS system with semantic mounting ✅
 - Nix integration with dynamic target discovery and JSON introspection ✅
 - Git integration with command modeling and DCG parsing ✅
 - Project management: context/config/dependency handling ✅ (database layer deferred)
+- **Session management**: Git-backed sessions with transaction support ✅
+- **Interface layer**: Multi-frontend ECS-native interface system ✅
 - Testing infrastructure: PLUnit-based comprehensive tests ✅
 - Python bridge: Prolog-Python interface ✅ (available, not required for core)
 
 ### Technical Achievements
 - Dynamic flake target discovery (`nix flake show --json`) with memoization
 - Clean sum-type command modeling across domains
-- Cross-domain integration (Git/Nix/Project) with semantic mounting
+- Cross-domain integration (Git/Nix/Project/Session) with semantic mounting
+- **ECS-native interface system** with auto-generated CLI usage and multi-frontend support
+- **Git-backed session management** with atomic transactions and clean ontology
 - Robust test coverage (41 passing) across core + templates
 
 ## Next Phases
-
-- Phase 6: Session + Transaction System
-  - Session-based isolation (Git branches)
-  - Atomic transactions with Git-native rollback
-  - Session lifecycle and history via Git
 
 - Phase 7: LLM Integration in Prolog
   - ECS command discovery via `component(command, ctor, _)`
@@ -152,8 +155,51 @@ Persistence model:
 - 41 total tests passing
 - Future: Dart/Flutter template planned
 
+## CLI Interface
+
+Grimoire provides a unified CLI interface (`./grimoire`) that serves as a context-aware gateway to the ECS system:
+
+```bash
+./grimoire status       # Show session/transaction status
+./grimoire compt        # List component types for current entity
+./grimoire comp <type>  # List components of specific type
+./grimoire doc [entity] # Show documentation
+./grimoire repl         # Start interactive REPL
+./grimoire test         # Run test suite
+```
+
+### Context-Aware Operation
+
+The CLI automatically detects project context:
+- **Global context**: When run outside a project, operates on the system entity
+- **Project context**: When run in a directory with `semantics.pl`, loads and operates on that project entity
+
+### Interface Architecture
+
+- **Multi-Frontend Design**: `src/prolog/interface.pl` provides structured return values for CLI, API, and MCP frontends
+- **ECS Integration**: Interface commands are registered as ECS entities with proper namespacing
+- **Auto-Generated Usage**: CLI usage is dynamically generated from ECS component definitions
+
 ## Getting Started
 
+### CLI Usage
+```bash
+# Check system status
+./grimoire status
+
+# Explore available entities and components
+./grimoire compt system
+./grimoire comp subcommand git
+
+# View documentation
+./grimoire doc git
+./grimoire doc interface
+
+# Run tests
+./grimoire test
+```
+
+### Programmatic Usage
 - Load core domains:
   ```prolog
   :- load_entity(semantic(folder("src/prolog/nix"))).
@@ -161,19 +207,3 @@ Persistence model:
   :- load_entity(semantic(file("src/prolog/git.pl"))).
   :- load_entity(semantic(file("src/prolog/fs.pl"))).
   ```
-- Run tests (PLUnit):
-  ```sh
-  swipl -q -s src/prolog/tests/run_tests.pl -g run_tests -t halt
-  ```
-
-# Test dirty state
-
-# Modified README
-
-# Test
-
-# Test dirty state
-
-# Modified README
-
-# Test

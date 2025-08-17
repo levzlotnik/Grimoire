@@ -22,8 +22,8 @@ component(haskell_template, subcommand, ghci).
 component(haskell_template, subcommand, hlint).
 
 % Docstrings for Nix-based subcommands
-docstring(haskell_template(build), "Build the Haskell project using 'nix run .#build'").
-docstring(haskell_template(test), "Run tests for the Haskell project using 'nix run .#test'").
+docstring(haskell_template(build), "Build the Haskell project using 'nix build'").
+docstring(haskell_template(test), "Run tests for the Haskell project using 'nix flake check'").
 docstring(haskell_template(run), "Run the Haskell project using 'nix run .#run'").
 docstring(haskell_template(ghci), "Start GHCi REPL using 'nix run .#ghci'").
 docstring(haskell_template(hlint), "Run HLint linter using 'nix run .#hlint'").
@@ -31,12 +31,12 @@ docstring(haskell_template(hlint), "Run HLint linter using 'nix run .#hlint'").
 % Make subcommands available as ctors too
 component(haskell_template, ctor, C) :- component(haskell_template, subcommand, C).
 
-% Command implementations using Nix
+% Command implementations using proper Nix CLI semantics
 run(command(haskell_template(build)), RetVal) :-
-    run(command(nix(run(['.#build']))), RetVal).
+    run(command(nix(build(['.']))), RetVal).
 
 run(command(haskell_template(test)), RetVal) :-
-    run(command(nix(run(['.#test']))), RetVal).
+    run(command(nix(flake(['check']))), RetVal).
 
 run(command(haskell_template(run)), RetVal) :-
     run(command(nix(run(['.#run']))), RetVal).

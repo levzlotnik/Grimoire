@@ -23,20 +23,20 @@ component(lean4_template, subcommand, clean).
 component(lean4_template, subcommand, doc).
 
 % Docstrings for Nix-based subcommands
-docstring(lean4_template(build), "Build the Lean4 project using 'nix run .#build'").
-docstring(lean4_template(check), "Check proofs in the Lean4 project using 'nix run .#check'").
+docstring(lean4_template(build), "Build the Lean4 project using 'nix build'").
+docstring(lean4_template(check), "Check proofs in the Lean4 project using 'nix flake check'").
 docstring(lean4_template(clean), "Clean build artifacts using 'nix run .#clean'").
 docstring(lean4_template(doc), "Generate documentation using 'nix run .#doc'").
 
 % Make subcommands available as ctors too
 component(lean4_template, ctor, C) :- component(lean4_template, subcommand, C).
 
-% Command implementations using Nix
+% Command implementations using proper Nix CLI semantics
 run(command(lean4_template(build)), RetVal) :-
-    run(command(nix(run(['.#build']))), RetVal).
+    run(command(nix(build(['.']))), RetVal).
 
 run(command(lean4_template(check)), RetVal) :-
-    run(command(nix(run(['.#check']))), RetVal).
+    run(command(nix(flake(['check']))), RetVal).
 
 run(command(lean4_template(clean)), RetVal) :-
     run(command(nix(run(['.#clean']))), RetVal).

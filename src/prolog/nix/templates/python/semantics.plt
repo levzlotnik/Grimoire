@@ -25,22 +25,22 @@ test(python_project_subcommands) :-
     load_entity(semantic(file('src/prolog/nix/templates/python/semantics.pl'))),
 
     % Verify all expected subcommands
-    component(python_template, subcommand, run),
-    component(python_template, subcommand, build),
-    component(python_template, subcommand, develop).
+    component(python_template, subcommand, run), !,
+    component(python_template, subcommand, build), !,
+    component(python_template, subcommand, develop), !.
 
 test(python_project_docstrings) :-
     load_entity(semantic(file('src/prolog/nix/templates/python/semantics.pl'))),
 
     % Verify main docstring exists and mentions Python
     docstring(python_template, MainDoc),
-    sub_string(MainDoc, _, _, _, "Python"),
+    sub_string(MainDoc, _, _, _, "Python"), !,
 
     % Verify subcommand docstrings use Nix
     docstring(python_template(run), RunDoc),
-    sub_string(RunDoc, _, _, _, "nix run"),
+    sub_string(RunDoc, _, _, _, "nix run"), !,
 
     docstring(python_template(build), BuildDoc),
-    sub_string(BuildDoc, _, _, _, "nix build").
+    sub_string(BuildDoc, _, _, _, "nix build"), !.
 
 :- end_tests(python_project_semantics).

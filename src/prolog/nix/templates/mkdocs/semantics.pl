@@ -23,7 +23,7 @@ component(mkdocs_template, subcommand, deploy).
 component(mkdocs_template, subcommand, new).
 
 % Docstrings for Nix-based subcommands
-docstring(mkdocs_template(build), "Build the documentation site using 'nix run .#build'").
+docstring(mkdocs_template(build), "Build the documentation site using 'nix build'").
 docstring(mkdocs_template(serve), "Serve the documentation locally using 'nix run .#serve'").
 docstring(mkdocs_template(deploy), "Deploy documentation to GitHub Pages using 'nix run .#deploy'").
 docstring(mkdocs_template(new), "Create new documentation pages using 'nix run .#new'").
@@ -31,9 +31,9 @@ docstring(mkdocs_template(new), "Create new documentation pages using 'nix run .
 % Make subcommands available as ctors too
 component(mkdocs_template, ctor, C) :- component(mkdocs_template, subcommand, C).
 
-% Command implementations using Nix
+% Command implementations using proper Nix CLI semantics
 run(command(mkdocs_template(build)), RetVal) :-
-    run(command(nix(run(['.#build']))), RetVal).
+    run(command(nix(build(['.']))), RetVal).
 
 run(command(mkdocs_template(serve)), RetVal) :-
     run(command(nix(run(['.#serve']))), RetVal).
