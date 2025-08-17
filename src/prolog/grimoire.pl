@@ -6,6 +6,7 @@
 % Dynamic declarations specific to core_rules
 :- dynamic execute/2.   % execute(Transaction, Status)
 :- dynamic([run/2], [discontiguous(true), multifile(true)]).       % run(Command, RetVal)
+:- dynamic([perceive/1], [discontiguous(true), multifile(true)]).  % perceive(Query)
 
 % The most fundamental entity
 entity(system).
@@ -31,7 +32,7 @@ system_semantic_root(SemanticRootDir) :-
 
 
 % Fundamental concepts
-component(system, concept, command).
+component(system, concept, spell).
 component(system, concept, transaction).
 component(system, concept, hardware).
 component(system, concept, execute).
@@ -121,7 +122,58 @@ docstring(command, S) :-
     command's `ctor`s.
     |}.
 
-% Just commands as a sum type
+% Spell system - fantasy-themed query/mutation separation
+entity(spell).
+component(spell, ctor, conjure).
+component(spell, ctor, perceive).
+
+% Conjure entity for mutable operations  
+entity(conjure).
+component(conjure, ctor, shell).
+component(conjure, ctor, mkdir).
+component(conjure, ctor, mkfile).
+component(conjure, ctor, edit_file).
+component(conjure, ctor, executable_program).
+component(conjure, ctor, session).
+
+% Perceive entity for query operations
+entity(perceive).
+% Perceive constructors will be added by domain files
+
+% Spell system docstrings
+docstring(spell,
+    {|string(_)||
+    The fundamental magic system of Grimoire.
+    Spells are divided into two categories:
+    - conjure: Mutable operations that change system state
+    - perceive: Perception operations that query system state
+    
+    Format: spell(conjure(...)) or spell(perceive(...))
+    |}).
+
+docstring(conjure,
+    {|string(_)||
+    Conjuration spells that modify system state.
+    Must be cast using cast/2 predicate for safety.
+    
+    Format: cast(conjure(operation(...)), Result)
+    Examples:
+      - cast(conjure(git(commit('message'))), Result)
+      - cast(conjure(mkdir('path')), Result)
+    |}).
+
+docstring(perceive,
+    {|string(_)||
+    Perception spells that query system state without modification.
+    Called directly, with variables unified to results.
+    
+    Format: perceive(query(Var1, Var2, ...))
+    Examples:
+      - perceive(git(status(Branch, Ahead, Files)))
+      - perceive(nix(flake(show(Apps, Packages, DevShells))))
+    |}).
+
+% Legacy command entity for backwards compatibility during transition
 entity(command).
 component(command, ctor, shell).
 component(command, ctor, mkdir).
@@ -377,6 +429,30 @@ execute(transaction(Commands), RetVal) :-
     ;
         RetVal = ok(Results)
     ).
+
+% Spell casting system - replaces run/2 for mutable operations
+docstring(cast,
+    {|string(_)||
+    Safely cast conjuration spells that modify system state.
+    Supports both single spells and ritual (transaction) casting.
+    
+    Format: 
+      cast(conjure(operation(...)), Result)    % Single spell
+      cast(ritual([op1, op2, ...]), Result)    % Atomic ritual
+    
+    Examples:
+      - cast(conjure(git(commit('message'))), Result)
+      - cast(ritual([mkdir('dir'), mkfile('dir/file')]), Result)
+    |}).
+
+cast(conjure(Operation), RetVal) :-
+    % Cast a single conjuration spell
+    run(command(Operation), RetVal).
+
+cast(ritual(Operations), RetVal) :-
+    % Cast multiple conjuration spells as a ritual (atomic transaction)
+    maplist([Op, command(Op)]>>true, Operations, Commands),
+    execute(transaction(Commands), RetVal).
 
 execute_commands([], []).
 execute_commands([Cmd|Rest], [Res|Results]) :-

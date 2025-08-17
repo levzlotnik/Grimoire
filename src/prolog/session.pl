@@ -62,7 +62,18 @@ docstring(transaction(state),
     "Transaction state represents the outcome of atomic operations within a session."
 ).
 
-% Session commands
+% Spell constructors for session operations
+% Conjure constructors (state-changing operations)
+component(conjure, ctor, session(start)).
+component(conjure, ctor, session(close)).
+component(conjure, ctor, session(execute)).
+
+% Perceive constructors (query operations)
+component(perceive, ctor, session(current)).
+component(perceive, ctor, session(list)).
+component(perceive, ctor, session(status)).
+
+% Legacy session commands for backwards compatibility
 component(command, ctor, session).
 component(session, subcommand, start).
 component(session, subcommand, close).
@@ -317,3 +328,49 @@ create_transaction_commit(Commands, Result) :-
 
 % === COMMAND EXECUTION ===
 % Uses execute_commands/2 from grimoire.pl core system
+
+% === PERCEIVE PREDICATES - Session Queries ===
+
+% Get current session information
+perceive(session(current(SessionId, State))) :-
+    get_current_branch(Branch),
+    (atom_concat('session-', SessionId, Branch) ->
+        State = active
+    ;
+        SessionId = main,
+        State = main_session
+    ).
+
+% List all available sessions
+perceive(session(list(Sessions))) :-
+    run(command(git(branch(['--list']))), Result),
+    (Result = ok(result(BranchOutput, _)) ->
+        string_lines(BranchOutput, BranchLines),
+        findall(Session, (
+            member(Line, BranchLines),
+            parse_session_branch(Line, Session)
+        ), Sessions)
+    ;
+        Sessions = []
+    ).
+
+% Parse branch lines to extract session information
+parse_session_branch(Line, Session) :-
+    atom_string(LineAtom, Line),
+    (atom_concat('  session-', SessionId, LineAtom) ->
+        Session = session(SessionId, inactive)
+    ; atom_concat('* session-', SessionId, LineAtom) ->
+        Session = session(SessionId, active)
+    ; atom_string('  main', Line) ->
+        Session = session(main, inactive)
+    ; atom_string('* main', Line) ->
+        Session = session(main, active)
+    ;
+        fail
+    ).
+
+% Get comprehensive session status
+perceive(session(status(CurrentSession, WorkingStatus, AllSessions))) :-
+    perceive(session(current(CurrentSession, _))),
+    check_working_tree_status(WorkingStatus),
+    perceive(session(list(AllSessions))).

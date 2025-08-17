@@ -46,6 +46,10 @@ show_usage :-
     writeln('  grimoire compt [entity]         # List component types'),
     writeln('  grimoire comp <type> [entity]   # List components of type'),
     writeln('  grimoire doc [entity]           # Show documentation'),
+    writeln(''),
+    writeln('Spell-based commands:'),
+    writeln('  grimoire cast "conjure(...)"    # Cast mutation spells'),
+    writeln('  grimoire perceive "query(...)"  # Execute perception queries'),
     writeln('').
 
 % === COMMAND DISPATCH ===
@@ -106,6 +110,50 @@ handle_command(test, _) :-
     run(command(interface(test)), Result),
     format_cli_result(Result).
 
+% Session commands
+handle_command(session, [SubCmd|Args]) :-
+    !,
+    % Parse session subcommand
+    atom_string(SubCmdAtom, SubCmd),
+    parse_session_args(SubCmdAtom, Args, SessionArgs),
+    run(command(interface(session(SessionArgs))), Result),
+    format_cli_result(Result).
+
+% Cast command - execute conjuration spells
+handle_command(cast, [SpellStr]) :-
+    !,
+    % Parse the spell string as a Prolog term
+    catch(
+        (read_term_from_atom(SpellStr, SpellTerm, []),
+         run(command(interface(cast(SpellTerm))), Result),
+         format_cli_result(Result)),
+        Error,
+        format_cli_result(error(invalid_spell_syntax(Error)))
+    ).
+
+% Perceive command - execute perception spells with auto-variable output
+handle_command(perceive, [QueryStr]) :-
+    !,
+    % Parse the query string as a Prolog term with variable names
+    catch(
+        (read_term_from_atom(QueryStr, QueryTerm, [variable_names(VarNames)]),
+         execute_perceive_query(QueryTerm, VarNames)),
+        Error,
+        format_cli_result(error(invalid_query_syntax(Error)))
+    ).
+
+% Legacy run command - for backwards compatibility
+handle_command(run, [CommandStr]) :-
+    !,
+    % Parse the command string as a Prolog term
+    catch(
+        (read_term_from_atom(CommandStr, CommandTerm, []),
+         run(command(interface(run(CommandTerm))), Result),
+         format_cli_result(Result)),
+        Error,
+        format_cli_result(error(invalid_command_syntax(Error)))
+    ).
+
 % Unknown command
 handle_command(Command, _) :-
     format('Unknown command: ~w~n~n', [Command]),
@@ -159,10 +207,30 @@ format_cli_result(ok(tests_passed)) :-
     !,
     writeln('All tests passed ✓').
 
+% Format session results
+format_cli_result(ok(session_started(SessionId, Type, State, Method))) :-
+    !,
+    format('Session ~w started (~w session, ~w state, ~w)~n', [SessionId, Type, State, Method]).
+
+format_cli_result(ok(session_closed(SessionId, Strategy))) :-
+    !,
+    format('Session ~w closed (~w)~n', [SessionId, Strategy]).
+
+format_cli_result(ok(transaction_executed(Results, State))) :-
+    !,
+    length(Results, NumResults),
+    format('Transaction executed (~w) with ~w results~n', [State, NumResults]).
+
 % Format error results
 format_cli_result(error(Reason)) :-
     !,
     format('Error: ~w~n', [Reason]).
+
+% Format command execution results
+format_cli_result(ok(result(Stdout, Stderr))) :-
+    !,
+    (Stdout \= "" -> write(Stdout) ; true),
+    (Stderr \= "" -> (write('STDERR: '), write(Stderr)) ; true).
 
 % Fallback for unexpected results
 format_cli_result(Result) :-
@@ -196,3 +264,39 @@ format_single_session(active(SessionId)) :-
     
 format_single_session(SessionId) :-
     format('    session-~w~n', [SessionId]).
+
+% === SESSION ARGUMENT PARSING ===
+
+% Parse session subcommand arguments
+parse_session_args(start, [], start) :- !.
+parse_session_args(start, [SessionIdStr], start(SessionId)) :-
+    !,
+    atom_string(SessionId, SessionIdStr).
+parse_session_args(close, [SessionIdStr, StrategyStr], close(SessionId, Strategy)) :-
+    !,
+    atom_string(SessionId, SessionIdStr),
+    atom_string(Strategy, StrategyStr).
+parse_session_args(execute, [SessionIdStr, CommandsStr], execute(SessionId, Commands)) :-
+    !,
+    atom_string(SessionId, SessionIdStr),
+    % Parse commands as Prolog term
+    read_term_from_atom(CommandsStr, Commands, []).
+
+% === PERCEIVE QUERY EXECUTION ===
+
+% Execute a perceive query and automatically emit variable bindings
+execute_perceive_query(QueryTerm, VarNames) :-
+    % Try perceive() wrapper first (for domain operations), then direct call
+    (perceive(QueryTerm) ->
+        emit_variable_bindings(VarNames)
+    ; call(QueryTerm) ->
+        emit_variable_bindings(VarNames)
+    ;
+        writeln('Query failed - no solutions found')
+    ).
+
+% Emit variable bindings in Variable = Value format
+emit_variable_bindings([]).
+emit_variable_bindings([Name=Value|Rest]) :-
+    format('~w = ~w~n', [Name, Value]),
+    emit_variable_bindings(Rest).

@@ -21,9 +21,28 @@ component(git, subcommand, rev_parse).
 component(git, subcommand, reset).
 component(git, subcommand, merge).
 
-% Might as well mark those as ctors:
+% Separate mutable vs query operations
+% Conjure constructors (state-changing operations)
+component(conjure, ctor, git(clone)).
+component(conjure, ctor, git(init)).
+component(conjure, ctor, git(add)).
+component(conjure, ctor, git(commit)).
+component(conjure, ctor, git(push)).
+component(conjure, ctor, git(pull)).
+component(conjure, ctor, git(checkout)).
+component(conjure, ctor, git(reset)).
+component(conjure, ctor, git(merge)).
+
+% Perceive constructors (query operations)
+component(perceive, ctor, git(status)).
+component(perceive, ctor, git(diff)).
+component(perceive, ctor, git(log)).
+component(perceive, ctor, git(branch)).
+component(perceive, ctor, git(rev_parse)).
+
+% Legacy support - mark those as ctors:
 component(git, ctor, C) :- component(git, subcommand, C).
-% Make these available to top level command:
+% Make these available to top level command for backwards compatibility:
 component(command, ctor, git(C)) :- component(git, subcommand, C).
 
 % Git command docstrings
@@ -174,7 +193,7 @@ git_args(reset(Args)) --> ["reset" | Args].
 git_args(merge(Args)) --> ["merge" | Args].
 git_args(commit(Args)) --> ["commit" | Args].  % Handle commit with args list
 
-% Main git command implementation
+% Main git command implementation (legacy)
 run(command(git(Term)), RetVal) :-
     % Just validate the subcommand type exists
     functor(Term, SubCmdType, _),
@@ -186,6 +205,55 @@ run(command(git(Term)), RetVal) :-
         command(executable_program(path(git), Args)),
         RetVal
     ).
+
+% === PERCEIVE PREDICATES - Structured Git Queries ===
+
+% Git status perception - parse status into structured data
+perceive(git(status(Branch, WorkingStatus, Files))) :-
+    % Get current branch
+    run(command(git(branch(['--show-current']))), BranchResult),
+    (BranchResult = ok(result(BranchOutput, _)) ->
+        string_concat(BranchStr, "\n", BranchOutput),
+        atom_string(Branch, BranchStr)
+    ;
+        Branch = unknown
+    ),
+    % Get working tree status
+    run(command(git(status(['--porcelain']))), StatusResult),
+    (StatusResult = ok(result(StatusOutput, _)) ->
+        (StatusOutput = "" ->
+            WorkingStatus = clean,
+            Files = []
+        ;
+            WorkingStatus = dirty,
+            parse_git_status_output(StatusOutput, Files)
+        )
+    ;
+        WorkingStatus = unknown,
+        Files = []
+    ).
+
+% Parse git status --porcelain output into structured file list
+parse_git_status_output("", []).
+parse_git_status_output(Output, Files) :-
+    string_lines(Output, Lines),
+    maplist(parse_status_line, Lines, Files).
+
+% Parse individual status lines like " M file.txt" or "?? newfile.txt"
+parse_status_line(Line, FileStatus) :-
+    atom_codes(Line, [S1, S2, 32 | FileCodes]),  % 32 is space
+    atom_codes(File, FileCodes),
+    status_code_to_term([S1, S2], File, FileStatus).
+
+% Map git status codes to clean file status terms
+status_code_to_term([32, 77], File, modified(File)).     % " M" - modified in working tree
+status_code_to_term([77, 32], File, staged(File)).       % "M " - staged for commit
+status_code_to_term([77, 77], File, modified(File)).     % "MM" - modified in both (treat as modified)
+status_code_to_term([63, 63], File, created(File)).      % "??" - untracked (new file)
+status_code_to_term([65, 32], File, created(File)).      % "A " - added to index (new file)
+status_code_to_term([68, 32], File, deleted(File)).      % "D " - deleted from index
+status_code_to_term([32, 68], File, deleted(File)).      % " D" - deleted in working tree
+status_code_to_term(_, File, unknown(File)).
 
 % Example git subsystem extension for load_entity
 % This could handle git repository cloning and then loading semantics

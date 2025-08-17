@@ -97,7 +97,8 @@ Persistence model:
 
 ## Current Status
 
-- All 41 tests passing (27 core + 14 template tests)
+- All 62 tests passing (27 core + 14 template + 21 spell system tests)
+- **Spell System Complete** - Fantasy-themed command/query separation with `conjure`/`perceive`
 - **Phase 6 Complete: Session System** - Git-backed session management with transaction support
 - **Interface Layer Complete** - Multi-frontend interface system (`./grimoire` CLI, API, MCP ready)
 - Simplified entity loading system implemented (`load_entity/1`)
@@ -113,9 +114,11 @@ Persistence model:
 - Phase 5.1–5.4: Nix-centric template revolution – 6 templates completed
 - **Phase 6: Session System** – Git-backed session management with clean ontology
 - **Interface Layer**: Multi-frontend ECS-native interface (`./grimoire` CLI, API/MCP ready)
+- **Spell System**: Fantasy-themed conjure/perceive command separation with clean CLI
 
 ### Implemented Features
 - Core ECS system with semantic mounting ✅
+- **Spell system**: Fantasy-themed conjure/perceive command separation ✅
 - Nix integration with dynamic target discovery and JSON introspection ✅
 - Git integration with command modeling and DCG parsing ✅
 - Project management: context/config/dependency handling ✅ (database layer deferred)
@@ -125,12 +128,13 @@ Persistence model:
 - Python bridge: Prolog-Python interface ✅ (available, not required for core)
 
 ### Technical Achievements
+- **Fantasy-themed spell system** with conjure/perceive command separation and clean CLI
 - Dynamic flake target discovery (`nix flake show --json`) with memoization
 - Clean sum-type command modeling across domains
 - Cross-domain integration (Git/Nix/Project/Session) with semantic mounting
 - **ECS-native interface system** with auto-generated CLI usage and multi-frontend support
 - **Git-backed session management** with atomic transactions and clean ontology
-- Robust test coverage (41 passing) across core + templates
+- Robust test coverage (62 passing) across core + templates + spell system
 
 ## Next Phases
 
@@ -166,6 +170,10 @@ Grimoire provides a unified CLI interface (`./grimoire`) that serves as a contex
 ./grimoire doc [entity] # Show documentation
 ./grimoire repl         # Start interactive REPL
 ./grimoire test         # Run test suite
+
+# Spell System - Fantasy-themed command separation
+./grimoire cast "conjure(git(commit('message')))"    # Execute mutations
+./grimoire perceive "git(status(Branch, Status, Files))" # Query with variable bindings
 ```
 
 ### Context-Aware Operation

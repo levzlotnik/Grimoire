@@ -13,7 +13,7 @@ component(nix, concept, nix(package)).
 component(nix, concept, nix(target)).
 component(nix, concept, nix(build)).
 component(nix, concept, nix(flake)).
-com:- use_module(library(http/json)).ent(nix, concept, nix(develop)).
+component(nix, concept, nix(develop)).
 component(nix, concept, nix(search)).
 component(nix, concept, nix(run)).
 
@@ -23,14 +23,25 @@ entity(nix(derivation)).
 entity(nix(package)).
 entity(nix(target)).
 
-% Main command constructors (the essential ones)
+% Spell constructors - separate mutable vs query operations
+% Conjure constructors (state-changing operations)
+component(conjure, ctor, nix(build)).
+component(conjure, ctor, nix(develop)).
+component(conjure, ctor, nix(run)).
+
+% Perceive constructors (query operations)  
+component(perceive, ctor, nix(flake(show))).
+component(perceive, ctor, nix(search)).
+component(perceive, ctor, nix(store(query))).
+component(perceive, ctor, nix(log)).
+component(perceive, ctor, nix(why_depends)).
+
+% Legacy command constructors (for backwards compatibility)
 component(command, ctor, nix(build)).
 component(command, ctor, nix(develop)).
 component(command, ctor, nix(flake)).
 component(command, ctor, nix(run)).
 component(command, ctor, nix(search)).
-
-% Essential utility commands
 component(command, ctor, nix(store)).
 component(command, ctor, nix(log)).
 component(command, ctor, nix(why_depends)).
@@ -443,3 +454,32 @@ run(command(nix(flake(new(TemplateId, DestPath)))), RetVal) :-
 load_entity(Entity, semantic(nix_folder(Path), lazy)) :-
     assertz(to_be_loaded(Entity, semantic(folder(Path)))),
     asserta(entity(Entity)).
+
+% === PERCEIVE PREDICATES - Structured Nix Queries ===
+
+% Nix flake show perception - parse flake structure into organized data
+perceive(nix(flake(show(FlakeRef, Apps, Packages, DevShells)))) :-
+    get_nix_flake_targets(FlakeRef, Targets),
+    partition_flake_targets(Targets, Apps, Packages, DevShells).
+
+% Partition flake targets by type
+partition_flake_targets([], [], [], []).
+partition_flake_targets([Target|Rest], Apps, Packages, DevShells) :-
+    partition_flake_targets(Rest, RestApps, RestPackages, RestDevShells),
+    (Target = nix(target(app(FlakeRef, AttrPath))) ->
+        Apps = [app(FlakeRef, AttrPath)|RestApps],
+        Packages = RestPackages,
+        DevShells = RestDevShells
+    ; Target = nix(target(package(FlakeRef, AttrPath))) ->
+        Apps = RestApps,
+        Packages = [package(FlakeRef, AttrPath)|RestPackages],
+        DevShells = RestDevShells
+    ; Target = nix(target(devShell(FlakeRef, AttrPath))) ->
+        Apps = RestApps,
+        Packages = RestPackages,
+        DevShells = [devShell(FlakeRef, AttrPath)|RestDevShells]
+    ;
+        Apps = RestApps,
+        Packages = RestPackages,
+        DevShells = RestDevShells
+    ).

@@ -12,6 +12,10 @@ component(interface, subcommand, doc).
 component(interface, subcommand, repl).
 component(interface, subcommand, status).
 component(interface, subcommand, test).
+component(interface, subcommand, session).
+component(interface, subcommand, cast).
+component(interface, subcommand, perceive).
+component(interface, subcommand, run).
 
 % Make interface subcommands available as command constructors (like git does)
 component(command, ctor, interface(C)) :- component(interface, subcommand, C).
@@ -26,6 +30,10 @@ entity(interface(doc)).
 entity(interface(repl)).
 entity(interface(status)).
 entity(interface(test)).
+entity(interface(session)).
+entity(interface(cast)).
+entity(interface(perceive)).
+entity(interface(run)).
 
 % Docstrings follow namespacing pattern
 docstring(interface(compt), "List all component types of current entity").
@@ -34,6 +42,10 @@ docstring(interface(doc), "Show docstring of current entity").
 docstring(interface(repl), "Start interactive REPL with context awareness").
 docstring(interface(status), "Show session/transaction status").
 docstring(interface(test), "Run the test suite").
+docstring(interface(session), "Session management commands (start, close, execute)").
+docstring(interface(cast), "Cast conjuration spells (mutable operations)").
+docstring(interface(perceive), "Execute perception spells (query operations)").
+docstring(interface(run), "Execute arbitrary command term structures (legacy)").
 
 % Main interface docstring
 docstring(interface, S) :-
@@ -119,6 +131,26 @@ run(command(interface(test)), RetVal) :-
         Error,
         RetVal = error(tests_failed(Error))
     ).
+
+% Session commands - forward to session.pl
+run(command(interface(session(Args))), RetVal) :-
+    run(command(session(Args)), RetVal).
+
+% Cast command - execute conjuration spells
+run(command(interface(cast(SpellTerm))), RetVal) :-
+    cast(SpellTerm, RetVal).
+
+% Perceive command - execute perception spells directly
+run(command(interface(perceive(QueryTerm))), RetVal) :-
+    (call(QueryTerm) ->
+        RetVal = ok(query_succeeded)
+    ;
+        RetVal = error(query_failed)
+    ).
+
+% Run command - execute arbitrary command structures (legacy)
+run(command(interface(run(CommandTerm))), RetVal) :-
+    run(CommandTerm, RetVal).
 
 % === CORE INTERFACE FUNCTIONS ===
 % These return structured data, no printing

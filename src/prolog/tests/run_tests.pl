@@ -6,6 +6,7 @@
 :- ensure_loaded('../nix/semantics.plt').
 :- ensure_loaded('../project/semantics.plt').
 :- ensure_loaded('integration.plt').
+:- ensure_loaded('spell_system.plt').
 
 % Load template test suites
 :- ensure_loaded('../nix/templates/rust/semantics.plt').
@@ -23,6 +24,7 @@ run_all_tests :-
         nix_semantics,
         project_semantics,
         integration_tests,
+        spell_system,
         rust_project_semantics,
         cpp_project_semantics,
         python_project_semantics,
