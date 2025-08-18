@@ -7,6 +7,7 @@
 :- ensure_loaded('../project/semantics.plt').
 :- ensure_loaded('integration.plt').
 :- ensure_loaded('spell_system.plt').
+:- ensure_loaded('session_cli.plt').
 
 % Load template test suites
 :- ensure_loaded('../nix/templates/rust/semantics.plt').
@@ -25,6 +26,7 @@ run_all_tests :-
         project_semantics,
         integration_tests,
         spell_system,
+        session_cli,
         rust_project_semantics,
         cpp_project_semantics,
         python_project_semantics,

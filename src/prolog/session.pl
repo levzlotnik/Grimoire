@@ -78,6 +78,11 @@ component(command, ctor, session).
 component(session, subcommand, start).
 component(session, subcommand, close).
 component(session, subcommand, execute).
+component(session, subcommand, switch).
+component(session, subcommand, list).
+component(session, subcommand, commit).
+component(session, subcommand, rollback).
+component(session, subcommand, status).
 
 docstring(session, 
     "Clean session system where sessions are Git branches and transactions are Git commits.\nThree transition patterns:\n1. Clean state → any session: Direct git checkout\n2. Dirty state → existing session: Git checkout (let git handle conflicts)\n3. Dirty state → NEW session: Via transition branch workflow"
@@ -180,11 +185,20 @@ transition_branch_name(SourceBranch, SessionId, TransitionBranch) :-
     format(atom(TransitionBranch), 'transition_branch/~w--~w', [SourceBranch, SessionId]).
 
 get_current_branch(Branch) :-
-    run(command(git(['branch', '--show-current'])), Result),
-    Result = ok(result(BranchOutput, _)),
-    % Strip newline and convert to atom
-    string_concat(BranchStr, "\n", BranchOutput),
-    atom_string(Branch, BranchStr).
+    catch(
+        (run(command(git(['branch', '--show-current'])), Result),
+         (Result = ok(result(BranchOutput, _)) ->
+             % Strip newline and convert to atom  
+             string_concat(BranchStr, "\n", BranchOutput),
+             atom_string(Branch, BranchStr)
+         ;
+             % If git command returned error, use fallback
+             Branch = main
+         )),
+        Error,
+        (format('Error in get_current_branch: ~w~n', [Error]),
+         Branch = main)
+    ).
 
 % === WORKING TREE STATUS ===
 
@@ -210,6 +224,28 @@ run(command(session(close(SessionId, Strategy))), RetVal) :-
 
 run(command(session(execute(SessionId, Commands))), RetVal) :-
     execute_transaction_in_session(SessionId, Commands, RetVal).
+
+% Session switching command
+run(command(session(switch(SessionId))), RetVal) :-
+    switch_to_session(SessionId, RetVal).
+
+% Session listing command
+run(command(session(list)), RetVal) :-
+    list_all_sessions(RetVal).
+
+% Session commit command
+run(command(session(commit(Message))), RetVal) :-
+    format('DEBUG: session commit handler called with Message: ~w~n', [Message]),
+    create_session_commit(Message, RetVal),
+    format('DEBUG: create_session_commit returned: ~w~n', [RetVal]).
+
+% Session rollback command
+run(command(session(rollback)), RetVal) :-
+    rollback_session_transaction(RetVal).
+
+% Session status command
+run(command(session(status)), RetVal) :-
+    run(command(interface(status)), RetVal).
 
 % === SESSION CLOSURE ===
 
@@ -374,3 +410,86 @@ perceive(session(status(CurrentSession, WorkingStatus, AllSessions))) :-
     perceive(session(current(CurrentSession, _))),
     check_working_tree_status(WorkingStatus),
     perceive(session(list(AllSessions))).
+
+% === NEW SESSION COMMAND IMPLEMENTATIONS ===
+
+% Switch to an existing session
+switch_to_session(SessionId, Result) :-
+    (session_exists(SessionId) ->
+        session_branch_name(SessionId, BranchName),
+        run(command(git(checkout([BranchName]))), GitResult),
+        (GitResult = ok(_) ->
+            Result = ok(session_switched(SessionId))
+        ;
+            Result = error(failed_to_switch_to_session(GitResult))
+        )
+    ;
+        Result = error(session_not_found(SessionId))
+    ).
+
+% List all sessions with structured output
+list_all_sessions(Result) :-
+    perceive(session(list(Sessions))),
+    Result = ok(session_list(Sessions)).
+
+% Create a named commit in current session
+create_session_commit(Message, Result) :-
+    catch(
+        (get_current_branch(Branch),
+         format('DEBUG: Current branch is ~w~n', [Branch]),
+         (atom_concat('session-', _, Branch) ->
+             format('DEBUG: In session branch, proceeding with commit~n'),
+             % Add all changes and commit with message
+             run(command(git(add(['.']))), AddResult),
+             format('DEBUG: Add result: ~w~n', [AddResult]),
+             (AddResult = ok(_) ->
+                 run(command(git(commit(['-m', Message]))), CommitResult),
+                 format('DEBUG: Commit result: ~w~n', [CommitResult]),
+                 (CommitResult = ok(_) ->
+                     Result = ok(session_commit_created(Message))
+                 ;
+                     Result = error(failed_to_commit_session(CommitResult))
+                 )
+             ;
+                 Result = error(failed_to_add_changes(AddResult))
+             )
+         ;
+             format('DEBUG: Not in session branch, current branch: ~w~n', [Branch]),
+             Result = error(not_in_session_branch(Branch))
+         )),
+        Error,
+        (format('CAUGHT ERROR in create_session_commit: ~w~n', [Error]),
+         Result = error(session_commit_exception(Error)))
+    ).
+
+% Rollback to previous commit in current session
+rollback_session_transaction(Result) :-
+    get_current_branch(Branch),
+    (atom_concat('session-', _, Branch) ->
+        % Reset to previous commit (HEAD~1)
+        run(command(git(reset(['--hard', 'HEAD~1']))), ResetResult),
+        (ResetResult = ok(_) ->
+            Result = ok(session_rollback_completed)
+        ;
+            Result = error(failed_to_rollback_session(ResetResult))
+        )
+    ;
+        Result = error(not_in_session_branch(Branch))
+    ).
+
+% Get comprehensive session status for CLI display
+get_comprehensive_session_status(Result) :-
+    perceive(session(status(CurrentSession, WorkingStatus, AllSessions))),
+    get_current_branch(CurrentBranch),
+    (atom_concat('session-', _, CurrentBranch) ->
+        % Get recent commits in session
+        run(command(git(log(['--oneline', '-5']))), LogResult),
+        (LogResult = ok(result(LogOutput, _)) ->
+            RecentCommits = LogOutput
+        ;
+            RecentCommits = "No commit history available"
+        )
+    ;
+        RecentCommits = "Not in session branch"
+    ),
+    Result = ok(comprehensive_session_status(CurrentSession, WorkingStatus, AllSessions, RecentCommits)).

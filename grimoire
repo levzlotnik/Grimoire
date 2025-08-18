@@ -113,11 +113,28 @@ handle_command(test, _) :-
 % Session commands
 handle_command(session, [SubCmd|Args]) :-
     !,
-    % Parse session subcommand
-    atom_string(SubCmdAtom, SubCmd),
-    parse_session_args(SubCmdAtom, Args, SessionArgs),
-    run(command(interface(session(SessionArgs))), Result),
-    format_cli_result(Result).
+    % Check for help flags first
+    ((SubCmd = '--help' ; SubCmd = '-h') ->
+        show_session_help
+    ;
+        % Parse session subcommand
+        atom_string(SubCmdAtom, SubCmd),
+        parse_session_args(SubCmdAtom, Args, SessionArgs),
+        format('DEBUG: About to call interface with SessionArgs: ~w~n', [SessionArgs]),
+        catch(
+            (run(command(interface(session(SessionArgs))), Result),
+             format('DEBUG: Interface returned: ~w~n', [Result]),
+             format_cli_result(Result)),
+            Error,
+            (format('CAUGHT CLI ERROR: ~w~n', [Error]),
+             format('SubCmd: ~w, Args: ~w, SessionArgs: ~w~n', [SubCmd, Args, SessionArgs]))
+        )
+    ).
+
+% Handle session command with no args (show help)
+handle_command(session, []) :-
+    !,
+    show_session_help.
 
 % Cast command - execute conjuration spells
 handle_command(cast, [SpellStr]) :-
@@ -221,10 +238,50 @@ format_cli_result(ok(transaction_executed(Results, State))) :-
     length(Results, NumResults),
     format('Transaction executed (~w) with ~w results~n', [State, NumResults]).
 
+% Format session results
+format_cli_result(ok(session_switched(SessionId))) :-
+    !,
+    format('Switched to session: ~w~n', [SessionId]).
+
+format_cli_result(ok(session_list(Sessions))) :-
+    !,
+    format('Available Sessions:~n'),
+    format_sessions_list(Sessions).
+
+format_cli_result(ok(session_commit_created(Message))) :-
+    !,
+    format('Session commit created: ~w~n', [Message]).
+
+format_cli_result(ok(session_rollback_completed)) :-
+    !,
+    writeln('Session rolled back to previous transaction').
+
+format_cli_result(ok(comprehensive_session_status(CurrentSession, WorkingStatus, AllSessions, RecentCommits))) :-
+    !,
+    format('🔮 Comprehensive Session Status~n~n'),
+    format('Current Session: ~w~n', [CurrentSession]),
+    format('Working Tree: ~w~n~n', [WorkingStatus]),
+    format('Available Sessions:~n'),
+    format_sessions_list(AllSessions),
+    format('~nRecent Commits:~n~w~n', [RecentCommits]).
+
 % Format error results
+format_cli_result(error(session_not_found(SessionId))) :-
+    !,
+    format('Error: Session "~w" not found. Use "grimoire session list" to see available sessions.~n', [SessionId]).
+
+format_cli_result(error(not_in_session_branch(Branch))) :-
+    !,
+    format('Error: Not in a session branch (currently on "~w"). Use "grimoire session start" to create a session.~n', [Branch]).
+
+format_cli_result(error(failed_to_switch_to_session(GitResult))) :-
+    !,
+    format('Error: Failed to switch to session. Git error: ~w~n', [GitResult]).
+
 format_cli_result(error(Reason)) :-
     !,
-    format('Error: ~w~n', [Reason]).
+    format('Error: ~w~n', [Reason]),
+    format('Debug error: ~q~n', [error(Reason)]).
 
 % Format command execution results
 format_cli_result(ok(result(Stdout, Stderr))) :-
@@ -250,6 +307,35 @@ format_all_sessions([Session|Rest]) :-
     format_single_session(Session),
     format_all_sessions(Rest).
 
+% Format session list (for session list command)
+format_sessions_list([]) :-
+    writeln('  (no sessions found)').
+
+format_sessions_list(Sessions) :-
+    Sessions \= [],
+    format_all_sessions_list(Sessions).
+
+format_all_sessions_list([]).
+format_all_sessions_list([Session|Rest]) :-
+    format_single_session_list(Session),
+    format_all_sessions_list(Rest).
+
+format_single_session_list(session(main, active)) :-
+    !,
+    writeln('  * main (active, main session)').
+
+format_single_session_list(session(main, inactive)) :-
+    !,
+    writeln('    main (main session)').
+
+format_single_session_list(session(SessionId, active)) :-
+    !,
+    format('  * session-~w (active)~n', [SessionId]).
+
+format_single_session_list(session(SessionId, inactive)) :-
+    !,
+    format('    session-~w~n', [SessionId]).
+
 format_single_session(active(main)) :-
     !,
     writeln('  * main (active, main session)').
@@ -260,10 +346,23 @@ format_single_session(main) :-
     
 format_single_session(active(SessionId)) :-
     !,
-    format('  * session-~w (active)~n', [SessionId]).
+    extract_session_display_name(SessionId, DisplayName),
+    format('  * ~w (active)~n', [DisplayName]).
     
 format_single_session(SessionId) :-
-    format('    session-~w~n', [SessionId]).
+    extract_session_display_name(SessionId, DisplayName),
+    format('    ~w~n', [DisplayName]).
+
+% Extract display name from branch name or session ID
+extract_session_display_name(BranchName, DisplayName) :-
+    atom_string(BranchName, BranchStr),
+    (string_concat('session-', _, BranchStr) ->
+        % Full branch name - use as-is
+        DisplayName = BranchName
+    ;
+        % Session ID only - add prefix
+        format(atom(DisplayName), 'session-~w', [BranchName])
+    ).
 
 % === SESSION ARGUMENT PARSING ===
 
@@ -281,6 +380,47 @@ parse_session_args(execute, [SessionIdStr, CommandsStr], execute(SessionId, Comm
     atom_string(SessionId, SessionIdStr),
     % Parse commands as Prolog term
     read_term_from_atom(CommandsStr, Commands, []).
+parse_session_args(switch, [SessionIdStr], switch(SessionId)) :-
+    !,
+    atom_string(SessionId, SessionIdStr).
+parse_session_args(list, [], list) :- !.
+parse_session_args(commit, [MessageStr], commit(Message)) :-
+    !,
+    atom_string(Message, MessageStr).
+parse_session_args(rollback, [], rollback) :- !.
+parse_session_args(status, [], status) :- !.
+
+% === SESSION HELP SYSTEM ===
+
+% Show session help information
+show_session_help :-
+    writeln(''),
+    writeln('🔮 Grimoire Session Management'),
+    writeln(''),
+    writeln('Session system uses Git branches for isolation and transactions.'),
+    writeln(''),
+    writeln('Available commands:'),
+    writeln('  start [<id>]              Start new session (auto-generated ID if none provided)'),
+    writeln('  switch <id>               Switch to existing session'),
+    writeln('  list                      List all available sessions'),
+    writeln('  status                    Show comprehensive session status'),
+    writeln('  commit <message>          Create named commit in current session'),
+    writeln('  rollback                  Rollback to previous transaction'),
+    writeln('  close <id> <strategy>     Close session (merge_to_main, abandon, keep_branch)'),
+    writeln('  execute <id> <commands>   Execute commands atomically in session'),
+    writeln(''),
+    writeln('Examples:'),
+    writeln('  grimoire session start                    # Start new session'),
+    writeln('  grimoire session switch my-session       # Switch to existing session'),
+    writeln('  grimoire session list                     # List all sessions'),
+    writeln('  grimoire session commit "Add feature"     # Create commit'),
+    writeln('  grimoire session close my-session abandon # Abandon session'),
+    writeln(''),
+    writeln('Session Transition Patterns:'),
+    writeln('  1. Clean state → any session: Direct git checkout'),
+    writeln('  2. Dirty state → existing session: Git checkout (handles conflicts)'),
+    writeln('  3. Dirty state → NEW session: Via transition branch workflow'),
+    writeln('').
 
 % === PERCEIVE QUERY EXECUTION ===
 
