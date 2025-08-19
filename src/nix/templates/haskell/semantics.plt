@@ -11,7 +11,7 @@
 % Test that a loaded Haskell project has essential components
 test(haskell_project_has_essentials) :-
     % Load the haskell template directly
-    once(load_entity(semantic(file('src/prolog/nix/templates/haskell/semantics.pl')))),
+    once(load_entity(semantic(file('src/nix/templates/haskell/semantics.pl')))),
 
     % Verify project type identification
     once(component(haskell_template, project_type, haskell)),
@@ -22,7 +22,7 @@ test(haskell_project_has_essentials) :-
     once(component(command, ctor, haskell_template)).
 
 test(haskell_project_subcommands) :-
-    once(load_entity(semantic(file('src/prolog/nix/templates/haskell/semantics.pl')))),
+    once(load_entity(semantic(file('src/nix/templates/haskell/semantics.pl')))),
 
     % Verify all expected subcommands
     once(component(haskell_template, subcommand, build)),
@@ -32,7 +32,7 @@ test(haskell_project_subcommands) :-
     once(component(haskell_template, subcommand, hlint)).
 
 test(haskell_project_docstrings) :-
-    once(load_entity(semantic(file('src/prolog/nix/templates/haskell/semantics.pl')))),
+    once(load_entity(semantic(file('src/nix/templates/haskell/semantics.pl')))),
 
     % Verify docstrings exist for main entity and subcommands
     once((docstring(haskell_template, _))),
@@ -43,7 +43,7 @@ test(haskell_project_docstrings) :-
     once((docstring(haskell_template(hlint), _))).
 
 test(haskell_project_patterns) :-
-    once(load_entity(semantic(file('src/prolog/nix/templates/haskell/semantics.pl')))),
+    once(load_entity(semantic(file('src/nix/templates/haskell/semantics.pl')))),
 
     % Verify filesystem patterns for Haskell detection
     once(component(haskell_template, file_pattern, glob("*.hs"))),
@@ -52,7 +52,7 @@ test(haskell_project_patterns) :-
     once(component(haskell_template, discovery_pattern, exclude(_))).
 
 test(haskell_nix_command_delegation) :-
-    once(load_entity(semantic(file('src/prolog/nix/templates/haskell/semantics.pl')))),
+    once(load_entity(semantic(file('src/nix/templates/haskell/semantics.pl')))),
 
     % Verify that Haskell commands delegate to Nix
     % This tests the Nix-centric approach

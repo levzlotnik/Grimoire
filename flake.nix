@@ -38,7 +38,7 @@
         type = "app";
         program = "${pkgs.writeShellScript "grimoire-test" ''
           cd ${./.}
-          exec ${pkgs.swi-prolog}/bin/swipl -g "consult('${./src/prolog/tests/run_tests.pl}'), run_tests, halt." -t 'halt(1).'
+          exec ${pkgs.swi-prolog}/bin/swipl -g "consult('${./src/tests/run_tests.pl}'), run_tests, halt." -t 'halt(1).'
         ''}";
       };
 
@@ -48,12 +48,12 @@
         program = "${pkgs.writeShellScript "grimoire-test-shell" ''
           cd ${./.}
           echo "🧪 Running Grimoire tests..."
-          if ${pkgs.swi-prolog}/bin/swipl -g "consult('${./src/prolog/tests/run_tests.pl}'), run_tests, halt." -t 'halt(1).' > /dev/null 2>&1; then
+          if ${pkgs.swi-prolog}/bin/swipl -g "consult('${./src/tests/run_tests.pl}'), run_tests, halt." -t 'halt(1).' > /dev/null 2>&1; then
             echo "✅ All tests passed! Opening Grimoire shell..."
             exec ${pkgs.swi-prolog}/bin/swipl -s ${./repl.pl}
           else
             echo "❌ Tests failed! Running tests with output..."
-            exec ${pkgs.swi-prolog}/bin/swipl -g "consult('${./src/prolog/tests/run_tests.pl}'), run_tests, halt." -t 'halt(1).'
+            exec ${pkgs.swi-prolog}/bin/swipl -g "consult('${./src/tests/run_tests.pl}'), run_tests, halt." -t 'halt(1).'
           fi
         ''}";
       };

@@ -5,8 +5,8 @@
 :- initialization(main, main).
 
 % Load grimoire system + interface layer
-:- ensure_loaded('src/prolog/grimoire.pl').
-:- ensure_loaded('src/prolog/interface.pl').
+:- ensure_loaded('src/grimoire.pl').
+:- ensure_loaded('src/interface.pl').
 
 % Main entry point - parse command line arguments
 main(Args) :-

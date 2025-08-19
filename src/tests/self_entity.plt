@@ -4,15 +4,15 @@
 % Ensure relevant semantics are loaded for the tests
 :- begin_tests(self_entity).
 
-:- load_entity(semantic(file('src/prolog/grimoire.pl'))).
-:- load_entity(semantic(file('src/prolog/project/semantics.pl'))).
-:- load_entity(semantic(file('src/prolog/db/semantics.pl'))).
-:- load_entity(semantic(file('src/prolog/nix/templates/python/semantics.pl'))).
-:- load_entity(semantic(file('src/prolog/nix/templates/cpp/semantics.pl'))).
-:- load_entity(semantic(file('src/prolog/nix/templates/mkdocs/semantics.pl'))).
-:- load_entity(semantic(file('src/prolog/nix/templates/lean4/semantics.pl'))).
-:- load_entity(semantic(file('src/prolog/nix/templates/haskell/semantics.pl'))).
-:- load_entity(semantic(file('src/prolog/nix/templates/rust/semantics.pl'))).
+:- load_entity(semantic(file('src/grimoire.pl'))).
+:- load_entity(semantic(file('src/project/semantics.pl'))).
+:- load_entity(semantic(file('src/db/semantics.pl'))).
+:- load_entity(semantic(file('src/nix/templates/python/semantics.pl'))).
+:- load_entity(semantic(file('src/nix/templates/cpp/semantics.pl'))).
+:- load_entity(semantic(file('src/nix/templates/mkdocs/semantics.pl'))).
+:- load_entity(semantic(file('src/nix/templates/lean4/semantics.pl'))).
+:- load_entity(semantic(file('src/nix/templates/haskell/semantics.pl'))).
+:- load_entity(semantic(file('src/nix/templates/rust/semantics.pl'))).
 
 % === SELF ENTITY MECHANISM TESTS ===
 

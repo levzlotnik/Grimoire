@@ -85,7 +85,7 @@ Grimoire is a knowledge-based operating system built on Entity-Component-System 
 
 ### 4. Multi-Frontend Interface System
 
-The interface layer (`src/prolog/interface.pl`) provides a clean separation between the ECS system and various frontends (CLI, API, MCP):
+The interface layer (`src/interface.pl`) provides a clean separation between the ECS system and various frontends (CLI, API, MCP):
 
 **ECS-Native Interface Pattern**: Interface as ECS entity with subcommands that promote to command constructors
 
@@ -132,13 +132,13 @@ Behavior:
 
 Example usage:
 ```prolog
-% In src/prolog/git.pl
+% In src/git.pl
 :- self_entity(git).
-% component(git, self, semantic(file("src/prolog/git.pl"))).
+% component(git, self, semantic(file("src/git.pl"))).
 
 % In a template's semantics.pl
 :- self_entity(rust_template).
-% component(rust_template, self, semantic(folder("src/prolog/nix/templates/rust"))).
+% component(rust_template, self, semantic(folder("src/nix/templates/rust"))).
 ```
 
 ### Load Entity API Design
@@ -148,8 +148,8 @@ The system implements a simple single-arity API for loading semantic entities:
 **load_entity/1 - Semantic Entity Loading**
 ```prolog
 % Load semantic files directly
-load_entity(semantic(file("src/prolog/git.pl"))).
-load_entity(semantic(folder("src/prolog/nix"))).
+load_entity(semantic(file("src/git.pl"))).
+load_entity(semantic(folder("src/nix"))).
 load_entity(semantic(file("templates/rust/semantics.pl"))).
 ```
 - Use for: All entity loading (core domains, templates, projects)
@@ -170,10 +170,10 @@ load_entity(semantic(Source)) :-
     mount_semantic(Source).
 
 % In grimoire.pl - core system loading
-:- load_entity(semantic(file("src/prolog/git.pl"))).
-:- load_entity(semantic(folder("src/prolog/nix"))).
-:- load_entity(semantic(file("src/prolog/fs.pl"))).
-:- load_entity(semantic(folder("src/prolog/project"))).
+:- load_entity(semantic(file("src/git.pl"))).
+:- load_entity(semantic(folder("src/nix"))).
+:- load_entity(semantic(file("src/fs.pl"))).
+:- load_entity(semantic(folder("src/project"))).
 
 % Template loading
 ?- load_entity(semantic(file("templates/rust/semantics.pl"))).
@@ -216,7 +216,7 @@ Benefits:
 **Current System Features**:
 - Spell System: Fantasy-themed conjure/perceive with multiple-solution query capabilities
 - Session System: Git-backed sessions with transaction support and CLI management
-- Interface Layer: Multi-frontend system (`src/prolog/interface.pl`) with structured returns
+- Interface Layer: Multi-frontend system (`src/interface.pl`) with structured returns
 - CLI Tool: Context-aware `./grimoire` with `conjure`/`perceive`/`exec`/`session` commands
 - Templates: 6 language templates with Nix-centric commands and test coverage
 - Core Systems: git, nix, fs, project, session domains loaded and tested
@@ -238,7 +238,7 @@ Benefits:
 5. **Enhanced Discovery System**: Implement filesystem pattern matching and automatic project type inference
 
 **Phase 9: Knowledge Evolution Layer**:
-- Reactivate database infrastructure (`src/prolog/db/`) for persistent knowledge
+- Reactivate database infrastructure (`src/db/`) for persistent knowledge
 - Transaction logging and knowledge base evolution tracking
 - Learning from user interactions and command patterns
 
@@ -273,11 +273,11 @@ Benefits:
    - Entity-component abstractions
    - Transaction-based operations
 
-2. **Nix Integration** (`src/prolog/nix/semantics.pl`) - COMPLETED
+2. **Nix Integration** (`src/nix/semantics.pl`) - COMPLETED
    - **Dynamic Target Discovery**: Memoized `nix flake show --json` introspection
    - **JSON Integration**: Flake metadata parsing
 
-3. **Git Integration** (`src/prolog/git.pl`)
+3. **Git Integration** (`src/git.pl`)
    - Command modeling
    - Domain extension patterns
 
@@ -293,7 +293,7 @@ Benefits:
 5. **Rust Template** - Template implementation with explicit entity declaration and discovery integration
 
 ### Components to Defer (Not Remove)
-1. **Database Infrastructure** - `src/prolog/db/` SQLite logging system for knowledge evolution
+1. **Database Infrastructure** - `src/db/` SQLite logging system for knowledge evolution
 2. **Python Agent Infrastructure** - `src/assistant.py`, `src/logger.py` may be useful for complex integrations
 
 **Rationale**: Focus on Prolog-native LLM integration first, then add database persistence and Python bridge as needed
@@ -310,7 +310,7 @@ Benefits:
 
 **Phase 5.1-5.4 Complete**: **Nix-Centric Template Revolution** - Implemented system domains and **completely redesigned language templates to use Nix flake apps instead of language-native commands**. All 6 templates (Rust, Python, C++, Haskell, Lean4, MkDocs) now use `nix run .#command` pattern for canonical, reproducible operations.
 
-**Interface Layer Complete**: **Multi-Frontend Interface System** - Implemented `src/prolog/interface.pl` as ECS-native interface layer with structured return values. Transformed `./grimoire` from bash script to Prolog CLI wrapper with context-aware operation and auto-generated usage.
+**Interface Layer Complete**: **Multi-Frontend Interface System** - Implemented `src/interface.pl` as ECS-native interface layer with structured return values. Transformed `./grimoire` from bash script to Prolog CLI wrapper with context-aware operation and auto-generated usage.
 
 ## Discovery-Based Template Implementation Details
 
@@ -327,7 +327,7 @@ Every project entity must have these non-negotiable core artifacts:
 ### Template Structure
 All templates follow a standardized structure:
 ```
-src/prolog/nix/templates/{language}/
+src/nix/templates/{language}/
 ├── semantics.pl          # Generative context with discovery
 ├── semantics.plt         # Discriminative test suite  
 └── [existing template files...]

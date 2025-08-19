@@ -32,11 +32,11 @@ Grimoire treats the operating system as a knowledge management system where:
 Example:
 ```prolog
 % Core system loading (prefer folders)
-:- load_entity(semantic(folder("src/prolog/nix"))).
-:- load_entity(semantic(folder("src/prolog/project"))).
+:- load_entity(semantic(folder("src/nix"))).
+:- load_entity(semantic(folder("src/project"))).
 % Load other core domains that are single files
-:- load_entity(semantic(file("src/prolog/git.pl"))).
-:- load_entity(semantic(file("src/prolog/fs.pl"))).
+:- load_entity(semantic(file("src/git.pl"))).
+:- load_entity(semantic(file("src/fs.pl"))).
 
 % Template loading
 ?- load_entity(semantic(folder("templates/rust"))).
@@ -184,7 +184,7 @@ The CLI automatically detects project context:
 
 ### Interface Architecture
 
-- **Multi-Frontend Design**: `src/prolog/interface.pl` provides structured return values for CLI, API, and MCP frontends
+- **Multi-Frontend Design**: `src/interface.pl` provides structured return values for CLI, API, and MCP frontends
 - **ECS Integration**: Interface commands are registered as ECS entities with proper namespacing
 - **Auto-Generated Usage**: CLI usage is dynamically generated from ECS component definitions
 
@@ -210,8 +210,8 @@ The CLI automatically detects project context:
 ### Programmatic Usage
 - Load core domains:
   ```prolog
-  :- load_entity(semantic(folder("src/prolog/nix"))).
-  :- load_entity(semantic(folder("src/prolog/project"))).
-  :- load_entity(semantic(file("src/prolog/git.pl"))).
-  :- load_entity(semantic(file("src/prolog/fs.pl"))).
+  :- load_entity(semantic(folder("src/nix"))).
+  :- load_entity(semantic(folder("src/project"))).
+  :- load_entity(semantic(file("src/git.pl"))).
+  :- load_entity(semantic(file("src/fs.pl"))).
   ```

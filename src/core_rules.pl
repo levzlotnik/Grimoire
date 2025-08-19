@@ -209,11 +209,11 @@ docstring(load_entity,
 
     Examples:
         % Load semantic files directly
-        ?- load_entity(semantic(file("src/prolog/git.pl"))).
+        ?- load_entity(semantic(file("src/git.pl"))).
         ?- entity(git).  % Now available
 
         % Load semantic folders
-        ?- load_entity(semantic(folder("src/prolog/nix"))).
+        ?- load_entity(semantic(folder("src/nix"))).
         ?- entity(nix).  % Now available
     |}
 ).
@@ -251,9 +251,9 @@ docstring(self_entity,
     - If file is other: adds component(Entity, self, semantic(file(FilePath)))
     
     Usage in semantic files:
-        % In src/prolog/git.pl
+        % In src/git.pl
         :- self_entity(git).
-        % Result: component(git, self, semantic(file("src/prolog/git.pl")))
+        % Result: component(git, self, semantic(file("src/git.pl")))
         
         % In templates/rust/semantics.pl 
         :- self_entity(rust_template).

@@ -18,7 +18,7 @@ let
     ]
   );
 
-  schemaFile = ./src/prolog/db/schema.sql;
+  schemaFile = ./src/db/schema.sql;
 
 in
 pkgs.mkShell

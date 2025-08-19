@@ -3,7 +3,7 @@
 
 % Interface entity
 entity(interface).
-component(interface, source, source(semantic(file("src/prolog/interface.pl")))).
+component(interface, source, source(semantic(file("src/interface.pl")))).
 
 % Interface subcommands (following git pattern)
 component(interface, subcommand, compt).
@@ -139,7 +139,7 @@ run(command(interface(status)), RetVal) :-
 % Test command - delegate to existing implementation
 run(command(interface(test)), RetVal) :-
     catch(
-        (ensure_loaded('src/prolog/tests/run_tests.pl'), run_all_tests, RetVal = ok(tests_passed))
+        (ensure_loaded('src/tests/run_tests.pl'), run_all_tests, RetVal = ok(tests_passed))
     ,
         Error,
         RetVal = error(tests_failed(Error))

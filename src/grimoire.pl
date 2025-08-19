@@ -86,11 +86,11 @@ docstring(project,
 
 % Core subsystem entities - loaded immediately on boot
 % Load core system components - immediate loading for core functionality
-:- load_entity(semantic(file("src/prolog/git.pl"))).
-:- load_entity(semantic(folder("src/prolog/nix"))).
-:- load_entity(semantic(file("src/prolog/fs.pl"))).
-:- load_entity(semantic(folder("src/prolog/project"))).
-:- load_entity(semantic(file("src/prolog/session.pl"))).
+:- load_entity(semantic(file("src/git.pl"))).
+:- load_entity(semantic(folder("src/nix"))).
+:- load_entity(semantic(file("src/fs.pl"))).
+:- load_entity(semantic(folder("src/project"))).
+:- load_entity(semantic(file("src/session.pl"))).
 
 docstring(execute,
     {|string(_)||

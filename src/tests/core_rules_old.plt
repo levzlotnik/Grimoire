@@ -39,7 +39,7 @@ test(load_entity_self_binding, [
     cleanup(cleanup_self_binding_test)
 ]) :-
     % Load entity with self-binding
-    load_entity(test_git, semantic(file('src/prolog/tests/self_semantic_fixture.pl'))),
+    load_entity(test_git, semantic(file('src/tests/self_semantic_fixture.pl'))),
 
     % Verify self was transformed to test_git
     entity(test_git),
@@ -58,10 +58,10 @@ test(load_entity_self_binding, [
     ])),
 
     % Verify source relationship was recorded
-    component(test_git, source, semantic(file('src/prolog/tests/self_semantic_fixture.pl'))).
+    component(test_git, source, semantic(file('src/tests/self_semantic_fixture.pl'))).
 
 setup_self_binding_test :-
-    % Test file already exists at src/prolog/tests/self_semantic_fixture.pl
+    % Test file already exists at src/tests/self_semantic_fixture.pl
     true.
 
 cleanup_self_binding_test :-
@@ -72,7 +72,7 @@ cleanup_self_binding_test :-
     retractall(docstring(test_git, _)),
     retractall(docstring(test_git(_), _)),
     % Unmount the semantic file with absolute path
-    absolute_file_name('src/prolog/tests/self_semantic_fixture.pl', AbsPath),
+    absolute_file_name('src/tests/self_semantic_fixture.pl', AbsPath),
     (mounted_semantic(AbsPath, _) ->
         unmount_semantic(AbsPath)
     ; true).
@@ -89,7 +89,7 @@ test(relative_entity_pattern_via_load_entity, [
     cleanup(cleanup_relative_entity_test)
 ]) :-
     % Test that load_entity properly binds self to target entity
-    load_entity(test_project, semantic(file('src/prolog/tests/self_semantic_fixture.pl'))),
+    load_entity(test_project, semantic(file('src/tests/self_semantic_fixture.pl'))),
 
     % Verify self was bound to test_project
     entity(test_project),
@@ -97,7 +97,7 @@ test(relative_entity_pattern_via_load_entity, [
 
     % Verify original self references were transformed
     \+ entity(self),  % No lingering self entity
-    component(test_project, source, semantic(file('src/prolog/tests/self_semantic_fixture.pl'))).
+    component(test_project, source, semantic(file('src/tests/self_semantic_fixture.pl'))).
 
 cleanup_relative_entity_test :-
     retractall(entity(test_project)),
@@ -106,7 +106,7 @@ cleanup_relative_entity_test :-
     retractall(docstring(test_project, _)),
     retractall(docstring(test_project(_), _)),
     % Unmount the semantic file with absolute path
-    absolute_file_name('src/prolog/tests/self_semantic_fixture.pl', AbsPath),
+    absolute_file_name('src/tests/self_semantic_fixture.pl', AbsPath),
     (mounted_semantic(AbsPath, _) ->
         unmount_semantic(AbsPath)
     ; true).
@@ -117,20 +117,20 @@ test(passive_loading_basic, [
     cleanup(cleanup_passive_test)
 ]) :-
     % Create a passive entity
-    passive_load(test_entity, semantic(file('src/prolog/tests/self_semantic_fixture.pl'))),
+    passive_load(test_entity, semantic(file('src/tests/self_semantic_fixture.pl'))),
 
     % Entity should exist
     entity(test_entity),
 
     % Should have to_be_loaded component
-    component(test_entity, to_be_loaded, semantic(file('src/prolog/tests/self_semantic_fixture.pl'))),
+    component(test_entity, to_be_loaded, semantic(file('src/tests/self_semantic_fixture.pl'))),
 
     % Should have default docstring
     docstring(test_entity, Doc),
     sub_string(Doc, _, _, _, "To get a full view"),
 
     % Explicit loading should work
-    load_entity(test_entity, semantic(file('src/prolog/tests/self_semantic_fixture.pl'))),
+    load_entity(test_entity, semantic(file('src/tests/self_semantic_fixture.pl'))),
 
     % After loading, to_be_loaded should be removed
     \+ component(test_entity, to_be_loaded, _),
@@ -147,7 +147,7 @@ cleanup_passive_test :-
     retractall(docstring(test_entity, _)),
     retractall(docstring(test_entity(_), _)),
     % Unmount the semantic file with absolute path
-    absolute_file_name('src/prolog/tests/self_semantic_fixture.pl', AbsPath),
+    absolute_file_name('src/tests/self_semantic_fixture.pl', AbsPath),
     (mounted_semantic(AbsPath, _) ->
         unmount_semantic(AbsPath)
     ; true).
@@ -158,19 +158,19 @@ test(passive_vs_immediate_loading, [
     cleanup(cleanup_passive_immediate_test)
 ]) :-
     % Load same source both immediately and passively
-    load_entity(test_immediate, semantic(file('src/prolog/tests/self_semantic_fixture.pl'))),
-    passive_load(test_passive, semantic(file('src/prolog/tests/self_semantic_fixture.pl'))),
+    load_entity(test_immediate, semantic(file('src/tests/self_semantic_fixture.pl'))),
+    passive_load(test_passive, semantic(file('src/tests/self_semantic_fixture.pl'))),
 
     % Immediate should be fully available
     component(test_immediate, subcommand, status),
-    component(test_immediate, source, semantic(file('src/prolog/tests/self_semantic_fixture.pl'))),
+    component(test_immediate, source, semantic(file('src/tests/self_semantic_fixture.pl'))),
 
     % Passive should only have to_be_loaded component initially
-    component(test_passive, to_be_loaded, semantic(file('src/prolog/tests/self_semantic_fixture.pl'))),
+    component(test_passive, to_be_loaded, semantic(file('src/tests/self_semantic_fixture.pl'))),
     \+ component(test_passive, subcommand, _),
 
     % After explicit loading, passive should behave like immediate
-    load_entity(test_passive, semantic(file('src/prolog/tests/self_semantic_fixture.pl'))),
+    load_entity(test_passive, semantic(file('src/tests/self_semantic_fixture.pl'))),
     component(test_passive, subcommand, status),
     \+ component(test_passive, to_be_loaded, _).
 
@@ -186,7 +186,7 @@ cleanup_passive_immediate_test :-
     retractall(docstring(test_passive, _)),
     retractall(docstring(test_passive(_), _)),
     % Unmount the semantic file with absolute path
-    absolute_file_name('src/prolog/tests/self_semantic_fixture.pl', AbsPath),
+    absolute_file_name('src/tests/self_semantic_fixture.pl', AbsPath),
     (mounted_semantic(AbsPath, _) ->
         unmount_semantic(AbsPath)
     ; true).
