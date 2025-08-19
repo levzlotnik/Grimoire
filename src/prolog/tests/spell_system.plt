@@ -91,7 +91,9 @@ test(session_conjure_ctors_exist) :-
     % Test session conjure constructors
     component(conjure, ctor, session(start)),
     component(conjure, ctor, session(close)),
-    component(conjure, ctor, session(execute)), !.
+    component(conjure, ctor, session(switch)),
+    component(conjure, ctor, session(commit)),
+    component(conjure, ctor, session(rollback)), !.
 
 test(session_perceive_ctors_exist) :-
     % Test session perceive constructors

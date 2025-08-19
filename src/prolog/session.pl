@@ -66,7 +66,9 @@ docstring(transaction(state),
 % Conjure constructors (state-changing operations)
 component(conjure, ctor, session(start)).
 component(conjure, ctor, session(close)).
-component(conjure, ctor, session(execute)).
+component(conjure, ctor, session(switch)).
+component(conjure, ctor, session(commit)).
+component(conjure, ctor, session(rollback)).
 
 % Perceive constructors (query operations)
 component(perceive, ctor, session(current)).
@@ -77,7 +79,6 @@ component(perceive, ctor, session(status)).
 component(command, ctor, session).
 component(session, subcommand, start).
 component(session, subcommand, close).
-component(session, subcommand, execute).
 component(session, subcommand, switch).
 component(session, subcommand, list).
 component(session, subcommand, commit).
@@ -186,7 +187,7 @@ transition_branch_name(SourceBranch, SessionId, TransitionBranch) :-
 
 get_current_branch(Branch) :-
     catch(
-        (run(command(git(['branch', '--show-current'])), Result),
+        (run(command(git(branch(['--show-current']))), Result),
          (Result = ok(result(BranchOutput, _)) ->
              % Strip newline and convert to atom  
              string_concat(BranchStr, "\n", BranchOutput),
@@ -222,8 +223,6 @@ run(command(session(start(SessionId))), RetVal) :-
 run(command(session(close(SessionId, Strategy))), RetVal) :-
     close_session(SessionId, Strategy, RetVal).
 
-run(command(session(execute(SessionId, Commands))), RetVal) :-
-    execute_transaction_in_session(SessionId, Commands, RetVal).
 
 % Session switching command
 run(command(session(switch(SessionId))), RetVal) :-
@@ -235,9 +234,7 @@ run(command(session(list)), RetVal) :-
 
 % Session commit command
 run(command(session(commit(Message))), RetVal) :-
-    format('DEBUG: session commit handler called with Message: ~w~n', [Message]),
-    create_session_commit(Message, RetVal),
-    format('DEBUG: create_session_commit returned: ~w~n', [RetVal]).
+    create_session_commit(Message, RetVal).
 
 % Session rollback command
 run(command(session(rollback)), RetVal) :-
@@ -434,32 +431,22 @@ list_all_sessions(Result) :-
 
 % Create a named commit in current session
 create_session_commit(Message, Result) :-
-    catch(
-        (get_current_branch(Branch),
-         format('DEBUG: Current branch is ~w~n', [Branch]),
-         (atom_concat('session-', _, Branch) ->
-             format('DEBUG: In session branch, proceeding with commit~n'),
-             % Add all changes and commit with message
-             run(command(git(add(['.']))), AddResult),
-             format('DEBUG: Add result: ~w~n', [AddResult]),
-             (AddResult = ok(_) ->
-                 run(command(git(commit(['-m', Message]))), CommitResult),
-                 format('DEBUG: Commit result: ~w~n', [CommitResult]),
-                 (CommitResult = ok(_) ->
-                     Result = ok(session_commit_created(Message))
-                 ;
-                     Result = error(failed_to_commit_session(CommitResult))
-                 )
-             ;
-                 Result = error(failed_to_add_changes(AddResult))
-             )
-         ;
-             format('DEBUG: Not in session branch, current branch: ~w~n', [Branch]),
-             Result = error(not_in_session_branch(Branch))
-         )),
-        Error,
-        (format('CAUGHT ERROR in create_session_commit: ~w~n', [Error]),
-         Result = error(session_commit_exception(Error)))
+    get_current_branch(Branch),
+    (atom_concat('session-', _, Branch) ->
+        % Add all changes and commit with message
+        run(command(git(add(['.']))), AddResult),
+        (AddResult = ok(_) ->
+            run(command(git(commit(['-m', Message]))), CommitResult),
+            (CommitResult = ok(_) ->
+                Result = ok(session_commit_created(Message))
+            ;
+                Result = error(failed_to_commit_session(CommitResult))
+            )
+        ;
+            Result = error(failed_to_add_changes(AddResult))
+        )
+    ;
+        Result = error(not_in_session_branch(Branch))
     ).
 
 % Rollback to previous commit in current session

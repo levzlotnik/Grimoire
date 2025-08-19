@@ -120,15 +120,8 @@ handle_command(session, [SubCmd|Args]) :-
         % Parse session subcommand
         atom_string(SubCmdAtom, SubCmd),
         parse_session_args(SubCmdAtom, Args, SessionArgs),
-        format('DEBUG: About to call interface with SessionArgs: ~w~n', [SessionArgs]),
-        catch(
-            (run(command(interface(session(SessionArgs))), Result),
-             format('DEBUG: Interface returned: ~w~n', [Result]),
-             format_cli_result(Result)),
-            Error,
-            (format('CAUGHT CLI ERROR: ~w~n', [Error]),
-             format('SubCmd: ~w, Args: ~w, SessionArgs: ~w~n', [SubCmd, Args, SessionArgs]))
-        )
+        run(command(interface(session(SessionArgs))), Result),
+        format_cli_result(Result)
     ).
 
 % Handle session command with no args (show help)
@@ -169,6 +162,18 @@ handle_command(run, [CommandStr]) :-
          format_cli_result(Result)),
         Error,
         format_cli_result(error(invalid_command_syntax(Error)))
+    ).
+
+% Exec command - execute arbitrary Prolog queries
+handle_command(exec, [QueryStr]) :-
+    !,
+    % Parse and execute the query directly
+    catch(
+        (read_term_from_atom(QueryStr, QueryTerm, [variable_names(VarNames)]),
+         call(QueryTerm),
+         emit_variable_bindings(VarNames)),
+        Error,
+        format_cli_result(error(query_execution_failed(Error)))
     ).
 
 % Unknown command
@@ -280,8 +285,7 @@ format_cli_result(error(failed_to_switch_to_session(GitResult))) :-
 
 format_cli_result(error(Reason)) :-
     !,
-    format('Error: ~w~n', [Reason]),
-    format('Debug error: ~q~n', [error(Reason)]).
+    format('Error: ~w~n', [Reason]).
 
 % Format command execution results
 format_cli_result(ok(result(Stdout, Stderr))) :-
@@ -375,11 +379,6 @@ parse_session_args(close, [SessionIdStr, StrategyStr], close(SessionId, Strategy
     !,
     atom_string(SessionId, SessionIdStr),
     atom_string(Strategy, StrategyStr).
-parse_session_args(execute, [SessionIdStr, CommandsStr], execute(SessionId, Commands)) :-
-    !,
-    atom_string(SessionId, SessionIdStr),
-    % Parse commands as Prolog term
-    read_term_from_atom(CommandsStr, Commands, []).
 parse_session_args(switch, [SessionIdStr], switch(SessionId)) :-
     !,
     atom_string(SessionId, SessionIdStr).
@@ -407,7 +406,6 @@ show_session_help :-
     writeln('  commit <message>          Create named commit in current session'),
     writeln('  rollback                  Rollback to previous transaction'),
     writeln('  close <id> <strategy>     Close session (merge_to_main, abandon, keep_branch)'),
-    writeln('  execute <id> <commands>   Execute commands atomically in session'),
     writeln(''),
     writeln('Examples:'),
     writeln('  grimoire session start                    # Start new session'),
@@ -415,25 +413,39 @@ show_session_help :-
     writeln('  grimoire session list                     # List all sessions'),
     writeln('  grimoire session commit "Add feature"     # Create commit'),
     writeln('  grimoire session close my-session abandon # Abandon session'),
-    writeln(''),
-    writeln('Session Transition Patterns:'),
-    writeln('  1. Clean state → any session: Direct git checkout'),
-    writeln('  2. Dirty state → existing session: Git checkout (handles conflicts)'),
-    writeln('  3. Dirty state → NEW session: Via transition branch workflow'),
     writeln('').
 
 % === PERCEIVE QUERY EXECUTION ===
 
-% Execute a perceive query and automatically emit variable bindings
+% Execute a perceive query and collect all solutions
 execute_perceive_query(QueryTerm, VarNames) :-
-    % Try perceive() wrapper first (for domain operations), then direct call
-    (perceive(QueryTerm) ->
-        emit_variable_bindings(VarNames)
-    ; call(QueryTerm) ->
-        emit_variable_bindings(VarNames)
+    % Try perceive() wrapper first (for domain operations)
+    (catch(findall(VarNames, perceive(QueryTerm), PerceiveSolutions), _, PerceiveSolutions = []),
+     PerceiveSolutions \= [] ->
+        emit_all_solutions(PerceiveSolutions)
     ;
-        writeln('Query failed - no solutions found')
+        % Fallback to direct call if perceive produces no solutions
+        catch(findall(VarNames, call(QueryTerm), CallSolutions), Error, (
+            format_cli_result(error(query_execution_failed(Error))), 
+            fail
+        )),
+        (CallSolutions = [] ->
+            writeln('Query failed - no solutions found')
+        ;
+            emit_all_solutions(CallSolutions)
+        )
     ).
+
+% Emit all solutions separated by semicolons
+emit_all_solutions([]).
+emit_all_solutions([Solution]) :-
+    !,
+    emit_variable_bindings(Solution).
+emit_all_solutions([Solution|Rest]) :-
+    emit_variable_bindings(Solution),
+    write(' ;'),
+    nl,
+    emit_all_solutions(Rest).
 
 % Emit variable bindings in Variable = Value format
 emit_variable_bindings([]).
