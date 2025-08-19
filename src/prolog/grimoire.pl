@@ -9,14 +9,14 @@
 :- dynamic([perceive/1], [discontiguous(true), multifile(true)]).  % perceive(Query)
 
 % The most fundamental entity
-entity(system).
+:- self_entity(system).
 
 docstring(system, {|string(_)||
     The root entity of the entire system - the system itself.
 |}).
 
 
-component(system, root_dir, folder("/home/levz/Projects/MyPAOS")).
+component(system, root_dir, folder("/home/levz/Projects/Grimoire")).
 % Some properties
 component(
     system,
@@ -127,7 +127,7 @@ entity(spell).
 component(spell, ctor, conjure).
 component(spell, ctor, perceive).
 
-% Conjure entity for mutable operations  
+% Conjure entity for mutable operations
 entity(conjure).
 component(conjure, ctor, shell).
 component(conjure, ctor, mkdir).
@@ -147,7 +147,7 @@ docstring(spell,
     Spells are divided into two categories:
     - conjure: Mutable operations that change system state
     - perceive: Perception operations that query system state
-    
+
     Format: spell(conjure(...)) or spell(perceive(...))
     |}).
 
@@ -155,7 +155,7 @@ docstring(conjure,
     {|string(_)||
     Conjuration spells that modify system state.
     Must be cast using cast/2 predicate for safety.
-    
+
     Format: cast(conjure(operation(...)), Result)
     Examples:
       - cast(conjure(git(commit('message'))), Result)
@@ -166,7 +166,7 @@ docstring(perceive,
     {|string(_)||
     Perception spells that query system state without modification.
     Called directly, with variables unified to results.
-    
+
     Format: perceive(query(Var1, Var2, ...))
     Examples:
       - perceive(git(status(Branch, Ahead, Files)))
@@ -435,11 +435,11 @@ docstring(cast,
     {|string(_)||
     Safely cast conjuration spells that modify system state.
     Supports both single spells and ritual (transaction) casting.
-    
-    Format: 
+
+    Format:
       cast(conjure(operation(...)), Result)    % Single spell
       cast(ritual([op1, op2, ...]), Result)    % Atomic ritual
-    
+
     Examples:
       - cast(conjure(git(commit('message'))), Result)
       - cast(ritual([mkdir('dir'), mkfile('dir/file')]), Result)

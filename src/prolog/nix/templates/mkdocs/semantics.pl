@@ -2,7 +2,7 @@
 % Uses Nix flake apps rather than direct mkdocs commands
 % Note: MkDocs is documentation generation, no traditional testing needed
 
-entity(mkdocs_template).
+:- self_entity(mkdocs_template).
 
 % Main docstring for the project
 docstring(mkdocs_template, "An MkDocs documentation template using Nix flake apps for canonical documentation operations. Focuses on static site generation with Material theme.").

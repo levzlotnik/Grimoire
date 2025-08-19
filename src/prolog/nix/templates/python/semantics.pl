@@ -1,7 +1,7 @@
 % Python project semantics - Nix-centric approach
 % Uses Nix flake apps rather than direct pip/python commands
 
-entity(python_template).
+:- self_entity(python_template).
 
 % Main docstring for the project
 docstring(python_template, "A Python project template using Nix flake apps for canonical build operations. All commands go through 'nix run' for reproducibility.").

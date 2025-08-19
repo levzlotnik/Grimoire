@@ -7,7 +7,7 @@ init_agent_db(DbPath) :-
     (RetVal = error(E) -> throw(db_error(E)) ; true).
 
 % Entity and component declarations
-entity(db).
+:- self_entity(db).
 component(db, source, source(semantic(folder("db")))) :- !.
 
 docstring(init_agent_db,

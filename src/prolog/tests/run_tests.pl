@@ -5,6 +5,7 @@
 :- ensure_loaded('../git.plt').
 :- ensure_loaded('../nix/semantics.plt').
 :- ensure_loaded('../project/semantics.plt').
+:- ensure_loaded('self_entity.plt').
 :- ensure_loaded('integration.plt').
 :- ensure_loaded('spell_system.plt').
 :- ensure_loaded('session_cli.plt').

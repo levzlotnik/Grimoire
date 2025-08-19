@@ -5,7 +5,7 @@
 % Core entities
 entity(package).
 entity(application).
-entity(project).
+:- self_entity(project).
 entity(environment).
 entity(context).
 entity(language).

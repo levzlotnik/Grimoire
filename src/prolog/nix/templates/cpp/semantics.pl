@@ -1,7 +1,7 @@
 % C++ project semantics - Nix-centric approach
 % Uses Nix flake apps rather than direct cmake/make commands
 
-entity(cpp_template).
+:- self_entity(cpp_template).
 
 % Main docstring for the project
 docstring(cpp_template, "A C++ project template using Nix flake apps for canonical build operations. All commands go through 'nix run' for reproducibility.").

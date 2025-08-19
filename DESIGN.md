@@ -11,13 +11,13 @@ Grimoire is a knowledge-based operating system built on Entity-Component-System 
 - 66 tests passing across all subsystems
 - Core ECS architecture with knowledge locality
 - Spell system with multiple-solution perceive queries
-- Git-backed session management 
+- Git-backed session management
 - Multi-frontend interface layer
 - 6 language templates with Nix-centric commands
 
 **CLI Commands:**
 - `./grimoire perceive "query"` - Multiple solutions with semicolon separation
-- `./grimoire conjure "operation"` - Mutation operations  
+- `./grimoire conjure "operation"` - Mutation operations
 - `./grimoire exec "query"` - Direct Prolog query execution
 - `./grimoire session switch/list/commit/rollback` - Transaction management
 - Domain queries work directly: `git(status(...))`, `session(current(...))`
@@ -46,7 +46,6 @@ Grimoire is a knowledge-based operating system built on Entity-Component-System 
     - Collects all solutions through backtracking
     - Displays multiple solutions with semicolon separation
     - Direct domain queries: `git(status(...))` works without wrapper
-    - Falls back to `call/1` for standard Prolog queries
 - Clean composition and extension patterns
 
 ### 2.1. Entity Declaration Conventions
@@ -55,11 +54,11 @@ The system uses explicit entity declarations for all semantic files:
 **Explicit Entity Declarations**: All semantic files declare their entities directly
 ```prolog
 % git.pl - Core git domain
-entity(git).
+:- self_entity(git).
 component(git, source, file("git.pl")).
 
 % rust/semantics.pl - Rust project template
-entity(rust_template).
+:- self_entity(rust_template).
 component(rust_template, project_type, rust).
 component(command, ctor, rust_template).
 ```
@@ -68,6 +67,25 @@ component(command, ctor, rust_template).
 - Loading: Simple `load_entity(semantic(file/folder))` pattern
 
 This explicit approach ensures clarity, maintainability, and eliminates complexity.
+
+### Self-entity declaration
+
+To make semantics files self-describing and avoid repeating source paths, we recommend using ``:- self_entity(Entity).`` at the top of a semantics file instead of a plain ``entity(Entity).`` header.
+
+Behavior:
+- Asserts ``entity(Entity)`` for the file being loaded.
+- Adds a ``component(Entity, self, semantic(...))`` component pointing to the file or folder that defined the entity. If the file is named ``semantics.pl`` the component will be ``semantic(folder(Dir))``, otherwise ``semantic(file(Path))``.
+
+Example usage:
+```prolog
+% In src/prolog/git.pl
+:- self_entity(git).
+% component(git, self, semantic(file("src/prolog/git.pl"))).
+
+% In a template's semantics.pl
+:- self_entity(rust_template).
+% component(rust_template, self, semantic(folder("src/prolog/nix/templates/rust"))).
+```
 
 ### 2.2. Load Entity API Design
 
@@ -134,7 +152,7 @@ The interface layer (`src/prolog/interface.pl`) provides a clean separation betw
 % Interface as ECS entity with subcommands
 entity(interface).
 component(interface, subcommand, compt).  % List component types
-component(interface, subcommand, comp).   % List components  
+component(interface, subcommand, comp).   % List components
 component(interface, subcommand, doc).    % Show documentation
 component(interface, subcommand, status). % Session status
 component(interface, subcommand, repl).   % Interactive REPL
@@ -440,7 +458,7 @@ src/prolog/nix/templates/{language}/
 **August 19, 2025**:
 - Enhanced Perceive System implemented:
   - Multiple choicepoint collection through backtracking
-  - Semicolon-separated solutions like normal Prolog queries  
+  - Semicolon-separated solutions like normal Prolog queries
   - Direct domain queries: `./grimoire perceive "git(status(...))"` works without wrapper
   - Proper fallback: tries `perceive/1` first, then `call/1`
   - Clean error handling for failed queries
@@ -448,7 +466,7 @@ src/prolog/nix/templates/{language}/
 - 66 total tests passing - Core (27) + Templates (14) + Spell System (21) + Session CLI (4)
 - All previous systems maintained:
   - Phase 6: Git-backed session system with clean ontology
-  - Interface Layer: Multi-frontend ECS-native interface system  
+  - Interface Layer: Multi-frontend ECS-native interface system
   - All 6 language templates with Nix-centric commands
   - Complete CLI interface with session management
 

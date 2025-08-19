@@ -1,7 +1,7 @@
 % Haskell project semantics - Nix-centric approach
 % Uses Nix flake apps rather than direct stack/cabal commands
 
-entity(haskell_template).
+:- self_entity(haskell_template).
 
 % Main docstring for the project
 docstring(haskell_template, "A Haskell project template using Nix flake apps for canonical build operations. All commands go through 'nix run' for reproducibility.").

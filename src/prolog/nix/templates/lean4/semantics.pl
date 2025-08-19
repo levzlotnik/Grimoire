@@ -2,7 +2,7 @@
 % Uses Nix flake apps rather than direct lake commands
 % Note: Lean4 focuses on formal verification, not traditional testing
 
-entity(lean4_template).
+:- self_entity(lean4_template).
 
 % Main docstring for the project
 docstring(lean4_template, "A Lean4 formal verification template using Nix flake apps for canonical build operations. Focuses on proof verification rather than traditional testing workflows.").
