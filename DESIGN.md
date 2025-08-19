@@ -5,24 +5,52 @@
 ### Vision Statement
 Grimoire is a knowledge-based operating system built on Entity-Component-System (ECS) architecture with Prolog as the semantic knowledge layer and Nix as the system configuration foundation.
 
-### Current Status
+## Core System Domains
 
-**System State: Functional**
-- 66 tests passing across all subsystems
-- Core ECS architecture with knowledge locality
-- Spell system with multiple-solution perceive queries
-- Git-backed session management
-- Multi-frontend interface layer
-- 6 language templates with Nix-centric commands
+### Nix Domain - System Configuration Foundation
+- **Purpose**: System configuration, packages, and flake management
+- **Paradigm**: Declarative system configuration with reproducible builds
+- **Key Features**:
+  - Dynamic target discovery via `nix flake show --json` introspection
+  - Memoized performance optimization
+  - Template system with Nix-centric commands
+  - All language templates use `nix run .#command` pattern for canonical operations
+- **Revolutionary Design**: All 6 language templates (Rust, Python, C++, Haskell, Lean4, MkDocs) use Nix flake apps instead of language-native commands
 
-**CLI Commands:**
-- `./grimoire perceive "query"` - Multiple solutions with semicolon separation
-- `./grimoire conjure "operation"` - Mutation operations
-- `./grimoire exec "query"` - Direct Prolog query execution
-- `./grimoire session switch/list/commit/rollback` - Transaction management
-- Domain queries work directly: `git(status(...))`, `session(current(...))`
+### Git Domain - Version Control & Session Backend
+- **Purpose**: Version control operations and session state management
+- **Paradigm**: Git-native operations with branch-based session isolation
+- **Key Features**:
+  - Command modeling for all Git operations
+  - Session-based branching for concurrent work streams
+  - Atomic transactions backed by Git commits
+  - Clean rollback capabilities via Git reset
 
-**Next: Phase 7 LLM Integration**
+### Session Domain - Transaction Management
+- **Purpose**: Logical work contexts with Git-backed isolation
+- **Paradigm**: Session → Git branch, Transaction → Git commit
+- **Key Features**:
+  - Session lifecycle: start → work → close with merge strategies
+  - Atomic transaction execution with rollback support
+  - Multi-transaction workflows within sessions
+  - Clean integration with existing transaction system
+
+### Filesystem Domain - Project Discovery
+- **Purpose**: Filesystem introspection and artifact discovery
+- **Paradigm**: Pattern-based discovery with configurable traversal
+- **Key Features**:
+  - `discover_fs_components` utility for filesystem scanning
+  - Glob pattern matching for file type identification
+  - Integration with project template systems
+
+### Project Domain - Artifact Management
+- **Purpose**: Project structure analysis and artifact discovery
+- **Paradigm**: Template-based project analysis with core artifact requirements
+- **Key Features**:
+  - Core artifacts: `nix(flake)`, `git`, `readme`, `sources`
+  - `discover_project_artifacts` with configurable patterns
+  - Template composition for multi-project architectures
+  - Language-specific project type identification
 
 ## Core Design Principles
 
@@ -48,7 +76,33 @@ Grimoire is a knowledge-based operating system built on Entity-Component-System 
     - Direct domain queries: `git(status(...))` works without wrapper
 - Clean composition and extension patterns
 
-### 2.1. Entity Declaration Conventions
+### 3. Domain Natural Paradigms
+- **Nix**: System configuration, packages, flakes
+- **Git**: Version control operations
+- **Prolog**: Semantic queries and knowledge representation
+- **SQLite**: Transaction logs and persistent state
+- Each tool speaks its natural language
+
+### 4. Multi-Frontend Interface System
+
+The interface layer (`src/prolog/interface.pl`) provides a clean separation between the ECS system and various frontends (CLI, API, MCP):
+
+**ECS-Native Interface Pattern**: Interface as ECS entity with subcommands that promote to command constructors
+
+**Structured Return Values**: Interface returns data structures, not terminal output - CLI formats the structured data for display
+
+**Context-Aware Operation**: Auto-detect current working context and ensure local project loading
+
+**Benefits**:
+- **Multi-Frontend Ready**: Same interface layer supports CLI, API, and MCP
+- **ECS Integration**: Interface commands follow established ECS patterns
+- **Context Awareness**: Automatically detects and loads local project semantics
+- **Structured Data**: Returns data structures, not formatted output
+- **Auto-Generated Usage**: CLI usage generated from ECS component definitions
+
+## Entity Management System
+
+### Entity Declaration Conventions
 The system uses explicit entity declarations for all semantic files:
 
 **Explicit Entity Declarations**: All semantic files declare their entities directly
@@ -87,7 +141,7 @@ Example usage:
 % component(rust_template, self, semantic(folder("src/prolog/nix/templates/rust"))).
 ```
 
-### 2.2. Load Entity API Design
+### Load Entity API Design
 
 The system implements a simple single-arity API for loading semantic entities:
 
@@ -108,14 +162,7 @@ load_entity(semantic(file("templates/rust/semantics.pl"))).
 - **Predictability**: No transformation or binding complexity
 - **Maintainability**: Easy to understand and debug
 
-### 3. Domain Natural Paradigms
-- **Nix**: System configuration, packages, flakes
-- **Git**: Version control operations
-- **Prolog**: Semantic queries and knowledge representation
-- **SQLite**: Transaction logs and persistent state
-- Each tool speaks its natural language
-
-### 4. Clean Entity Loading
+### Clean Entity Loading
 Simple pattern for loading domain knowledge:
 ```prolog
 % In core_rules.pl
@@ -143,92 +190,66 @@ Benefits:
 - **Predictable behavior** - what you load is what you get
 - **Easy debugging** - clear loading patterns
 
-### 4.1. Multi-Frontend Interface System
+## Current System Status
 
-The interface layer (`src/prolog/interface.pl`) provides a clean separation between the ECS system and various frontends (CLI, API, MCP):
+**System State: Functional**
+- 66 tests passing across all subsystems
+- Core ECS architecture with knowledge locality
+- Spell system with multiple-solution perceive queries
+- Git-backed session management
+- Multi-frontend interface layer
+- 6 language templates with Nix-centric commands
 
-**ECS-Native Interface Pattern**:
-```prolog
-% Interface as ECS entity with subcommands
-entity(interface).
-component(interface, subcommand, compt).  % List component types
-component(interface, subcommand, comp).   % List components
-component(interface, subcommand, doc).    % Show documentation
-component(interface, subcommand, status). % Session status
-component(interface, subcommand, repl).   % Interactive REPL
-component(interface, subcommand, test).   % Run test suite
+**CLI Commands:**
+- `./grimoire perceive "query"` - Multiple solutions with semicolon separation
+- `./grimoire conjure "operation"` - Mutation operations
+- `./grimoire exec "query"` - Direct Prolog query execution
+- `./grimoire session switch/list/commit/rollback` - Transaction management
+- Domain queries work directly: `git(status(...))`, `session(current(...))`
 
-% Promote subcommands to command constructors (like git pattern)
-component(command, ctor, interface(C)) :- component(interface, subcommand, C).
-```
+### Completed Phases Overview
 
-**Structured Return Values**:
-```prolog
-% Interface returns data structures, not terminal output
-run(command(interface(compt)), RetVal) :-
-    current_entity(Entity),
-    interface_compt(Entity, Types),
-    RetVal = ok(component_types(Entity, Types)).
+**Phase 1-6 + Interface Layer Complete**: Foundation cleanup, Nix CLI mastery, testing infrastructure, simplified entity loading system, complete Nix-centric template revolution, Git-backed session system, and multi-frontend interface layer - **66 tests passing**
 
-% CLI formats the structured data for display
-format_cli_result(ok(component_types(Entity, Types))) :-
-    format('~w component types:~n', [Entity]),
-    forall(member(Type, Types), format('  ~w~n', [Type])).
-```
+**All 6 Language Templates Complete**: Rust, Python, C++, Haskell (with full test suites), Lean4, MkDocs (templates appropriate to their domains)
 
-**Context-Aware Operation**:
-```prolog
-% Auto-detect current working context
-current_entity(Entity) :-
-    (exists_file('./semantics.pl') ->
-        % Get entity name from working directory
-        working_directory(Cwd, Cwd),
-        file_base_name(Cwd, DirName),
-        atom_string(Entity, DirName),
-        % Ensure local project is loaded
-        ensure_local_project_loaded(Entity)
-    ;
-        % Default to system entity
-        Entity = system
-    ).
-```
+**Current System Features**:
+- Spell System: Fantasy-themed conjure/perceive with multiple-solution query capabilities
+- Session System: Git-backed sessions with transaction support and CLI management
+- Interface Layer: Multi-frontend system (`src/prolog/interface.pl`) with structured returns
+- CLI Tool: Context-aware `./grimoire` with `conjure`/`perceive`/`exec`/`session` commands
+- Templates: 6 language templates with Nix-centric commands and test coverage
+- Core Systems: git, nix, fs, project, session domains loaded and tested
 
-**CLI Implementation** (`./grimoire`):
-- Prolog-based CLI wrapper that formats interface results
-- Auto-generated usage from ECS component definitions
-- Context detection and entity loading
-- Enhanced spell system commands: `conjure`, `perceive`, `exec`
-- Direct Prolog query execution via `exec` command
-- Proper error handling and structured output
+## Current Priorities
 
-**Benefits**:
-- **Multi-Frontend Ready**: Same interface layer supports CLI, API, and MCP
-- **ECS Integration**: Interface commands follow established ECS patterns
-- **Context Awareness**: Automatically detects and loads local project semantics
-- **Structured Data**: Returns data structures, not formatted output
-- **Auto-Generated Usage**: CLI usage generated from ECS component definitions
+**Phase 7: LLM Integration in Prolog**:
+1. **ECS Command Discovery**: Agents query `component(command, ctor, _)` to find available operations
+2. **Transaction Construction**: LLM builds `transaction([command(...), ...])` from natural language
+3. **OpenAI HTTP Client**: Direct API integration using SWI-Prolog HTTP library
+4. **User Approval Workflow**: Present transaction plan before execution
+5. **Agent Entity Framework**: Domain-specific agents (coding_assistant, project_manager)
 
-### 5. Nix-Centric Build Operations
+**Phase 8: Composite Project Architecture & Enhanced Discovery**:
+1. **Multi-Project Composition**: Combine templates in subdirectories with top-level orchestration
+2. **Semantic Composition**: Load subproject semantics via `load_entity` in parent `semantics.pl`
+3. **Nix Flake Composition**: Import subproject flakes as inputs in parent `flake.nix`
+4. **Command Orchestration**: Implement composite commands that coordinate subproject operations
+5. **Enhanced Discovery System**: Implement filesystem pattern matching and automatic project type inference
+
+**Phase 9: Knowledge Evolution Layer**:
+- Reactivate database infrastructure (`src/prolog/db/`) for persistent knowledge
+- Transaction logging and knowledge base evolution tracking
+- Learning from user interactions and command patterns
+
+---
+
+# Implementation Details
+
+## Template System Architecture
+
+### Nix-Centric Build Operations
 **Revolutionary Design**: All language templates use Nix flake apps instead of language-native commands, ensuring reproducibility and consistency across the system.
-
-**Template Command Pattern**:
-```prolog
-% Rust template - uses Nix apps, not cargo directly
-entity(rust_template).
-component(rust_template, build_system, nix).  % Not cargo!
-
-% All commands delegate to Nix
-docstring(rust_template(build), "Build the Rust project using 'nix run .#build'").
-run(command(rust_template(build)), RetVal) :-
-    run(command(nix(run(['.#build']))), RetVal).
-```
-
-**Benefits**:
-- **Reproducible builds** across all environments
-- **Canonical operations** - one way to build/run/test per language
-- **System consistency** - all templates use the same Nix patterns
-- **Zero dependency management** - Nix handles all toolchain dependencies
-- **Cross-platform compatibility** - works on any Nix-supported system
 
 **Template Coverage** (Phase 5.3-5.4 Complete):
 - ✅ **Rust Template**: `nix run .#build|test|run|check|clippy|fmt` + full test suite
@@ -237,6 +258,13 @@ run(command(rust_template(build)), RetVal) :-
 - ✅ **Haskell Template**: `nix run .#build|test|run|ghci|hlint` + full test suite
 - ✅ **Lean4 Template**: `nix run .#build|check|clean|doc` (no tests - formal verification focused)
 - ✅ **MkDocs Template**: `nix run .#build|serve|deploy|new` (no tests - documentation generation)
+
+**Benefits**:
+- **Reproducible builds** across all environments
+- **Canonical operations** - one way to build/run/test per language
+- **System consistency** - all templates use the same Nix patterns
+- **Zero dependency management** - Nix handles all toolchain dependencies
+- **Cross-platform compatibility** - works on any Nix-supported system
 
 ## Current Architecture Assessment
 
@@ -270,11 +298,7 @@ run(command(rust_template(build)), RetVal) :-
 
 **Rationale**: Focus on Prolog-native LLM integration first, then add database persistence and Python bridge as needed
 
----
-
-## Current Status Summary
-
-### Completed Phases
+## Detailed Phase History
 
 **Phase 1: Foundation Cleanup** - Project renamed MyPAOS → Grimoire, Python infrastructure streamlined, core ECS architecture established
 
@@ -284,41 +308,14 @@ run(command(rust_template(build)), RetVal) :-
 
 **Phase 4: Simplified Entity Loading** - Single-arity `load_entity/1` implementation, explicit entity declarations, clean semantic mounting
 
-**Phase 5.1-5.4 Complete**: **Nix-Centric Template Revolution** - Implemented system domains and **completely redesigned language templates to use Nix flake apps instead of language-native commands**. All 6 templates (Rust, Python, C++, Haskell, Lean4, MkDocs) now use `nix run .#command` pattern for canonical, reproducible operations. Templates provide project type identification, Nix-wrapped subcommands, comprehensive docstrings, and appropriate test coverage (full test suites for traditional programming languages, no tests for formal verification/documentation templates).
+**Phase 5.1-5.4 Complete**: **Nix-Centric Template Revolution** - Implemented system domains and **completely redesigned language templates to use Nix flake apps instead of language-native commands**. All 6 templates (Rust, Python, C++, Haskell, Lean4, MkDocs) now use `nix run .#command` pattern for canonical, reproducible operations.
 
-**Interface Layer Complete**: **Multi-Frontend Interface System** - Implemented `src/prolog/interface.pl` as ECS-native interface layer with structured return values. Transformed `./grimoire` from bash script to Prolog CLI wrapper with context-aware operation and auto-generated usage. Ready for API and MCP frontend integration.
+**Interface Layer Complete**: **Multi-Frontend Interface System** - Implemented `src/prolog/interface.pl` as ECS-native interface layer with structured return values. Transformed `./grimoire` from bash script to Prolog CLI wrapper with context-aware operation and auto-generated usage.
 
-**Current System State**: **Interface Layer + Session System Complete** - All 6 language templates fully implemented with Nix-centric commands. Session system provides Git-backed isolation and transaction management. Interface layer provides multi-frontend ECS-native interface with context-aware CLI. System ready for LLM integration (Phase 7).
-
-## Phase 5: Discovery-Based Template Semantics
-
-### Implementation Status
-
-**Phase 5.1 Complete**: System domains and Rust template implementation
-- `fs` domain with filesystem discovery utilities
-- `project` domain with project artifact discovery
-- Rust template with semantic description and docstrings
-- Discovery integration with filesystem scanning
-- Test suite (5/5 tests passing)
-
-**Rust Template Features**:
-- Project type identification (`rust`, `cargo` build tool)
-- Cargo subcommand integration (build, test, run, check, clippy, fmt)
-- Docstrings for all commands and subcommands
-- Filesystem pattern matching for Rust source files
-- Discovery system integration with core artifact detection
-- Self-binding template pattern for late entity binding
+## Discovery-Based Template Implementation Details
 
 ### New System Domains
-```prolog
-% fs domain - filesystem discovery utilities
-entity(fs).
-component(fs, utility, discover_fs_components).
-
-% project domain - project artifact discovery
-entity(project).
-component(project, utility, discover_project_artifacts).
-```
+`fs` domain provides filesystem discovery utilities, `project` domain handles project artifact discovery.
 
 ### Core Project Discovery Architecture
 Every project entity must have these non-negotiable core artifacts:
@@ -327,131 +324,22 @@ Every project entity must have these non-negotiable core artifacts:
 - `readme` - every project must have documentation
 - `sources` - every project must have source files (inferred from git)
 
-```prolog
-% Core project discovery - always included automatically
-% User only configures additional filesystem patterns
-:- discover_project_artifacts(self, [
-    fs_patterns(
-        include([glob("src/**/*.rs"), glob("Cargo.toml")]),
-        exclude([glob("target/**/*")])
-    )
-]).
-
-% Or for basic projects with default patterns:
-:- discover_project_artifacts(self).
-```
-
-### Template Structure Enhancement
-```
-src/prolog/nix/templates/
-├── rust/
-│   ├── semantics.pl          # Generative context
-│   ├── semantics.plt         # Discriminative context
-│   └── [existing template files...]
-├── python/
-│   ├── semantics.pl          # Generative context
-│   ├── semantics.plt         # Discriminative context
-│   └── [existing template files...]
-└── [other languages...]
-```
-
-### Dual Semantic Pattern
-```prolog
-% rust/semantics.pl - Generative context
-entity(self).
-component(self, project_type, rust).
-component(self, build_tool, cargo).
-:- discover_project_artifacts(self, [
-    fs_patterns(
-        include([glob("src/**/*.rs"), glob("Cargo.toml")]),
-        exclude([glob("target/**/*")])
-    )
-]).
-
-% rust/semantics.plt - Discriminative context
-test(rust_project_has_essentials) :-
-    component(_, project_type, rust),
-    component(_, subdir, folder("src")),
-    component(_, file, file("Cargo.toml")).
-```
-
-### Implementation Priority
-1. **Phase 5.1**: Implement `fs` and `project` system domains
-2. **Phase 5.2**: Add discovery utilities with configurable traversal (Rust template complete)
-3. **Phase 5.3**: Update remaining template `semantics.pl` files to use discovery pattern
-4. **Phase 5.4**: Add corresponding `semantics.plt` discriminative tests for all templates
-5. **Phase 5.5**: Validate cross-language project analysis capabilities
-6. **Future**: Language-specific introspection into source files
-
-**Next Steps for Template Implementation**
-
-Template expansion to remaining language templates
-
-**Template Implementation Complete** ✅
-
-All 6 templates have been successfully implemented following the Nix-centric pattern:
-
-1. ✅ **Rust Template** - Stack/Cabal build system, HSpec integration, 5 comprehensive tests
-2. ✅ **Python Template** - pip/poetry build tools, pytest integration, 3 tests
-3. ✅ **C++ Template** - CMake build system, testing framework integration, 3 tests
-4. ✅ **Haskell Template** - Stack/Cabal build system, HLint integration, 5 tests
-5. ✅ **Lean4 Template** - Lake build system, proof verification (no tests by design)
-6. ✅ **MkDocs Template** - Documentation build system (no tests by design)
-
-**Template Requirements** (following Rust template pattern):
-- Project type and build tool identification
-- Build system subcommand integration
-- Docstrings for all commands
-- Filesystem pattern matching for language-specific files
-- Discovery system integration
-- Test suite with 5+ discriminative tests:
-  - Essential components test
-  - Subcommands test
-  - Docstrings test
-  - Filesystem patterns test
-  - Discovery integration test
-
-**Template Structure** (standardized across all languages):
+### Template Structure
+All templates follow a standardized structure:
 ```
 src/prolog/nix/templates/{language}/
 ├── semantics.pl          # Generative context with discovery
-├── semantics.plt         # Discriminative test suite
+├── semantics.plt         # Discriminative test suite  
 └── [existing template files...]
 ```
 
-## Success Criteria & Progress
-
-**Phases 1-6 + Interface Layer Complete**: Foundation cleanup, Nix CLI mastery, testing infrastructure, simplified entity loading system, complete Nix-centric template revolution, Git-backed session system, and multi-frontend interface layer - **41 tests passing** (27 core + 14 template tests)
-
-**All 6 Language Templates Complete**: Rust, Python, C++, Haskell (with full test suites), Lean4, MkDocs (without test suites appropriate to their domains)
-
-## Current Priorities
-
-**Phase 6 + Interface Layer COMPLETE** ✅ - Session system and multi-frontend interface implemented!
-
-**Next Major Phase**:
-
-**Phase 7: LLM Integration in Prolog**:
-1. **ECS Command Discovery**: Agents query `component(command, ctor, _)` to find available operations
-2. **Transaction Construction**: LLM builds `transaction([command(...), ...])` from natural language
-3. **OpenAI HTTP Client**: Direct API integration using SWI-Prolog HTTP library
-4. **User Approval Workflow**: Present transaction plan before execution
-5. **Agent Entity Framework**: Domain-specific agents (coding_assistant, project_manager)
-
-**Phase 8: Composite Project Architecture & Enhanced Discovery**:
-1. **Multi-Project Composition**: Combine templates in subdirectories with top-level orchestration
-2. **Semantic Composition**: Load subproject semantics via `load_entity` in parent `semantics.pl`
-3. **Nix Flake Composition**: Import subproject flakes as inputs in parent `flake.nix`
-4. **Command Orchestration**: Implement composite commands that coordinate subproject operations
-5. **Enhanced Discovery System**: Implement filesystem pattern matching and automatic project type inference
-6. **Cross-Language Validation**: Test unified project analysis queries across different language types
-7. **Polyglot Discovery**: Language-specific introspection into source files
-8. **Cross-Project Dependencies**: Analysis across language boundaries
-
-**Phase 9: Knowledge Evolution Layer**:
-- Reactivate database infrastructure (`src/prolog/db/`) for persistent knowledge
-- Transaction logging and knowledge base evolution tracking
-- Learning from user interactions and command patterns
+### Template Requirements
+- Project type and build tool identification
+- Build system subcommand integration 
+- Docstrings for all commands
+- Filesystem pattern matching for language-specific files
+- Discovery system integration
+- Test suite with 5+ discriminative tests
 
 ## Recent Updates
 
@@ -470,17 +358,10 @@ src/prolog/nix/templates/{language}/
   - All 6 language templates with Nix-centric commands
   - Complete CLI interface with session management
 
-**Current System Status**:
-- Spell System: Fantasy-themed conjure/perceive with multiple-solution query capabilities
-- Session System: Git-backed sessions with transaction support and CLI management
-- Interface Layer: Multi-frontend system (`src/prolog/interface.pl`) with structured returns
-- CLI Tool: Context-aware `./grimoire` with `conjure`/`perceive`/`exec`/`session` commands
-- Templates: 6 language templates with Nix-centric commands and test coverage
-- Core Systems: git, nix, fs, project, session domains loaded and tested
 
-**System State**: Functional - Phase 7 LLM Integration can begin
+# Detailed System Designs
 
-## Phase 6: Session + Transaction System Design
+## Session + Transaction System Design
 
 ### Git-Backed Session Management
 
@@ -636,7 +517,7 @@ execute(transaction(Commands), Result) :-
 6. **Rollback Support**: Git reset provides transaction-level rollback capability
 7. **LLM Context**: Sessions provide natural boundaries for agent work contexts
 
-## Phase 7: LLM Integration in Prolog
+## LLM Integration Design
 
 ### ECS-Driven Agent Workflow
 
@@ -775,7 +656,7 @@ filter_relevant_commands(Task, AllCommands, FilteredCommands) :-
 
 This design leverages the existing ECS system for command discovery and the current transaction system for execution, creating a natural bridge between LLM planning and Grimoire's operational capabilities.
 
-## Phase 8: Composite Project Architecture & Enhanced Discovery
+## Composite Project Architecture Design
 
 ### Multi-Project Composition Pattern
 
