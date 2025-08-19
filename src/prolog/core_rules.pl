@@ -218,3 +218,46 @@ docstring(load_entity,
     |}
 ).
 
+% === SELF-ENTITY INTROSPECTION ===
+
+% Allow semantic files to declare themselves and find their own path
+self_entity(Entity) :-
+    % Get the current file and directory being loaded
+    prolog_load_context(source, FilePath),
+    prolog_load_context(directory, Dir),
+    
+    % Assert the entity
+    assertz(entity(Entity)),
+    
+    % Create self component based on file type
+    file_base_name(FilePath, FileName),
+    (FileName = 'semantics.pl' ->
+        % It's a semantics.pl file, use the directory
+        assertz(component(Entity, self, semantic(folder(Dir))))
+    ;
+        % Regular semantic file
+        assertz(component(Entity, self, semantic(file(FilePath))))
+    ).
+
+docstring(self_entity,
+    {|string(_)||
+    Declares an entity and automatically assigns its semantic source as a self component.
+    This allows semantic files to be self-describing about their location.
+    
+    Format: self_entity(Entity)
+    - Asserts entity(Entity)
+    - Uses prolog_load_context/2 to find the current file path and directory
+    - If file is 'semantics.pl': adds component(Entity, self, semantic(folder(Directory)))
+    - If file is other: adds component(Entity, self, semantic(file(FilePath)))
+    
+    Usage in semantic files:
+        % In src/prolog/git.pl
+        :- self_entity(git).
+        % Result: component(git, self, semantic(file("src/prolog/git.pl")))
+        
+        % In templates/rust/semantics.pl 
+        :- self_entity(rust_template).
+        % Result: component(rust_template, self, semantic(folder("templates/rust")))
+    |}
+).
+

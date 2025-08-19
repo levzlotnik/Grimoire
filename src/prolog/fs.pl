@@ -7,8 +7,8 @@
 :- discontiguous entity/1.
 :- discontiguous component/3.
 
-% Filesystem entity
-entity(fs).
+% Filesystem entity with automatic self-location  
+:- self_entity(fs).
 
 % Core filesystem concepts
 component(fs, concept, file).

@@ -3,8 +3,8 @@
 % Declare run/2 as discontiguous since it's spread throughout the file
 :- discontiguous run/2.
 
-% Core Nix entity
-entity(nix).
+% Core Nix entity with automatic self-location
+:- self_entity(nix).
 
 % Main Nix command categories from nix --help
 component(nix, concept, nix(store)).

@@ -2,8 +2,8 @@
 % Semantic layer on top of Git operations
 :- use_module(library(uuid)).
 
-% Session and transaction entities
-entity(session).
+% Session and transaction entities with automatic self-location
+:- self_entity(session).
 entity(transaction).
 
 % Session concepts

@@ -1,10 +1,8 @@
 :- use_module(library(strings)).
 
-% Git source location
-component(git, source, file("git.pl")).
+% Git entity declaration with automatic self-location
+:- self_entity(git).
 
-% Git entities and components
-entity(git).
 component(command, ctor, git).
 component(git, subcommand, clone).
 component(git, subcommand, init).

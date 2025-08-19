@@ -6,7 +6,23 @@
 Grimoire is a knowledge-based operating system built on Entity-Component-System (ECS) architecture with Prolog as the semantic knowledge layer and Nix as the system configuration foundation.
 
 ### Current Status
-**All 62 Tests Passing** - Core system (27 tests) + Nix-centric language template tests (14 tests) + Spell system tests (21 tests). **Spell System Complete** - Fantasy-themed command/query separation using `conjure` (mutations) and `perceive` (queries) with `cast/2` and `perceive/1` predicates. **Phase 6 Complete: Clean Session System Implemented** - Completely rewritten session system with clean ontological structure, three transition patterns for different git states, and proper semantic modeling. **Interface Layer Complete** - Multi-frontend ECS-native interface system with `./grimoire` CLI, structured return values for API/MCP compatibility, and context-aware operation. Core subsystems (git, nix, fs, project, session) load immediately on boot using single-arity `load_entity/1`. **Major breakthrough: All language templates use Nix-provided canonical commands**, ensuring reproducibility and consistency across the entire system.
+
+**System State: Functional**
+- 66 tests passing across all subsystems
+- Core ECS architecture with knowledge locality
+- Spell system with multiple-solution perceive queries
+- Git-backed session management 
+- Multi-frontend interface layer
+- 6 language templates with Nix-centric commands
+
+**CLI Commands:**
+- `./grimoire perceive "query"` - Multiple solutions with semicolon separation
+- `./grimoire conjure "operation"` - Mutation operations  
+- `./grimoire exec "query"` - Direct Prolog query execution
+- `./grimoire session switch/list/commit/rollback` - Transaction management
+- Domain queries work directly: `git(status(...))`, `session(current(...))`
+
+**Next: Phase 7 LLM Integration**
 
 ## Core Design Principles
 
@@ -22,11 +38,15 @@ Grimoire is a knowledge-based operating system built on Entity-Component-System 
 - **Component Relation Patterns**:
   - `component(Type, ctor, Constructor)` - Extensible sum types (variants)
   - `component(Type, relation_pattern, Pattern)` - Meta-patterns for defining new relation types
-- **Spell System**: Fantasy-themed command/query separation
+- **Enhanced Spell System**: Fantasy-themed command/query separation
   - `component(conjure, ctor, ...)` - Mutation operations (state-changing)
   - `component(perceive, ctor, ...)` - Query operations (read-only)
   - `cast/2` - Execute conjure spells with explicit results
-  - `perceive/1` - Multifile predicate for domain queries
+  - `perceive/1` - Enhanced multifile predicate for domain queries
+    - Collects all solutions through backtracking
+    - Displays multiple solutions with semicolon separation
+    - Direct domain queries: `git(status(...))` works without wrapper
+    - Falls back to `call/1` for standard Prolog queries
 - Clean composition and extension patterns
 
 ### 2.1. Entity Declaration Conventions
@@ -159,6 +179,8 @@ current_entity(Entity) :-
 - Prolog-based CLI wrapper that formats interface results
 - Auto-generated usage from ECS component definitions
 - Context detection and entity loading
+- Enhanced spell system commands: `conjure`, `perceive`, `exec`
+- Direct Prolog query execution via `exec` command
 - Proper error handling and structured output
 
 **Benefits**:
@@ -415,32 +437,30 @@ src/prolog/nix/templates/{language}/
 
 ## Recent Updates
 
-**August 17, 2025**:
-- ✅ **Spell System Complete** - Fantasy-themed command/query separation implemented!
-  - `conjure` spells for mutations, `perceive` spells for queries
-  - `cast/2` predicate for executing conjure spells
-  - `perceive/1` multifile predicate for domain queries
-  - Clean git status terms: `modified(file)`, `created(file)`, `deleted(file)`
-  - CLI commands: `./grimoire cast "conjure(...)"` and `./grimoire perceive "query(...)"`
-- ✅ **62 total tests passing** - Core (27) + Templates (14) + Spell System (21)
-- ✅ **Phase 6 Complete** - Git-backed session system with clean ontology implemented!
-- ✅ **Interface Layer Complete** - Multi-frontend ECS-native interface system with context-aware CLI!
-- ✅ **All 6 templates complete** with appropriate domain-specific approaches:
-  - **Programming Languages** (Rust, Python, C++, Haskell): Full test suites with 5 tests each
-  - **Formal Verification** (Lean4): No traditional tests - focuses on proof verification
-  - **Documentation** (MkDocs): No tests - focuses on static site generation
-- ✅ **CLI Interface** - `./grimoire` with auto-generated usage, context detection, and session management
-- 🔮 **Future**: Phase 7 LLM Integration ready to begin
+**August 19, 2025**:
+- Enhanced Perceive System implemented:
+  - Multiple choicepoint collection through backtracking
+  - Semicolon-separated solutions like normal Prolog queries  
+  - Direct domain queries: `./grimoire perceive "git(status(...))"` works without wrapper
+  - Proper fallback: tries `perceive/1` first, then `call/1`
+  - Clean error handling for failed queries
+- `./grimoire exec "query"` command for arbitrary Prolog queries
+- 66 total tests passing - Core (27) + Templates (14) + Spell System (21) + Session CLI (4)
+- All previous systems maintained:
+  - Phase 6: Git-backed session system with clean ontology
+  - Interface Layer: Multi-frontend ECS-native interface system  
+  - All 6 language templates with Nix-centric commands
+  - Complete CLI interface with session management
 
 **Current System Status**:
-- ✅ **Spell System**: Fantasy-themed conjure/perceive command separation with clean tests
-- ✅ **Session System**: Git-backed sessions with transaction support
-- ✅ **Interface Layer**: Multi-frontend system (`src/prolog/interface.pl`)  
-- ✅ **CLI Tool**: Context-aware `./grimoire` with spell commands (`cast`/`perceive`)
-- ✅ **All Templates**: 6 language templates with Nix-centric commands
-- ✅ **Core Systems**: git, nix, fs, project, session domains loaded
+- Spell System: Fantasy-themed conjure/perceive with multiple-solution query capabilities
+- Session System: Git-backed sessions with transaction support and CLI management
+- Interface Layer: Multi-frontend system (`src/prolog/interface.pl`) with structured returns
+- CLI Tool: Context-aware `./grimoire` with `conjure`/`perceive`/`exec`/`session` commands
+- Templates: 6 language templates with Nix-centric commands and test coverage
+- Core Systems: git, nix, fs, project, session domains loaded and tested
 
-**System State**: Ready for Phase 7 - LLM Integration in Prolog
+**System State**: Functional - Phase 7 LLM Integration can begin
 
 ## Phase 6: Session + Transaction System Design
 

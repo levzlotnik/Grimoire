@@ -44,11 +44,16 @@ show_usage :-
     writeln(''),
     writeln('Usage patterns:'),
     writeln('  grimoire compt [entity]         # List component types'),
-    writeln('  grimoire comp <type> [entity]   # List components of type'),
+    writeln('  grimoire comp <entity> <type>   # List components of entity'),
     writeln('  grimoire doc [entity]           # Show documentation'),
     writeln(''),
+    writeln('Entity paths:'),
+    writeln('  /                               # System entity'),
+    writeln('  .                               # Current directory entity'),
+    writeln('  path/to/semantic/folder         # Custom semantic entity'),
+    writeln(''),
     writeln('Spell-based commands:'),
-    writeln('  grimoire cast "conjure(...)"    # Cast mutation spells'),
+    writeln('  grimoire conjure "operation"    # Cast conjuration spells'),
     writeln('  grimoire perceive "query(...)"  # Execute perception queries'),
     writeln('').
 
@@ -62,22 +67,13 @@ handle_command(compt, []) :-
 
 handle_command(compt, [EntityStr]) :-
     !,
-    atom_string(EntityAtom, EntityStr),
-    run(command(interface(compt(EntityAtom))), Result),
+    run(command(interface(compt(EntityStr))), Result),
     format_cli_result(Result).
 
-% Component listing command
-handle_command(comp, [TypeStr]) :-
+% Component listing command - requires both entity and component type
+handle_command(comp, [EntityStr, TypeStr]) :-
     !,
-    atom_string(TypeAtom, TypeStr),
-    run(command(interface(comp(TypeAtom))), Result),
-    format_cli_result(Result).
-
-handle_command(comp, [TypeStr, EntityStr]) :-
-    !,
-    atom_string(TypeAtom, TypeStr),
-    atom_string(EntityAtom, EntityStr),
-    run(command(interface(comp(TypeAtom, EntityAtom))), Result),
+    run(command(interface(comp(EntityStr, TypeStr))), Result),
     format_cli_result(Result).
 
 % Documentation command
@@ -129,16 +125,21 @@ handle_command(session, []) :-
     !,
     show_session_help.
 
-% Cast command - execute conjuration spells
-handle_command(cast, [SpellStr]) :-
+% Conjure command - execute conjuration spells (validation is whether cast succeeds)
+handle_command(conjure, [SpellStr]) :-
     !,
-    % Parse the spell string as a Prolog term
+    % Parse and try to cast - if it fails, it's an invalid conjure
     catch(
         (read_term_from_atom(SpellStr, SpellTerm, []),
-         run(command(interface(cast(SpellTerm))), Result),
-         format_cli_result(Result)),
+         (run(command(interface(cast(conjure(SpellTerm)))), Result) ->
+             format_cli_result(Result)
+         ;
+             format('~nSorry, "~w" is not a proper conjuration spell. 🧙‍♂️~n', [SpellTerm]),
+             format('Try checking available conjure operations with: grimoire comp conjure ctor~n'),
+             fail
+         )),
         Error,
-        format_cli_result(error(invalid_spell_syntax(Error)))
+        (format_cli_result(error(invalid_spell_syntax(Error))), fail)
     ).
 
 % Perceive command - execute perception spells with auto-variable output
@@ -417,23 +418,20 @@ show_session_help :-
 
 % === PERCEIVE QUERY EXECUTION ===
 
-% Execute a perceive query and collect all solutions
+% Execute a perceive query - validation is whether perceive/1 succeeds
 execute_perceive_query(QueryTerm, VarNames) :-
-    % Try perceive() wrapper first (for domain operations)
-    (catch(findall(VarNames, perceive(QueryTerm), PerceiveSolutions), _, PerceiveSolutions = []),
-     PerceiveSolutions \= [] ->
-        emit_all_solutions(PerceiveSolutions)
-    ;
-        % Fallback to direct call if perceive produces no solutions
-        catch(findall(VarNames, call(QueryTerm), CallSolutions), Error, (
-            format_cli_result(error(query_execution_failed(Error))), 
-            fail
-        )),
-        (CallSolutions = [] ->
-            writeln('Query failed - no solutions found')
-        ;
-            emit_all_solutions(CallSolutions)
-        )
+    % Simply try to execute the perceive query - if it fails, it's invalid
+    catch(
+        (findall(VarNames, perceive(QueryTerm), Solutions),
+         (Solutions = [] ->
+             format('~nSorry, "~w" is not a proper perception spell. 🔮~n', [QueryTerm]),
+             format('Try checking available perceive operations with: grimoire comp perceive ctor~n'),
+             fail
+         ;
+             emit_all_solutions(Solutions)
+         )),
+        Error,
+        (format_cli_result(error(invalid_perceive_query(Error))), fail)
     ).
 
 % Emit all solutions separated by semicolons

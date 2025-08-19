@@ -68,6 +68,22 @@ current_entity(Entity) :-
         Entity = system
     ).
 
+% Resolve entity paths with shortcuts
+resolve_entity_path(PathStr, Entity) :-
+    (PathStr = "/" ->
+        Entity = system
+    ; 
+        % Try loading as semantic folder (works for both "." and "path/to/something")
+        catch(
+            (load_entity(semantic(folder(PathStr))),
+             file_base_name(PathStr, DirName),
+             atom_string(Entity, DirName)),
+            _,
+            % If loading fails, treat as entity name directly
+            atom_string(Entity, PathStr)
+        )
+    ).
+
 % Load local semantics.pl if not already loaded  
 ensure_local_project_loaded(ProjectEntity) :-
     (entity(ProjectEntity) ->
@@ -84,17 +100,14 @@ run(command(interface(compt)), RetVal) :-
     interface_compt(Entity, Types),
     RetVal = ok(component_types(Entity, Types)).
 
-run(command(interface(compt(Entity))), RetVal) :-
+run(command(interface(compt(EntityPath))), RetVal) :-
+    resolve_entity_path(EntityPath, Entity),
     interface_compt(Entity, Types),
     RetVal = ok(component_types(Entity, Types)).
 
-% Component listing of specific type
-run(command(interface(comp(Type))), RetVal) :-
-    current_entity(Entity),
-    interface_comp(Entity, Type, Components),
-    RetVal = ok(components(Entity, Type, Components)).
-
-run(command(interface(comp(Type, Entity))), RetVal) :-
+% Component listing with new argument order: entity first, then type
+run(command(interface(comp(EntityPath, Type))), RetVal) :-
+    resolve_entity_path(EntityPath, Entity),
     interface_comp(Entity, Type, Components),
     RetVal = ok(components(Entity, Type, Components)).
 

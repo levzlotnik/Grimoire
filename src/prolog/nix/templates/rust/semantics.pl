@@ -1,7 +1,8 @@
 % Rust project semantics - Nix-centric approach
 % Uses Nix flake apps rather than direct cargo commands
 
-entity(rust_template).
+% Rust template entity with automatic self-location
+:- self_entity(rust_template).
 
 % Main docstring for the project
 docstring(rust_template, "A Rust project template using Nix flake apps for canonical build operations. All commands go through 'nix run' for reproducibility.").
