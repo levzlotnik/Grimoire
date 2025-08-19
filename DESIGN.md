@@ -214,6 +214,7 @@ Benefits:
 **All 6 Language Templates Complete**: Rust, Python, C++, Haskell (with full test suites), Lean4, MkDocs (templates appropriate to their domains)
 
 **Current System Features**:
+- Pure Prolog Implementation: All Python components removed, system now runs entirely in SWI-Prolog
 - Spell System: Fantasy-themed conjure/perceive with multiple-solution query capabilities
 - Session System: Git-backed sessions with transaction support and CLI management
 - Interface Layer: Multi-frontend system (`src/interface.pl`) with structured returns
@@ -223,10 +224,10 @@ Benefits:
 
 ## Current Priorities
 
-**Phase 7: LLM Integration in Prolog**:
+**Phase 7: Pure Prolog LLM Integration**:
 1. **ECS Command Discovery**: Agents query `component(command, ctor, _)` to find available operations
 2. **Transaction Construction**: LLM builds `transaction([command(...), ...])` from natural language
-3. **OpenAI HTTP Client**: Direct API integration using SWI-Prolog HTTP library
+3. **OpenAI HTTP Client**: Direct API integration using SWI-Prolog HTTP library (no Python bridge needed)
 4. **User Approval Workflow**: Present transaction plan before execution
 5. **Agent Entity Framework**: Domain-specific agents (coding_assistant, project_manager)
 
@@ -281,26 +282,26 @@ Benefits:
    - Command modeling
    - Domain extension patterns
 
-4. **Python Bridge** (`src/prolog_tool.py`)
-   - Prolog-Python interface
-   - External tool integration
+4. **Interface Layer** (`src/interface.pl`)
+   - Multi-frontend interface system
+   - CLI, API, and MCP support
 
 ### Recent Major Improvements
-1. **Simplified Entity Loading** - Single-arity `load_entity/1` with explicit entity declarations, removed self-binding complexity
-2. **Nix Semantics Overhaul** - Removed unnecessary complexity, memoized performance
-3. **Polyglot Foundation** - Language-native introspection patterns, 500-1000 token contexts → 50-100 tokens
-4. **Passive Loading System** - `passive_load/2` for on-demand loading, 28 tests passing
-5. **Rust Template** - Template implementation with explicit entity declaration and discovery integration
+1. **Pure Prolog Implementation** - Removed all Python infrastructure, system now runs entirely in SWI-Prolog
+2. **Simplified Entity Loading** - Single-arity `load_entity/1` with explicit entity declarations, removed self-binding complexity
+3. **Nix Semantics Overhaul** - Removed unnecessary complexity, memoized performance
+4. **Polyglot Foundation** - Language-native introspection patterns, 500-1000 token contexts → 50-100 tokens
+5. **Passive Loading System** - `passive_load/2` for on-demand loading, 66 tests passing
+6. **Template System** - All 6 templates implemented with explicit entity declarations and discovery integration
 
 ### Components to Defer (Not Remove)
 1. **Database Infrastructure** - `src/db/` SQLite logging system for knowledge evolution
-2. **Python Agent Infrastructure** - `src/assistant.py`, `src/logger.py` may be useful for complex integrations
 
-**Rationale**: Focus on Prolog-native LLM integration first, then add database persistence and Python bridge as needed
+**Rationale**: Focus on Prolog-native LLM integration first, then add database persistence as needed. Python infrastructure has been removed in favor of pure Prolog implementation.
 
 ## Detailed Phase History
 
-**Phase 1: Foundation Cleanup** - Project renamed MyPAOS → Grimoire, Python infrastructure streamlined, core ECS architecture established
+**Phase 1: Foundation Cleanup** - Project renamed MyPAOS → Grimoire, Python infrastructure removed, core ECS architecture established
 
 **Phase 2: Nix CLI Mastery** - Comprehensive Nix integration with flake-first approach, dynamic target discovery via JSON introspection, seven language template domains implemented
 
@@ -324,6 +325,39 @@ Every project entity must have these non-negotiable core artifacts:
 - `readme` - every project must have documentation
 - `sources` - every project must have source files (inferred from git)
 
+### Current Directory Structure
+After restructuring, the system follows this clean organization:
+```
+src/
+├── core_rules.pl         # Core ECS system
+├── grimoire.pl          # System initialization
+├── interface.pl         # Multi-frontend interface layer
+├── git.pl              # Git domain semantics
+├── fs.pl               # Filesystem utilities
+├── session.pl          # Session management
+├── project.pl          # Project semantics
+├── db/                 # Database infrastructure
+│   ├── schema.sql
+│   └── semantics.pl
+├── nix/                # Nix domain and templates
+│   ├── semantics.pl
+│   └── templates/
+│       ├── rust/
+│       ├── python/
+│       ├── cpp/
+│       ├── haskell/
+│       ├── lean4/
+│       └── mkdocs/
+├── project/            # Project domain
+│   ├── semantics.pl
+│   └── semantics.plt
+└── tests/              # Test suites
+    ├── run_tests.pl
+    ├── core_rules.plt
+    ├── integration.plt
+    └── [other test files...]
+```
+
 ### Template Structure
 All templates follow a standardized structure:
 ```
@@ -344,6 +378,14 @@ src/nix/templates/{language}/
 ## Recent Updates
 
 **August 19, 2025**:
+- **Pure Prolog Implementation**: Completely removed Python infrastructure
+  - All components now run in SWI-Prolog
+  - No external Python dependencies
+  - Simplified architecture with single runtime
+- **Repository Restructuring**: Moved all Prolog files from `src/prolog/` to `src/`
+  - Clean directory structure
+  - All paths updated throughout system
+  - Git history preserved for all moves
 - Enhanced Perceive System implemented:
   - Multiple choicepoint collection through backtracking
   - Semicolon-separated solutions like normal Prolog queries

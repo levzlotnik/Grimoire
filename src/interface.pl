@@ -7,7 +7,7 @@ component(interface, source, source(semantic(file("src/interface.pl")))).
 
 % Interface subcommands (following git pattern)
 component(interface, subcommand, compt).
-component(interface, subcommand, comp).  
+component(interface, subcommand, comp).
 component(interface, subcommand, doc).
 component(interface, subcommand, repl).
 component(interface, subcommand, status).
@@ -37,7 +37,7 @@ entity(interface(run)).
 
 % Docstrings follow namespacing pattern
 docstring(interface(compt), "List all component types of current entity").
-docstring(interface(comp), "List components of specific type for current entity").  
+docstring(interface(comp), "List components of specific type for current entity").
 docstring(interface(doc), "Show docstring of current entity").
 docstring(interface(repl), "Start interactive REPL with context awareness").
 docstring(interface(status), "Show session/transaction status").
@@ -72,7 +72,7 @@ current_entity(Entity) :-
 resolve_entity_path(PathStr, Entity) :-
     (PathStr = "/" ->
         Entity = system
-    ; 
+    ;
         % Try loading as semantic folder (works for both "." and "path/to/something")
         catch(
             (load_entity(semantic(folder(PathStr))),
@@ -84,7 +84,7 @@ resolve_entity_path(PathStr, Entity) :-
         )
     ).
 
-% Load local semantics.pl if not already loaded  
+% Load local semantics.pl if not already loaded
 ensure_local_project_loaded(ProjectEntity) :-
     (entity(ProjectEntity) ->
         true  % Already loaded
@@ -125,7 +125,7 @@ run(command(interface(doc(Entity))), RetVal) :-
 run(command(interface(repl)), RetVal) :-
     % Load and call existing REPL functionality
     catch(
-        (ensure_loaded('repl.pl'), grimoire_repl_command, RetVal = ok(repl_completed))
+        (ensure_loaded('src/repl.pl'), grimoire_repl_command, RetVal = ok(repl_completed))
     ,
         Error,
         RetVal = error(repl_failed(Error))
@@ -188,7 +188,7 @@ interface_doc(Entity, Doc) :-
         Doc = no_docstring_available
     ).
 
-% Get comprehensive session status  
+% Get comprehensive session status
 get_session_status(Status) :-
     % Use git directly instead of session.pl predicates to avoid hanging
     run(command(git(branch(['--show-current']))), BranchResult),
@@ -228,7 +228,7 @@ include_session_branches([Line|Rest], Sessions) :-
     ; atom_concat('* session-', SessionId, LineAtom) ->
         Sessions = [active(SessionId)|RestSessions]
     ; atom_string('  main', Line) ->
-        Sessions = [main|RestSessions]  
+        Sessions = [main|RestSessions]
     ; atom_string('* main', Line) ->
         Sessions = [active(main)|RestSessions]
     ;
