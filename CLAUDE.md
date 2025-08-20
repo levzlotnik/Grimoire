@@ -1,0 +1,2 @@
+- Testing the project is done using `./grimoire test`
+- Use `./grimoire exec` in place of `swipl`; it loads the system stuff

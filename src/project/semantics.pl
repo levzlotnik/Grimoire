@@ -156,18 +156,174 @@ docstring(test,
     - System tests (complete application)
     |}).
 
+% Template discovery and conjure integration
+component(conjure, ctor, mkproject).
 component(command, ctor, mkproject).
+
+% Template discovery - query nix domain for available templates
+discover_available_templates(Templates) :-
+    findall(TemplateId, 
+            component(nix(flake(template)), instance, nix(flake(template(TemplateId)))),
+            Templates).
+
+% Helper to get project directory from environment or default
+get_projects_directory(ProjectsDir) :-
+    (getenv('GRIMOIRE_PROJECTS_DIR', EnvDir) ->
+        ProjectsDir = EnvDir
+    ;
+        expand_file_name('~/.grimoire/Projects', [ProjectsDir])
+    ).
 
 docstring(mkproject,
     {|string(_)||
     Creates a new project directory with full initialization.
-    Format: command(mkproject(+Path, +Options)).
+    Format: command(mkproject(+Path, +Options)) or cast(conjure(mkproject(TemplateId, ProjectName))).
     Options:
     - git(bool)          : Initialize git repo (default: true)
     - template(Template) : Flake template to use (default: none)
     - lang(Language)     : Programming language (affects template)
+    
+    Conjure variant uses GRIMOIRE_PROJECTS_DIR environment variable or defaults to ~/.grimoire/Projects/
     |}
 ).
+
+% Conjure implementation for mkproject
+run(conjure(mkproject(TemplateId, ProjectName)), RetVal) :-
+    catch(
+        (
+            % Get projects directory
+            get_projects_directory(ProjectsDir),
+            directory_file_path(ProjectsDir, ProjectName, DestPath),
+            
+            % Ensure projects directory exists
+            (exists_directory(ProjectsDir) ->
+                true
+            ;
+                make_directory_path(ProjectsDir)
+            ),
+            
+            % Check if project already exists
+            (exists_directory(DestPath) ->
+                RetVal = error(project_already_exists(DestPath))
+            ;
+                % Use nix flake new to instantiate template
+                catch(
+                    run(command(nix(flake(new(TemplateId, DestPath)))), NixResult),
+                    NixError,
+                    NixResult = error(nix_command_failed(NixError))
+                ),
+                (NixResult = ok(_) ->
+                    % Post-process: rename entities in semantics files
+                    rename_project_entities(DestPath, TemplateId, ProjectName, RenameResult),
+                    (RenameResult = ok ->
+                        RetVal = ok(project_created(DestPath, TemplateId, ProjectName))
+                    ;
+                        RetVal = error(entity_renaming_failed(RenameResult))
+                    )
+                ;
+                    RetVal = NixResult
+                )
+            )
+        ),
+        Error,
+        RetVal = error(conjure_failed(Error))
+    ).
+
+% Entity renaming in generated project files
+rename_project_entities(ProjectPath, TemplateId, ProjectName, Result) :-
+    % Discover the actual entity name from the generated semantics.pl file
+    directory_file_path(ProjectPath, 'semantics.pl', SemanticsFile),
+    (exists_file(SemanticsFile) ->
+        discover_template_entity_name(SemanticsFile, TemplateEntityName)
+    ;
+        % Fallback: assume template_id naming pattern, but this will evolve
+        format(atom(TemplateEntityName), '~w_template', [TemplateId])
+    ),
+    
+    % Find semantics.pl and semantics.plt files in project directory
+    findall(File, (
+        member(FileName, ['semantics.pl', 'semantics.plt']),
+        directory_file_path(ProjectPath, FileName, File),
+        exists_file(File)
+    ), SemanticsFiles),
+    
+    % Rename entities in each file
+    maplist(rename_entities_in_file(TemplateEntityName, ProjectName), SemanticsFiles, Results),
+    
+    % Check if all renamings succeeded
+    (member(error(_), Results) ->
+        Result = error(Results)
+    ;
+        Result = ok
+    ).
+
+% Rename entities in a single file
+rename_entities_in_file(OldEntityName, NewEntityName, FilePath, Result) :-
+    catch(
+        (
+            % Read the entire file
+            read_file_to_string(FilePath, Content, []),
+            
+            % Perform comprehensive entity renaming
+            rename_all_entity_occurrences(Content, OldEntityName, NewEntityName, NewContent),
+            
+            % Write back to file
+            open(FilePath, write, Stream),
+            write(Stream, NewContent),
+            close(Stream),
+            
+            Result = ok
+        ),
+        Error,
+        Result = error(Error)
+    ).
+
+% Comprehensive entity renaming in content
+rename_all_entity_occurrences(Content, OldEntity, NewEntity, NewContent) :-
+    % Create atom names for replacement
+    atom_string(OldEntityAtom, OldEntity),
+    atom_string(NewEntityAtom, NewEntity),
+    
+    % Replace various patterns:
+    % 1. :- self_entity(OldEntity).
+    format(string(OldSelfEntity), ':- self_entity(~w).', [OldEntityAtom]),
+    format(string(NewSelfEntity), ':- self_entity(~w).', [NewEntityAtom]),
+    
+    % 2. component(OldEntity, ...)
+    format(string(OldComponentPattern), 'component(~w,', [OldEntityAtom]),
+    format(string(NewComponentPattern), 'component(~w,', [NewEntityAtom]),
+    
+    % 3. entity(OldEntity)
+    format(string(OldEntityPattern), 'entity(~w)', [OldEntityAtom]),
+    format(string(NewEntityPattern), 'entity(~w)', [NewEntityAtom]),
+    
+    % 4. docstring(OldEntity, ...)
+    format(string(OldDocPattern), 'docstring(~w,', [OldEntityAtom]),
+    format(string(NewDocPattern), 'docstring(~w,', [NewEntityAtom]),
+    
+    % Apply all replacements using literal replacement
+    re_replace(OldSelfEntity, NewSelfEntity, Content, Content1, [literal, global]),
+    re_replace(OldComponentPattern, NewComponentPattern, Content1, Content2, [literal, global]),
+    re_replace(OldEntityPattern, NewEntityPattern, Content2, Content3, [literal, global]),
+    re_replace(OldDocPattern, NewDocPattern, Content3, NewContent, [literal, global]).
+
+% Discover the entity name from a semantics.pl file
+discover_template_entity_name(FilePath, EntityName) :-
+    catch(
+        (
+            read_file_to_string(FilePath, Content, []),
+            % Look for :- self_entity(EntityName).
+            re_matchsub(':- self_entity\\(([^)]+)\\)\\.', Content, Match, []),
+            get_dict(1, Match, EntityNameString),
+            atom_string(EntityName, EntityNameString)
+        ),
+        _Error,
+        fail
+    ).
+
+% Helper predicate for string replacement
+string_replace_all(String, Old, New, Result) :-
+    re_replace(Old, New, String, Result, [global]).
 
 % DB entity for project database
 entity(db).

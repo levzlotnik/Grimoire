@@ -9,6 +9,7 @@
 :- ensure_loaded('integration.plt').
 :- ensure_loaded('spell_system.plt').
 :- ensure_loaded('session_cli.plt').
+:- ensure_loaded('template_instantiation.plt').
 
 % Load template test suites
 :- ensure_loaded('../nix/templates/rust/semantics.plt').
@@ -28,6 +29,7 @@ run_all_tests :-
         integration_tests,
         spell_system,
         session_cli,
+        template_instantiation,
         rust_project_semantics,
         cpp_project_semantics,
         python_project_semantics,
@@ -71,6 +73,10 @@ run_python_tests :-
 
 run_haskell_tests :-
     run_tests([haskell_project_semantics]).
+
+% Template instantiation test runner
+run_template_instantiation_tests :-
+    run_tests([template_instantiation]).
 
 % Test summary reporting
 test_summary :-

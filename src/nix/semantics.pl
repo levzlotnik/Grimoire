@@ -29,7 +29,7 @@ component(conjure, ctor, nix(build)).
 component(conjure, ctor, nix(develop)).
 component(conjure, ctor, nix(run)).
 
-% Perceive constructors (query operations)  
+% Perceive constructors (query operations)
 component(perceive, ctor, nix(flake(show))).
 component(perceive, ctor, nix(search)).
 component(perceive, ctor, nix(store(query))).
@@ -383,7 +383,7 @@ docstring(nix(flake), S) :-
     |}.
 
 component(nix(flake), templates_source, source(folder(Path))) :-
-    component(nix, semantic_root, folder(SemanticDir)),
+    component(nix, self, semantic(folder(SemanticDir))),
     directory_file_path(SemanticDir, "templates", Path).
 
 nix_templates_path(Path) :-
@@ -408,7 +408,7 @@ nix_templates_expr_id(TemplateId, Expr) :-
     format(string(Expr), "path:~w#~w", [TPath, TId]).
 
 %% memoize the one–time JSON fetch
-:- table nix_flake_templates/1.
+% :- table nix_flake_templates/1.
 nix_flake_templates(Pairs) :-
     nix_templates_expr_base(PathExpr),
     process_create(path(nix),
