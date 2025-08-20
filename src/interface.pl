@@ -16,6 +16,7 @@ component(interface, subcommand, session).
 component(interface, subcommand, cast).
 component(interface, subcommand, perceive).
 component(interface, subcommand, run).
+component(interface, subcommand, load).
 
 % Make interface subcommands available as command constructors (like git does)
 component(command, ctor, interface(C)) :- component(interface, subcommand, C).
@@ -34,6 +35,7 @@ entity(interface(session)).
 entity(interface(cast)).
 entity(interface(perceive)).
 entity(interface(run)).
+entity(interface(load)).
 
 % Docstrings follow namespacing pattern
 docstring(interface(compt), "List all component types of current entity").
@@ -46,6 +48,7 @@ docstring(interface(session), "Session management commands (start, close, execut
 docstring(interface(cast), "Cast conjuration spells (mutable operations)").
 docstring(interface(perceive), "Execute perception spells (query operations)").
 docstring(interface(run), "Execute arbitrary command term structures (legacy)").
+docstring(interface(load), "Load entity into current session for persistent access").
 
 % Main interface docstring
 docstring(interface, S) :-
@@ -92,32 +95,95 @@ ensure_local_project_loaded(ProjectEntity) :-
         load_entity(semantic(file('./semantics.pl')))
     ).
 
+% Load entity into current session state
+load_entity_in_session(Entity) :-
+    % Get current session ID
+    get_current_session_id(SessionId),
+    % For now, just ensure the entity is recognized/available
+    % This is basic functionality - full semantic loading comes later
+    (entity(Entity) ->
+        true  % Entity already exists
+    ;
+        % Try to infer semantic loading based on entity name
+        % This is basic functionality - full semantic loading comes later
+        true
+    ),
+    % Store the load in persistent session file for future operations
+    (SessionId \= main ->
+        % Create a semantic specification for the entity
+        entity_to_semantic_spec(Entity, EntitySpec),
+        add_entity_load_to_session(SessionId, EntitySpec)
+    ;
+        % In main session, just succeed (no persistent storage)
+        true
+    ).
+
+% Convert entity to semantic specification
+entity_to_semantic_spec(Entity, EntitySpec) :-
+    % For now, use basic mapping - this can be enhanced later
+    (Entity = '/' ->
+        EntitySpec = semantic(system)
+    ; Entity = '.' ->
+        EntitySpec = semantic(file('./semantics.pl'))
+    ; atom_string(Entity, EntityStr), 
+      (sub_string(EntityStr, _, _, _, '/') ->
+          EntitySpec = semantic(folder(Entity))
+      ;
+          EntitySpec = semantic(entity(Entity))
+      )
+    ).
+
+% Get current session ID from Git branch
+get_current_session_id(SessionId) :-
+    get_current_branch(Branch),
+    (atom_concat('session-', SessionId, Branch) ->
+        true  % Extract session ID from branch name
+    ;
+        SessionId = main  % Not in a session branch
+    ).
+
+% Ensure session state is loaded before interface operations
+ensure_session_state_loaded :-
+    get_current_session_id(SessionId),
+    (SessionId \= main ->
+        % Load session state if in a session
+        load_session_state_file(SessionId)
+    ;
+        % In main session, no persistent state to load
+        true
+    ).
+
 % === INTERFACE COMMAND IMPLEMENTATIONS ===
 
 % Component types listing
 run(command(interface(compt)), RetVal) :-
+    ensure_session_state_loaded,
     current_entity(Entity),
     interface_compt(Entity, Types),
     RetVal = ok(component_types(Entity, Types)).
 
 run(command(interface(compt(EntityPath))), RetVal) :-
+    ensure_session_state_loaded,
     resolve_entity_path(EntityPath, Entity),
     interface_compt(Entity, Types),
     RetVal = ok(component_types(Entity, Types)).
 
 % Component listing with new argument order: entity first, then type
 run(command(interface(comp(EntityPath, Type))), RetVal) :-
+    ensure_session_state_loaded,
     resolve_entity_path(EntityPath, Entity),
     interface_comp(Entity, Type, Components),
     RetVal = ok(components(Entity, Type, Components)).
 
 % Documentation retrieval
 run(command(interface(doc)), RetVal) :-
+    ensure_session_state_loaded,
     current_entity(Entity),
     interface_doc(Entity, Doc),
     RetVal = ok(documentation(Entity, Doc)).
 
 run(command(interface(doc(Entity))), RetVal) :-
+    ensure_session_state_loaded,
     interface_doc(Entity, Doc),
     RetVal = ok(documentation(Entity, Doc)).
 
@@ -164,6 +230,12 @@ run(command(interface(perceive(QueryTerm))), RetVal) :-
 % Run command - execute arbitrary command structures (legacy)
 run(command(interface(run(CommandTerm))), RetVal) :-
     run(CommandTerm, RetVal).
+
+% Load command - load entity into current session
+run(command(interface(load(EntitySpec))), RetVal) :-
+    resolve_entity_path(EntitySpec, Entity),
+    load_entity_in_session(Entity),
+    RetVal = ok(entity_loaded(Entity)).
 
 % === CORE INTERFACE FUNCTIONS ===
 % These return structured data, no printing
