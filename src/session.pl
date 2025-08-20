@@ -102,6 +102,8 @@ transition_to_session(SessionId, clean, Result) :-
         session_branch_name(SessionId, BranchName),
         run(command(git(checkout([BranchName]))), GitResult),
         (GitResult = ok(_) ->
+            % Load existing session state
+            load_session_state_file(SessionId),
             Result = ok(session_started(SessionId, existing, clean, direct))
         ;
             Result = error(failed_to_checkout_existing_session(GitResult))
@@ -110,6 +112,8 @@ transition_to_session(SessionId, clean, Result) :-
         session_branch_name(SessionId, BranchName),
         run(command(git(checkout(['-b', BranchName]))), GitResult),
         (GitResult = ok(_) ->
+            % Initialize session state file for new session
+            initialize_session_state_file(SessionId),
             Result = ok(session_started(SessionId, new, clean, direct))
         ;
             Result = error(failed_to_create_new_session(GitResult))
@@ -122,6 +126,8 @@ transition_to_session(SessionId, dirty, Result) :-
     session_branch_name(SessionId, BranchName),
     run(command(git(checkout([BranchName]))), GitResult),
     (GitResult = ok(_) ->
+        % Load existing session state
+        load_session_state_file(SessionId),
         Result = ok(session_started(SessionId, existing, dirty, direct_with_merge))
     ;
         Result = error(failed_to_checkout_existing_with_dirty(GitResult))
@@ -149,6 +155,8 @@ create_transition_workflow(SessionId, Result) :-
             % Step 3: Create new session branch from transition branch
             run(command(git(checkout(['-b', SessionBranch]))), FinalResult),
             (FinalResult = ok(_) ->
+                % Initialize session state file for new session
+                initialize_session_state_file(SessionId),
                 Result = ok(session_started(SessionId, new, dirty, via_transition(TransitionBranch)))
             ;
                 Result = error(failed_to_create_session_from_transition(FinalResult))
@@ -257,6 +265,8 @@ close_session(SessionId, merge_to_main, Result) :-
             run(command(git(branch(['-d', SessionBranch]))), _),
             % Clean up any associated transition branch
             cleanup_session_transition_branch(SessionId),
+            % Clean up session state file
+            cleanup_session_state_file(SessionId),
             Result = ok(session_closed(SessionId, merged_to_main))
         ;
             Result = error(failed_to_merge_session(MergeResult))
@@ -274,6 +284,8 @@ close_session(SessionId, abandon, Result) :-
         (DeleteResult = ok(_) ->
             % For abandoned sessions, restore dirty state from transition branch if it exists
             restore_from_transition_branch(SessionId),
+            % Clean up session state file
+            cleanup_session_state_file(SessionId),
             Result = ok(session_closed(SessionId, abandoned))
         ;
             Result = error(failed_to_delete_session_branch(DeleteResult))
@@ -480,3 +492,91 @@ get_comprehensive_session_status(Result) :-
         RecentCommits = "Not in session branch"
     ),
     Result = ok(comprehensive_session_status(CurrentSession, WorkingStatus, AllSessions, RecentCommits)).
+
+% === SESSION FILE PATH RESOLUTION ===
+
+% Get session state file path for a given session ID
+% Uses global storage by default: ${GRIMOIRE_ROOT:-$HOME/.grimoire}/session-{uuid}.pl
+% Can be overridden to use local storage: $PWD/.grimoire/session-{uuid}.pl
+session_state_file_path(SessionId, FilePath) :-
+    session_storage_strategy(Strategy),
+    session_state_file_path(SessionId, Strategy, FilePath).
+
+% Determine storage strategy: global or local
+session_storage_strategy(Strategy) :-
+    (getenv('GRIMOIRE_SESSION_STORAGE', 'local') ->
+        Strategy = local
+    ;
+        Strategy = global
+    ).
+
+% Global storage: ${GRIMOIRE_ROOT:-$HOME/.grimoire}/session-{uuid}.pl
+session_state_file_path(SessionId, global, FilePath) :-
+    grimoire_root_directory(GrimoireRoot),
+    format(atom(FileName), 'session-~w.pl', [SessionId]),
+    format(atom(FilePath), '~w/~w', [GrimoireRoot, FileName]).
+
+% Local storage: $PWD/.grimoire/session-{uuid}.pl  
+session_state_file_path(SessionId, local, FilePath) :-
+    working_directory(Cwd, Cwd),
+    format(atom(FileName), 'session-~w.pl', [SessionId]),
+    format(atom(FilePath), '~w/.grimoire/~w', [Cwd, FileName]).
+
+% Get Grimoire root directory: ${GRIMOIRE_ROOT:-$HOME/.grimoire}
+grimoire_root_directory(RootDir) :-
+    (getenv('GRIMOIRE_ROOT', CustomRoot) ->
+        RootDir = CustomRoot
+    ;
+        getenv('HOME', HomeDir),
+        format(atom(RootDir), '~w/.grimoire', [HomeDir])
+    ).
+
+% Ensure session state directory exists
+ensure_session_state_directory(SessionId) :-
+    session_state_file_path(SessionId, FilePath),
+    file_directory_name(FilePath, Directory),
+    (exists_directory(Directory) ->
+        true
+    ;
+        make_directory_path(Directory)
+    ).
+
+% === SESSION STATE FILE MANAGEMENT ===
+
+% Initialize empty session state file
+initialize_session_state_file(SessionId) :-
+    ensure_session_state_directory(SessionId),
+    session_state_file_path(SessionId, FilePath),
+    open(FilePath, write, Stream),
+    format(Stream, '% Session state file for session ~w~n', [SessionId]),
+    format(Stream, '% Auto-generated by Grimoire session system~n~n', []),
+    close(Stream).
+
+% Load session state file (ensure all entity loads are applied)
+load_session_state_file(SessionId) :-
+    session_state_file_path(SessionId, FilePath),
+    (exists_file(FilePath) ->
+        consult(FilePath)
+    ;
+        % If file doesn't exist, just succeed (empty session state)
+        true
+    ).
+
+% Add entity load to session state file
+add_entity_load_to_session(SessionId, EntitySpec) :-
+    ensure_session_state_directory(SessionId),
+    session_state_file_path(SessionId, FilePath),
+    % Append the load directive to the session file
+    open(FilePath, append, Stream),
+    format(Stream, '% Entity loaded: ~w~n', [EntitySpec]),
+    format(Stream, ':- load_entity(~q).~n~n', [EntitySpec]),
+    close(Stream).
+
+% Clean up session state file
+cleanup_session_state_file(SessionId) :-
+    session_state_file_path(SessionId, FilePath),
+    (exists_file(FilePath) ->
+        delete_file(FilePath)
+    ;
+        true
+    ).

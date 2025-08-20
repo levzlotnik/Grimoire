@@ -165,6 +165,12 @@ handle_command(run, [CommandStr]) :-
         format_cli_result(error(invalid_command_syntax(Error)))
     ).
 
+% Load command - load entity into current session
+handle_command(load, [EntityStr]) :-
+    !,
+    run(command(interface(load(EntityStr))), Result),
+    format_cli_result(Result).
+
 % Exec command - execute arbitrary Prolog queries
 handle_command(exec, [QueryStr]) :-
     !,
@@ -261,6 +267,11 @@ format_cli_result(ok(session_commit_created(Message))) :-
 format_cli_result(ok(session_rollback_completed)) :-
     !,
     writeln('Session rolled back to previous transaction').
+
+% Format entity loaded result
+format_cli_result(ok(entity_loaded(Entity))) :-
+    !,
+    format('Entity "~w" loaded into current session ✓~n', [Entity]).
 
 format_cli_result(ok(comprehensive_session_status(CurrentSession, WorkingStatus, AllSessions, RecentCommits))) :-
     !,
