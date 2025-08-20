@@ -142,32 +142,48 @@ get_current_session_id(SessionId) :-
         SessionId = main  % Not in a session branch
     ).
 
+% Ensure session state is loaded before interface operations
+ensure_session_state_loaded :-
+    get_current_session_id(SessionId),
+    (SessionId \= main ->
+        % Load session state if in a session
+        load_session_state_file(SessionId)
+    ;
+        % In main session, no persistent state to load
+        true
+    ).
+
 % === INTERFACE COMMAND IMPLEMENTATIONS ===
 
 % Component types listing
 run(command(interface(compt)), RetVal) :-
+    ensure_session_state_loaded,
     current_entity(Entity),
     interface_compt(Entity, Types),
     RetVal = ok(component_types(Entity, Types)).
 
 run(command(interface(compt(EntityPath))), RetVal) :-
+    ensure_session_state_loaded,
     resolve_entity_path(EntityPath, Entity),
     interface_compt(Entity, Types),
     RetVal = ok(component_types(Entity, Types)).
 
 % Component listing with new argument order: entity first, then type
 run(command(interface(comp(EntityPath, Type))), RetVal) :-
+    ensure_session_state_loaded,
     resolve_entity_path(EntityPath, Entity),
     interface_comp(Entity, Type, Components),
     RetVal = ok(components(Entity, Type, Components)).
 
 % Documentation retrieval
 run(command(interface(doc)), RetVal) :-
+    ensure_session_state_loaded,
     current_entity(Entity),
     interface_doc(Entity, Doc),
     RetVal = ok(documentation(Entity, Doc)).
 
 run(command(interface(doc(Entity))), RetVal) :-
+    ensure_session_state_loaded,
     interface_doc(Entity, Doc),
     RetVal = ok(documentation(Entity, Doc)).
 
