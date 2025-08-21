@@ -99,32 +99,44 @@ ensure_local_project_loaded(ProjectEntity) :-
 load_entity_in_session(Entity) :-
     % Get current session ID
     get_current_session_id(SessionId),
-    % For now, just ensure the entity is recognized/available
-    % This is basic functionality - full semantic loading comes later
+    % Create a semantic specification for the entity
+    entity_to_semantic_spec(Entity, EntitySpec),
+    % Validate that the entity exists before adding to session
+    (validate_entity_exists(Entity, EntitySpec) ->
+        % Store the load in persistent session file for future operations
+        (SessionId \= main ->
+            add_entity_load_to_session(SessionId, EntitySpec)
+        ;
+            % In main session, just succeed (no persistent storage)
+            true
+        )
+    ;
+        % Entity doesn't exist - throw error
+        format(atom(ErrorMsg), 'Entity ~w not found', [Entity]),
+        throw(entity_load_failed(Entity, EntitySpec, ErrorMsg))
+    ).
+
+% Validate that an entity exists and can be loaded
+validate_entity_exists(Entity, EntitySpec) :-
+    % Check if entity already exists in the system
     (entity(Entity) ->
-        true  % Entity already exists
-    ;
-        % Try to infer semantic loading based on entity name
-        % This is basic functionality - full semantic loading comes later
         true
-    ),
-    % Store the load in persistent session file for future operations
-    (SessionId \= main ->
-        % Create a semantic specification for the entity
-        entity_to_semantic_spec(Entity, EntitySpec),
-        add_entity_load_to_session(SessionId, EntitySpec)
     ;
-        % In main session, just succeed (no persistent storage)
-        true
+        % Try to load the semantic specification to see if it's valid
+        catch(
+            load_entity(EntitySpec),
+            _,
+            fail
+        )
     ).
 
 % Convert entity to semantic specification
 entity_to_semantic_spec(Entity, EntitySpec) :-
-    % For now, use basic mapping - this can be enhanced later
+    % Map entities to proper semantic specifications
     (Entity = '/' ->
         EntitySpec = semantic(system)
     ; Entity = '.' ->
-        EntitySpec = semantic(file('./semantics.pl'))
+        EntitySpec = semantic(folder(.))
     ; atom_string(Entity, EntityStr), 
       (sub_string(EntityStr, _, _, _, '/') ->
           EntitySpec = semantic(folder(Entity))
@@ -234,8 +246,12 @@ run(command(interface(run(CommandTerm))), RetVal) :-
 % Load command - load entity into current session
 run(command(interface(load(EntitySpec))), RetVal) :-
     resolve_entity_path(EntitySpec, Entity),
-    load_entity_in_session(Entity),
-    RetVal = ok(entity_loaded(Entity)).
+    catch(
+        (load_entity_in_session(Entity),
+         RetVal = ok(entity_loaded(Entity))),
+        entity_load_failed(E, Spec, Msg),
+        RetVal = error(entity_load_failed(E, Spec, Msg))
+    ).
 
 % === CORE INTERFACE FUNCTIONS ===
 % These return structured data, no printing

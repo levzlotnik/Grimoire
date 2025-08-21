@@ -304,6 +304,11 @@ format_cli_result(error(not_in_git_repository)) :-
     !,
     format('Error: Not in a Git repository. Sessions require a Git repository to function.~n', []).
 
+% Format entity load errors
+format_cli_result(error(entity_load_failed(Entity, EntitySpec, Msg))) :-
+    !,
+    format('Error: Failed to load entity "~w" (~w): ~w~n', [Entity, EntitySpec, Msg]).
+
 format_cli_result(error(Reason)) :-
     !,
     format('Error: ~w~n', [Reason]).
