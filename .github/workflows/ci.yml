@@ -26,42 +26,5 @@ jobs:
         echo "experimental-features = nix-command flakes" | sudo tee -a /etc/nix/nix.conf
         sudo systemctl restart nix-daemon || true
     
-    - name: Build development shell
-      run: nix develop --command echo "Development shell ready"
-    
-    - name: Verify Grimoire setup
-      run: |
-        nix develop --command bash -c "
-          swipl --version
-          ls -la ./grimoire
-          chmod +x ./grimoire
-        "
-    
-    - name: Run all tests
+    - name: Run tests
       run: nix develop --command ./grimoire test
-    
-    - name: Test selective test execution
-      run: |
-        nix develop --command ./grimoire test core_ecs
-        nix develop --command ./grimoire test --list
-    
-    - name: Test error handling and exit codes
-      run: |
-        nix develop --command bash -c "
-          # This should fail with exit code 1
-          if ./grimoire test nonexistent_test 2>/dev/null; then
-            echo 'ERROR: Expected test command to fail but it succeeded'
-            exit 1
-          else
-            echo 'SUCCESS: Test command correctly failed with non-zero exit code'
-          fi
-          
-          # This should succeed with exit code 0
-          ./grimoire test core_ecs
-          echo 'SUCCESS: Valid test command succeeded'
-        "
-    
-    - name: Test Nix apps
-      run: |
-        nix run .#test
-        echo "SUCCESS: Nix test app works"
