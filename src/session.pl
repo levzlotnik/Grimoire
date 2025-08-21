@@ -107,7 +107,7 @@ validate_session_start_preconditions(SessionId, Result) :-
         % Check working tree status
         check_working_tree_status(Status),
         % Check if we can access git
-        run(command(git(['rev-parse', '--git-dir'])), GitCheck),
+        run(command(git(rev_parse(['--git-dir']))), GitCheck),
         (GitCheck = ok(_) ->
             Result = ok(Status)
         ;
@@ -495,7 +495,7 @@ execute_transaction_in_session(SessionId, Commands, Result) :-
 
 execute_commands_atomically(Commands, Result) :-
     % Get commit to rollback to if needed
-    run(command(git(['rev-parse', 'HEAD'])), CommitResult),
+    run(command(git(rev_parse(['HEAD']))), CommitResult),
     (CommitResult = ok(result(PreCommit, _)) ->
         execute_commands(Commands, Results),
         (member(error(_), Results) ->
