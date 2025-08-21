@@ -93,8 +93,47 @@ docstring(session,
 
 % Main session start entry point
 start_session(SessionId, Result) :-
-    check_working_tree_status(Status),
-    transition_to_session(SessionId, Status, Result).
+    validate_session_start_preconditions(SessionId, ValidationResult),
+    (ValidationResult = ok(Status) ->
+        transition_to_session(SessionId, Status, Result)
+    ;
+        Result = ValidationResult
+    ).
+
+% Validate all preconditions before starting session operations
+validate_session_start_preconditions(SessionId, Result) :-
+    % Check if session ID is valid
+    (validate_session_id(SessionId) ->
+        % Check working tree status
+        check_working_tree_status(Status),
+        % Check if we can access git
+        run(command(git(['rev-parse', '--git-dir'])), GitCheck),
+        (GitCheck = ok(_) ->
+            Result = ok(Status)
+        ;
+            Result = error(not_in_git_repository)
+        )
+    ;
+        Result = error(invalid_session_id(SessionId))
+    ).
+
+% Validate session ID format
+validate_session_id(SessionId) :-
+    atom(SessionId),
+    atom_length(SessionId, Len),
+    Len > 0,
+    Len =< 100,  % Reasonable length limit
+    % Check for valid characters (alphanumeric, dash, underscore)
+    atom_codes(SessionId, Codes),
+    forall(member(Code, Codes), valid_session_char(Code)).
+
+% Valid session ID characters
+valid_session_char(Code) :-
+    (Code >= 97, Code =< 122) ;  % a-z
+    (Code >= 65, Code =< 90) ;   % A-Z  
+    (Code >= 48, Code =< 57) ;   % 0-9
+    Code = 45 ;                  % -
+    Code = 95.                   % _
 
 % Pattern 1: Clean state → any session (existing or new)
 transition_to_session(SessionId, clean, Result) :-

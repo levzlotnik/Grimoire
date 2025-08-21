@@ -9,6 +9,8 @@
 :- ensure_loaded('integration.plt').
 :- ensure_loaded('spell_system.plt').
 :- ensure_loaded('session_cli.plt').
+:- ensure_loaded('session.plt').
+:- ensure_loaded('interface_session.plt').
 :- ensure_loaded('template_instantiation.plt').
 
 % Load template test suites
@@ -29,6 +31,8 @@ run_all_tests :-
         integration_tests,
         spell_system,
         session_cli,
+        clean_session_system,
+        interface_session_integration,
         template_instantiation,
         rust_project_semantics,
         cpp_project_semantics,

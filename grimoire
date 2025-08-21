@@ -295,6 +295,15 @@ format_cli_result(error(failed_to_switch_to_session(GitResult))) :-
     !,
     format('Error: Failed to switch to session. Git error: ~w~n', [GitResult]).
 
+% Format session validation errors
+format_cli_result(error(invalid_session_id(SessionId))) :-
+    !,
+    format('Error: Invalid session ID "~w". Session IDs must be alphanumeric with dashes/underscores, 1-100 characters.~n', [SessionId]).
+
+format_cli_result(error(not_in_git_repository)) :-
+    !,
+    format('Error: Not in a Git repository. Sessions require a Git repository to function.~n', []).
+
 format_cli_result(error(Reason)) :-
     !,
     format('Error: ~w~n', [Reason]).
