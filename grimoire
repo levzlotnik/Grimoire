@@ -241,6 +241,10 @@ format_cli_result(ok(tests_passed)) :-
     !,
     writeln('All tests passed ✓').
 
+format_cli_result(ok(tests_listed)) :-
+    !,
+    true.  % list_available_tests handles its own output
+
 % Format session results
 format_cli_result(ok(session_started(SessionId, Type, State, Method))) :-
     !,
