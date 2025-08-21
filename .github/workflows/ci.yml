@@ -19,5 +19,11 @@ jobs:
     - name: Install Nix
       uses: DeterminateSystems/nix-installer-action@v9
     
+    - name: Setup Magic Nix Cache
+      uses: DeterminateSystems/magic-nix-cache-action@v2
+    
+    - name: Build development shell
+      run: nix develop --command echo "Development environment ready"
+    
     - name: Run tests
       run: nix develop --command ./grimoire test
