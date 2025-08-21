@@ -1,2 +1,3 @@
 - Testing the project is done using `./grimoire test`
 - Use `./grimoire exec` in place of `swipl`; it loads the system stuff
+- Never ever use `git add .` or `git add -A` - at most use `git add -u` and otherwise add files individually
