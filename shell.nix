@@ -2,6 +2,12 @@
 
 let
   pyswip = import ./deps/pyswip.nix { inherit pkgs; };
+  swipl = import ./deps/swipl.nix { inherit pkgs; };
+  swiplEnv = swipl.withPrologPacks [
+    "prosqlite"
+    "http"
+    "ssl"
+  ];
   python = pkgs.python313;
   pythonEnv = python.withPackages (
     p: with p; [
@@ -24,11 +30,11 @@ in
 pkgs.mkShell
 {
   packages = [
-    pkgs.swi-prolog
+    swiplEnv
     pythonEnv
     pkgs.sqlite
   ];
 
-  SWIPL_BIN = "${pkgs.swi-prolog}/bin/swipl";
+  SWIPL_BIN = "${swiplEnv}/bin/swipl";
   LLM_DB_SCHEMA_PATH = toString schemaFile;
 }

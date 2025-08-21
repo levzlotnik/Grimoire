@@ -145,14 +145,7 @@ entity_to_semantic_spec(Entity, EntitySpec) :-
       )
     ).
 
-% Get current session ID from Git branch
-get_current_session_id(SessionId) :-
-    get_current_branch(Branch),
-    (atom_concat('session-', SessionId, Branch) ->
-        true  % Extract session ID from branch name
-    ;
-        SessionId = main  % Not in a session branch
-    ).
+% Note: get_current_session_id/1 is now defined in session.pl
 
 % Ensure session state is loaded before interface operations
 ensure_session_state_loaded :-

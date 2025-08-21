@@ -1,308 +1,32 @@
-% Clean Session System - Git-backed state management
-% Semantic layer on top of Git operations
+% File-Based Session System with Command Accumulation
+% Sessions are workspaces that accumulate commands, separate from Git
 :- use_module(library(uuid)).
 
-% Session and transaction entities with automatic self-location
+% Ensure prosqlite is installed, then import SQLite support
+:- catch(use_module(library(prosqlite)), 
+         error(existence_error(source_sink, library(prosqlite)), _),
+         (format('Installing prosqlite pack...~n'),
+          pack_install(prosqlite, [silent(true), interactive(false)]),
+          use_module(library(prosqlite)))).
+
+% === ENTITIES AND COMPONENTS ===
+
 :- self_entity(session).
-entity(transaction).
+entity(think).
 
-% Session concepts
-component(session, concept, session(state)).
-component(session, concept, close_strategy).
-component(session, concept, transition_branch).
-component(session, concept, working_tree_status).
-
-% Session state entity and constructors
-entity(session(state)).
-component(session(state), ctor, active).
-component(session(state), ctor, closed).
-
-docstring(session(state), 
-    "Session state represents the lifecycle stage of a Git-backed session branch."
-).
-
-% Close strategy entity and constructors  
-entity(close_strategy).
-component(close_strategy, ctor, merge_to_main).
-component(close_strategy, ctor, abandon).
-component(close_strategy, ctor, keep_branch).
-
-docstring(close_strategy,
-    "Close strategy determines how a session branch is handled when closing the session."
-).
-
-% Transition branch entity
-entity(transition_branch).
-component(transition_branch, concept, creation).
-component(transition_branch, concept, integration). 
-component(transition_branch, concept, restoration).
-
-docstring(transition_branch,
-    "Transition branch provides a context-aware stash mechanism for moving dirty state to new sessions."
-).
-
-% Working tree status entity
-entity(working_tree_status).
-component(working_tree_status, ctor, clean).
-component(working_tree_status, ctor, dirty).
-
-docstring(working_tree_status,
-    "Working tree status indicates whether there are uncommitted changes in the repository."
-).
-
-% Transaction concepts
-component(transaction, concept, transaction(state)).
-
-% Transaction state entity and constructors
-entity(transaction(state)).
-component(transaction(state), ctor, committed).
-component(transaction(state), ctor, failed).
-
-docstring(transaction(state),
-    "Transaction state represents the outcome of atomic operations within a session."
-).
-
-% Spell constructors for session operations
-% Conjure constructors (state-changing operations)
-component(conjure, ctor, session(start)).
-component(conjure, ctor, session(close)).
-component(conjure, ctor, session(switch)).
-component(conjure, ctor, session(commit)).
-component(conjure, ctor, session(rollback)).
-
-% Perceive constructors (query operations)
-component(perceive, ctor, session(current)).
-component(perceive, ctor, session(list)).
-component(perceive, ctor, session(status)).
-
-% Legacy session commands for backwards compatibility
+% Session commands
 component(command, ctor, session).
 component(session, subcommand, start).
-component(session, subcommand, close).
-component(session, subcommand, switch).
-component(session, subcommand, list).
-component(session, subcommand, commit).
-component(session, subcommand, rollback).
-component(session, subcommand, status).
+component(session, subcommand, history).
+component(session, subcommand, commit_accumulated).
 
-docstring(session, 
-    "Clean session system where sessions are Git branches and transactions are Git commits.\nThree transition patterns:\n1. Clean state → any session: Direct git checkout\n2. Dirty state → existing session: Git checkout (let git handle conflicts)\n3. Dirty state → NEW session: Via transition branch workflow"
-).
+% Think command
+component(command, ctor, think).
 
-% === CORE SESSION TRANSITIONS ===
+docstring(session, "File-based session system. Sessions accumulate commands in workspace directories and can commit to Git when ready.").
+docstring(think, "Record reasoning/thought process. Takes a string argument for LLM audit trails.").
 
-% Main session start entry point
-start_session(SessionId, Result) :-
-    validate_session_start_preconditions(SessionId, ValidationResult),
-    (ValidationResult = ok(Status) ->
-        transition_to_session(SessionId, Status, Result)
-    ;
-        Result = ValidationResult
-    ).
-
-% Validate all preconditions before starting session operations
-validate_session_start_preconditions(SessionId, Result) :-
-    % Check if session ID is valid
-    (validate_session_id(SessionId) ->
-        % Check working tree status
-        check_working_tree_status(Status),
-        % Check if we can access git
-        run(command(git(rev_parse(['--git-dir']))), GitCheck),
-        (GitCheck = ok(_) ->
-            Result = ok(Status)
-        ;
-            Result = error(not_in_git_repository)
-        )
-    ;
-        Result = error(invalid_session_id(SessionId))
-    ).
-
-% Validate session ID format
-validate_session_id(SessionId) :-
-    atom(SessionId),
-    atom_length(SessionId, Len),
-    Len > 0,
-    Len =< 100,  % Reasonable length limit
-    % Check for valid characters (alphanumeric, dash, underscore)
-    atom_codes(SessionId, Codes),
-    forall(member(Code, Codes), valid_session_char(Code)).
-
-% Valid session ID characters
-valid_session_char(Code) :-
-    (Code >= 97, Code =< 122) ;  % a-z
-    (Code >= 65, Code =< 90) ;   % A-Z  
-    (Code >= 48, Code =< 57) ;   % 0-9
-    Code = 45 ;                  % -
-    Code = 95.                   % _
-
-% Pattern 1: Clean state → any session (existing or new)
-transition_to_session(SessionId, clean, Result) :-
-    (session_exists(SessionId) ->
-        session_branch_name(SessionId, BranchName),
-        run(command(git(checkout([BranchName]))), GitResult),
-        (GitResult = ok(_) ->
-            % Load existing session state
-            load_session_state_file(SessionId),
-            Result = ok(session_started(SessionId, existing, clean, direct))
-        ;
-            Result = error(failed_to_checkout_existing_session(GitResult))
-        )
-    ;
-        session_branch_name(SessionId, BranchName),
-        run(command(git(checkout(['-b', BranchName]))), GitResult),
-        (GitResult = ok(_) ->
-            % Initialize session state file for new session
-            initialize_session_state_file(SessionId),
-            Result = ok(session_started(SessionId, new, clean, direct))
-        ;
-            Result = error(failed_to_create_new_session(GitResult))
-        )
-    ).
-
-% Pattern 2: Dirty state → existing session (let git handle merge/conflicts)
-transition_to_session(SessionId, dirty, Result) :-
-    session_exists(SessionId), !,
-    session_branch_name(SessionId, BranchName),
-    run(command(git(checkout([BranchName]))), GitResult),
-    (GitResult = ok(_) ->
-        % Load existing session state
-        load_session_state_file(SessionId),
-        Result = ok(session_started(SessionId, existing, dirty, direct_with_merge))
-    ;
-        Result = error(failed_to_checkout_existing_with_dirty(GitResult))
-    ).
-
-% Pattern 3: Dirty state → NEW session (via transition branch)
-transition_to_session(SessionId, dirty, Result) :-
-    % Only for NEW sessions - create transition workflow
-    create_transition_workflow(SessionId, Result).
-
-% === TRANSITION BRANCH WORKFLOW ===
-% Only used for dirty state → NEW session
-
-create_transition_workflow(SessionId, Result) :-
-    get_current_branch(SourceBranch),
-    transition_branch_name(SourceBranch, SessionId, TransitionBranch),
-    session_branch_name(SessionId, SessionBranch),
-    
-    % Step 1: Create transition branch from current branch
-    run(command(git(checkout(['-b', TransitionBranch]))), CreateResult),
-    (CreateResult = ok(_) ->
-        % Step 2: Commit dirty changes to transition branch
-        commit_dirty_changes(TransitionBranch, SessionId, CommitResult),
-        (CommitResult = ok(_) ->
-            % Step 3: Create new session branch from transition branch
-            run(command(git(checkout(['-b', SessionBranch]))), FinalResult),
-            (FinalResult = ok(_) ->
-                % Initialize session state file for new session
-                initialize_session_state_file(SessionId),
-                Result = ok(session_started(SessionId, new, dirty, via_transition(TransitionBranch)))
-            ;
-                Result = error(failed_to_create_session_from_transition(FinalResult))
-            )
-        ;
-            Result = error(failed_to_commit_to_transition(CommitResult))
-        )
-    ;
-        Result = error(failed_to_create_transition_branch(CreateResult))
-    ).
-
-commit_dirty_changes(_, SessionId, Result) :-
-    % Add tracked changes only (not untracked files)
-    run(command(git(add(['-u']))), AddResult),
-    (AddResult = ok(_) ->
-        format(string(CommitMsg), "Transition to session ~w: dirty state preserved", [SessionId]),
-        run(command(git(commit(['-m', CommitMsg]))), CommitResult),
-        Result = CommitResult
-    ;
-        Result = error(failed_to_stage_changes(AddResult))
-    ).
-
-% === SESSION MANAGEMENT ===
-
-session_exists(SessionId) :-
-    session_branch_name(SessionId, BranchName),
-    run(command(git(branch(['--list', BranchName]))), Result),
-    Result = ok(result(Output, _)),
-    Output \= "".
-
-session_branch_name(SessionId, BranchName) :-
-    format(atom(BranchName), 'session-~w', [SessionId]).
-
-transition_branch_name(SourceBranch, SessionId, TransitionBranch) :-
-    format(atom(TransitionBranch), 'transition_branch/~w--~w', [SourceBranch, SessionId]).
-
-get_current_branch(Branch) :-
-    catch(
-        (run(command(git(branch(['--show-current']))), Result),
-         (Result = ok(result(BranchOutput, _)) ->
-             % Strip newline and convert to atom  
-             string_concat(BranchStr, "\n", BranchOutput),
-             atom_string(Branch, BranchStr)
-         ;
-             % If git command returned error, use fallback
-             Branch = main
-         )),
-        Error,
-        (format('Error in get_current_branch: ~w~n', [Error]),
-         Branch = main)
-    ).
-
-% === WORKING TREE STATUS ===
-
-check_working_tree_status(Status) :-
-    run(command(git(status(['--porcelain']))), Result),
-    (Result = ok(result(Output, _)) ->
-        (has_tracked_file_changes(Output) ->
-            Status = dirty
-        ;
-            Status = clean
-        )
-    ;
-        % If git status fails, assume clean
-        Status = clean
-    ).
-
-% Check if porcelain output contains tracked file changes (not just untracked files)
-has_tracked_file_changes("") :- !, fail.
-has_tracked_file_changes(Output) :-
-    string_lines(Output, Lines),
-    member(Line, Lines),
-    Line \= "",
-    % Porcelain format: XY filename
-    % X = index status, Y = working tree status
-    % ?? = untracked file (should be ignored)
-    % We care about any non-?? status
-    \+ string_concat("??", _, Line).
-
-% === SESSION FILE PATH RESOLUTION ===
-
-% Get session state file path for a given session ID
-% Uses global storage by default: ${GRIMOIRE_ROOT:-$HOME/.grimoire}/session-{uuid}.pl
-% Can be overridden to use local storage: $PWD/.grimoire/session-{uuid}.pl
-session_state_file_path(SessionId, FilePath) :-
-    session_storage_strategy(Strategy),
-    session_state_file_path(SessionId, Strategy, FilePath).
-
-% Determine storage strategy: global or local
-session_storage_strategy(Strategy) :-
-    (getenv('GRIMOIRE_SESSION_STORAGE', 'local') ->
-        Strategy = local
-    ;
-        Strategy = global
-    ).
-
-% Global storage: ${GRIMOIRE_ROOT:-$HOME/.grimoire}/session-{uuid}.pl
-session_state_file_path(SessionId, global, FilePath) :-
-    grimoire_root_directory(GrimoireRoot),
-    format(atom(FileName), 'session-~w.pl', [SessionId]),
-    format(atom(FilePath), '~w/~w', [GrimoireRoot, FileName]).
-
-% Local storage: $PWD/.grimoire/session-{uuid}.pl  
-session_state_file_path(SessionId, local, FilePath) :-
-    working_directory(Cwd, Cwd),
-    format(atom(FileName), 'session-~w.pl', [SessionId]),
-    format(atom(FilePath), '~w/.grimoire/~w', [Cwd, FileName]).
+% === CORE WORKSPACE PATHS ===
 
 % Get Grimoire root directory: ${GRIMOIRE_ROOT:-$HOME/.grimoire}
 grimoire_root_directory(RootDir) :-
@@ -313,326 +37,227 @@ grimoire_root_directory(RootDir) :-
         format(atom(RootDir), '~w/.grimoire', [HomeDir])
     ).
 
-% Ensure session state directory exists
-ensure_session_state_directory(SessionId) :-
-    session_state_file_path(SessionId, FilePath),
-    file_directory_name(FilePath, Directory),
-    (exists_directory(Directory) ->
+% Session workspace directory: ${GRIMOIRE_ROOT}/sessions/{session-id}/
+session_workspace_path(SessionId, WorkspacePath) :-
+    grimoire_root_directory(GrimoireRoot),
+    format(atom(WorkspacePath), '~w/sessions/~w', [GrimoireRoot, SessionId]).
+
+% Commands database: workspace/commands.db
+session_commands_db_path(SessionId, DbPath) :-
+    session_workspace_path(SessionId, WorkspacePath),
+    format(atom(DbPath), '~w/commands.db', [WorkspacePath]).
+
+% Session state file: workspace/state.pl
+session_state_file_path(SessionId, StatePath) :-
+    session_workspace_path(SessionId, WorkspacePath),
+    format(atom(StatePath), '~w/state.pl', [WorkspacePath]).
+
+% === WORKSPACE MANAGEMENT ===
+
+% Create session workspace
+create_session_workspace(SessionId) :-
+    session_workspace_path(SessionId, WorkspacePath),
+    (exists_directory(WorkspacePath) ->
         true
     ;
-        make_directory_path(Directory)
+        make_directory_path(WorkspacePath)
+    ),
+    initialize_commands_db(SessionId),
+    initialize_state_file(SessionId).
+
+% Initialize SQLite commands database with proper schema
+initialize_commands_db(SessionId) :-
+    session_commands_db_path(SessionId, DbPath),
+    (exists_file(DbPath) ->
+        true  % Database already exists
+    ;
+        % Create SQLite database with proper schema
+        sqlite_open(DbPath, Connection),
+        
+        % Create commands table with proper schema
+        sqlite_query(Connection,
+            'CREATE TABLE commands (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL,
+                command_type TEXT NOT NULL,
+                command_term TEXT NOT NULL,
+                result TEXT,
+                source TEXT DEFAULT "user"
+            )',
+            _),
+        
+        % Create indexes for better query performance
+        sqlite_query(Connection, 'CREATE INDEX idx_timestamp ON commands(timestamp)', _),
+        sqlite_query(Connection, 'CREATE INDEX idx_command_type ON commands(command_type)', _),
+        sqlite_query(Connection, 'CREATE INDEX idx_source ON commands(source)', _),
+        
+        sqlite_close(Connection)
     ).
 
-% === SESSION STATE FILE MANAGEMENT ===
-
-% Initialize empty session state file
-initialize_session_state_file(SessionId) :-
-    ensure_session_state_directory(SessionId),
-    session_state_file_path(SessionId, FilePath),
-    open(FilePath, write, Stream),
-    format(Stream, '% Session state file for session ~w~n', [SessionId]),
-    format(Stream, '% Auto-generated by Grimoire session system~n~n', []),
-    close(Stream).
-
-% Load session state file (ensure all entity loads are applied)
-load_session_state_file(SessionId) :-
-    session_state_file_path(SessionId, FilePath),
-    (exists_file(FilePath) ->
-        consult(FilePath)
-    ;
-        % If file doesn't exist, just succeed (empty session state)
+% Initialize state file (replaces session-{id}.pl files)
+initialize_state_file(SessionId) :-
+    session_state_file_path(SessionId, StatePath),
+    (exists_file(StatePath) ->
         true
-    ).
-
-% Add entity load to session state file
-add_entity_load_to_session(SessionId, EntitySpec) :-
-    ensure_session_state_directory(SessionId),
-    session_state_file_path(SessionId, FilePath),
-    % Append the load directive to the session file
-    open(FilePath, append, Stream),
-    format(Stream, '% Entity loaded: ~w~n', [EntitySpec]),
-    format(Stream, ':- load_entity(~q).~n~n', [EntitySpec]),
-    close(Stream).
-
-% Clean up session state file
-cleanup_session_state_file(SessionId) :-
-    session_state_file_path(SessionId, FilePath),
-    (exists_file(FilePath) ->
-        delete_file(FilePath)
     ;
-        true
+        open(StatePath, write, Stream),
+        format(Stream, '%% Session state file for session ~w~n', [SessionId]),
+        format(Stream, '%% Auto-generated by Grimoire session system~n~n', []),
+        close(Stream)
     ).
 
 % === SESSION OPERATIONS ===
 
+% Start new session
 run(command(session(start)), RetVal) :-
     uuid(SessionId),
-    start_session(SessionId, RetVal).
+    run(command(session(start(SessionId))), RetVal).
 
 run(command(session(start(SessionId))), RetVal) :-
-    start_session(SessionId, RetVal).
+    atom(SessionId),
+    create_session_workspace(SessionId),
+    format('🔮 Session ~w started~n', [SessionId]),
+    RetVal = ok(session_started(SessionId)).
 
-run(command(session(close(SessionId, Strategy))), RetVal) :-
-    close_session(SessionId, Strategy, RetVal).
+% Show session command history
+run(command(session(history)), RetVal) :-
+    get_current_session_id(SessionId),
+    get_session_command_history(SessionId, Commands),
+    format('📚 Command history for session ~w:~n', [SessionId]),
+    display_command_history(Commands),
+    RetVal = ok(session_history(SessionId, Commands)).
 
+% Commit accumulated commands to Git branch
+run(command(session(commit_accumulated(Message))), RetVal) :-
+    string(Message),
+    format('🔮 Would commit accumulated commands with message: ~s~n', [Message]),
+    RetVal = ok(commit_accumulated_placeholder(Message)).
 
-% Session switching command
-run(command(session(switch(SessionId))), RetVal) :-
-    switch_to_session(SessionId, RetVal).
+% === THINK COMMAND ===
 
-% Session listing command
-run(command(session(list)), RetVal) :-
-    list_all_sessions(RetVal).
+% Think command - records reasoning with proper string handling
+run(command(think(ThoughtString)), RetVal) :-
+    string(ThoughtString), !,
+    format('💭 ~s~n', [ThoughtString]),
+    % Log to session database
+    log_command_to_session(think(ThoughtString), think, ok(thought_recorded(ThoughtString)), user),
+    RetVal = ok(thought_recorded(ThoughtString)).
 
-% Session commit command
-run(command(session(commit(Message))), RetVal) :-
-    create_session_commit(Message, RetVal).
+% Handle atom input by converting to string
+run(command(think(ThoughtAtom)), RetVal) :-
+    atom(ThoughtAtom),
+    atom_string(ThoughtAtom, ThoughtString),
+    run(command(think(ThoughtString)), RetVal).
 
-% Session rollback command
-run(command(session(rollback)), RetVal) :-
-    rollback_session_transaction(RetVal).
+% === COMMAND LOGGING ===
 
-% Session status command
-run(command(session(status)), RetVal) :-
-    run(command(interface(status)), RetVal).
+% Log command to current session database
+log_command_to_session(Command, CommandType, Result, Source) :-
+    get_current_session_id(SessionId),
+    (SessionId = main ->
+        true  % Don't log commands in main session
+    ;
+        log_command_to_session_db(SessionId, Command, CommandType, Result, Source)
+    ).
 
-% === SESSION CLOSURE ===
+% Log command to specific session database
+log_command_to_session_db(SessionId, Command, CommandType, Result, Source) :-
+    session_commands_db_path(SessionId, DbPath),
+    (exists_file(DbPath) ->
+        % Database exists, log the command
+        sqlite_open(DbPath, Connection),
+        
+        % Get current timestamp
+        get_time(TimeStamp),
+        format_time(atom(TimeStr), '%Y-%m-%dT%H:%M:%S', TimeStamp),
+        
+        % Convert terms to atoms for storage
+        term_to_atom(Command, CommandAtom),
+        term_to_atom(Result, ResultAtom),
+        
+        % Insert command into database
+        sqlite_query(Connection,
+            'INSERT INTO commands (timestamp, command_type, command_term, result, source) 
+             VALUES (?, ?, ?, ?, ?)',
+            [TimeStr, CommandType, CommandAtom, ResultAtom, Source]),
+        
+        sqlite_close(Connection)
+    ;
+        true  % Database doesn't exist, silently fail
+    ).
 
-close_session(SessionId, merge_to_main, Result) :-
-    session_branch_name(SessionId, SessionBranch),
-    % Switch to main and merge session
-    run(command(git(checkout(['main']))), CheckoutResult),
-    (CheckoutResult = ok(_) ->
-        run(command(git(merge(['--no-ff', SessionBranch]))), MergeResult),
-        (MergeResult = ok(_) ->
-            % Clean up session branch
-            run(command(git(branch(['-d', SessionBranch]))), _),
-            % Clean up any associated transition branch
-            cleanup_session_transition_branch(SessionId),
-            % Clean up session state file
-            cleanup_session_state_file(SessionId),
-            Result = ok(session_closed(SessionId, merged_to_main))
+% Get current session ID 
+get_current_session_id(SessionId) :-
+    % TODO: Implement proper session tracking
+    % For now, always return main
+    SessionId = main.
+
+% Session exists check (placeholder)
+session_exists(_SessionId) :- 
+    fail.  % For now, no sessions exist
+
+% Add entity load to session state
+add_entity_load_to_session(SessionId, EntitySpec) :-
+    session_state_file_path(SessionId, StatePath),
+    open(StatePath, append, Stream),
+    format(Stream, '%% Entity loaded: ~w~n', [EntitySpec]),
+    format(Stream, ':- load_entity(~q).~n~n', [EntitySpec]),
+    close(Stream).
+
+% Load session state file
+load_session_state_file(SessionId) :-
+    session_state_file_path(SessionId, StatePath),
+    (exists_file(StatePath) ->
+        consult(StatePath)
+    ;
+        true
+    ).
+
+% === DATABASE QUERY FUNCTIONS ===
+
+% Get command history from session database
+get_session_command_history(SessionId, Commands) :-
+    (SessionId = main ->
+        Commands = []  % Main session has no accumulated commands
+    ;
+        session_commands_db_path(SessionId, DbPath),
+        (exists_file(DbPath) ->
+            sqlite_open(DbPath, Connection),
+            sqlite_query(Connection,
+                'SELECT timestamp, command_type, command_term, result, source 
+                 FROM commands ORDER BY timestamp DESC',
+                Rows),
+            sqlite_close(Connection),
+            maplist(row_to_command_entry, Rows, Commands)
         ;
-            Result = error(failed_to_merge_session(MergeResult))
+            Commands = []  % No database file
         )
-    ;
-        Result = error(failed_to_checkout_main(CheckoutResult))
     ).
 
-close_session(SessionId, abandon, Result) :-
-    session_branch_name(SessionId, SessionBranch),
-    % Switch to main and delete session branch
-    run(command(git(checkout(['main']))), CheckoutResult),
-    (CheckoutResult = ok(_) ->
-        run(command(git(branch(['-D', SessionBranch]))), DeleteResult),
-        (DeleteResult = ok(_) ->
-            % For abandoned sessions, restore dirty state from transition branch if it exists
-            restore_from_transition_branch(SessionId),
-            % Clean up session state file
-            cleanup_session_state_file(SessionId),
-            Result = ok(session_closed(SessionId, abandoned))
-        ;
-            Result = error(failed_to_delete_session_branch(DeleteResult))
-        )
-    ;
-        Result = error(failed_to_checkout_main_for_abandon(CheckoutResult))
-    ).
+% Convert database row to command entry structure
+row_to_command_entry(row(Timestamp, CommandType, CommandTerm, Result, Source), 
+                     command_entry(Timestamp, CommandType, CommandTerm, Result, Source)).
 
-close_session(SessionId, keep_branch, Result) :-
-    run(command(git(checkout(['main']))), CheckoutResult),
-    (CheckoutResult = ok(_) ->
-        Result = ok(session_closed(SessionId, branch_kept))
-    ;
-        Result = error(failed_to_checkout_main_for_keep(CheckoutResult))
-    ).
+% Display command history in readable format
+display_command_history([]).
+display_command_history([command_entry(Timestamp, CommandType, CommandTerm, Result, Source)|Rest]) :-
+    format('  ~w [~w] (~w): ~w -> ~w~n', [Timestamp, Source, CommandType, CommandTerm, Result]),
+    display_command_history(Rest).
 
-% === TRANSITION BRANCH CLEANUP ===
+% Get filtered command history
+get_filtered_command_history(SessionId, Filters, Commands) :-
+    get_session_command_history(SessionId, AllCommands),
+    apply_command_filters(AllCommands, Filters, Commands).
 
-cleanup_session_transition_branch(SessionId) :-
-    get_current_branch(CurrentBranch),
-    transition_branch_name(CurrentBranch, SessionId, TransitionBranch),
-    % Try to delete transition branch if it exists
-    catch(run(command(git(branch(['-D', TransitionBranch]))), _), _, true).
+% Apply filters to command history
+apply_command_filters(Commands, [], Commands).
+apply_command_filters(Commands, [type(Type)|RestFilters], FilteredCommands) :-
+    include(command_has_type(Type), Commands, TypeFiltered),
+    apply_command_filters(TypeFiltered, RestFilters, FilteredCommands).
+apply_command_filters(Commands, [source(Source)|RestFilters], FilteredCommands) :-
+    include(command_has_source(Source), Commands, SourceFiltered),
+    apply_command_filters(SourceFiltered, RestFilters, FilteredCommands).
 
-restore_from_transition_branch(SessionId) :-
-    get_current_branch(CurrentBranch), 
-    transition_branch_name(CurrentBranch, SessionId, TransitionBranch),
-    % Check if transition branch exists
-    run(command(git(branch(['--list', TransitionBranch]))), Result),
-    (Result = ok(result(Output, _)), Output \= "" ->
-        % Apply changes from transition branch as unstaged changes
-        run(command(git(checkout([TransitionBranch, '--', '.']))), _),
-        run(command(git(reset(['HEAD']))), _),  % Unstage the changes
-        % Delete transition branch
-        run(command(git(branch(['-D', TransitionBranch]))), _)
-    ;
-        true  % No transition branch to restore from
-    ).
-
-% === TRANSACTION EXECUTION ===
-
-execute_transaction_in_session(SessionId, Commands, Result) :-
-    session_branch_name(SessionId, SessionBranch),
-    % Ensure we're on the session branch
-    run(command(git(checkout([SessionBranch]))), CheckoutResult),
-    (CheckoutResult = ok(_) ->
-        % Execute commands atomically
-        execute_commands_atomically(Commands, ExecuteResult),
-        (ExecuteResult = ok(Results) ->
-            % Commit as transaction
-            create_transaction_commit(Commands, CommitResult),
-            (CommitResult = ok(_) ->
-                Result = ok(transaction_executed(Results, committed))
-            ;
-                Result = error(transaction_commit_failed(CommitResult))
-            )
-        ;
-            Result = error(transaction_execution_failed(ExecuteResult))
-        )
-    ;
-        Result = error(failed_to_switch_to_session(CheckoutResult))
-    ).
-
-execute_commands_atomically(Commands, Result) :-
-    % Get commit to rollback to if needed
-    run(command(git(rev_parse(['HEAD']))), CommitResult),
-    (CommitResult = ok(result(PreCommit, _)) ->
-        execute_commands(Commands, Results),
-        (member(error(_), Results) ->
-            % Rollback on failure
-            string_concat(PreCommitClean, "\n", PreCommit),
-            run(command(git(reset(['--hard', PreCommitClean]))), _),
-            Result = error(commands_failed_and_rolled_back)
-        ;
-            Result = ok(Results)
-        )
-    ;
-        Result = error(failed_to_get_current_commit)
-    ).
-
-create_transaction_commit(Commands, Result) :-
-    length(Commands, NumCmds),
-    format(string(CommitMsg), "Transaction: ~w commands executed", [NumCmds]),
-    run(command(git(commit(['-a', '-m', CommitMsg]))), Result).
-
-% === COMMAND EXECUTION ===
-% Uses execute_commands/2 from grimoire.pl core system
-
-% === PERCEIVE PREDICATES - Session Queries ===
-
-% Get current session information
-perceive(session(current(SessionId, State))) :-
-    get_current_branch(Branch),
-    (atom_concat('session-', SessionId, Branch) ->
-        State = active
-    ;
-        SessionId = main,
-        State = main_session
-    ).
-
-% List all available sessions
-perceive(session(list(Sessions))) :-
-    run(command(git(branch(['--list']))), Result),
-    (Result = ok(result(BranchOutput, _)) ->
-        string_lines(BranchOutput, BranchLines),
-        findall(Session, (
-            member(Line, BranchLines),
-            parse_session_branch(Line, Session)
-        ), Sessions)
-    ;
-        Sessions = []
-    ).
-
-% Parse branch lines to extract session information
-parse_session_branch(Line, Session) :-
-    atom_string(LineAtom, Line),
-    (atom_concat('  session-', SessionId, LineAtom) ->
-        Session = session(SessionId, inactive)
-    ; atom_concat('* session-', SessionId, LineAtom) ->
-        Session = session(SessionId, active)
-    ; atom_string('  main', Line) ->
-        Session = session(main, inactive)
-    ; atom_string('* main', Line) ->
-        Session = session(main, active)
-    ;
-        fail
-    ).
-
-% Get comprehensive session status
-perceive(session(status(CurrentSession, WorkingStatus, AllSessions))) :-
-    perceive(session(current(CurrentSession, _))),
-    check_working_tree_status(WorkingStatus),
-    perceive(session(list(AllSessions))).
-
-% === NEW SESSION COMMAND IMPLEMENTATIONS ===
-
-% Switch to an existing session
-switch_to_session(SessionId, Result) :-
-    (session_exists(SessionId) ->
-        session_branch_name(SessionId, BranchName),
-        run(command(git(checkout([BranchName]))), GitResult),
-        (GitResult = ok(_) ->
-            Result = ok(session_switched(SessionId))
-        ;
-            Result = error(failed_to_switch_to_session(GitResult))
-        )
-    ;
-        Result = error(session_not_found(SessionId))
-    ).
-
-% List all sessions with structured output
-list_all_sessions(Result) :-
-    perceive(session(list(Sessions))),
-    Result = ok(session_list(Sessions)).
-
-% Create a named commit in current session
-create_session_commit(Message, Result) :-
-    get_current_branch(Branch),
-    (atom_concat('session-', _, Branch) ->
-        % Add all changes and commit with message
-        run(command(git(add(['.']))), AddResult),
-        (AddResult = ok(_) ->
-            run(command(git(commit(['-m', Message]))), CommitResult),
-            (CommitResult = ok(_) ->
-                Result = ok(session_commit_created(Message))
-            ;
-                Result = error(failed_to_commit_session(CommitResult))
-            )
-        ;
-            Result = error(failed_to_add_changes(AddResult))
-        )
-    ;
-        Result = error(not_in_session_branch(Branch))
-    ).
-
-% Rollback to previous commit in current session
-rollback_session_transaction(Result) :-
-    get_current_branch(Branch),
-    (atom_concat('session-', _, Branch) ->
-        % Reset to previous commit (HEAD~1)
-        run(command(git(reset(['--hard', 'HEAD~1']))), ResetResult),
-        (ResetResult = ok(_) ->
-            Result = ok(session_rollback_completed)
-        ;
-            Result = error(failed_to_rollback_session(ResetResult))
-        )
-    ;
-        Result = error(not_in_session_branch(Branch))
-    ).
-
-% Get comprehensive session status for CLI display
-get_comprehensive_session_status(Result) :-
-    perceive(session(status(CurrentSession, WorkingStatus, AllSessions))),
-    get_current_branch(CurrentBranch),
-    (atom_concat('session-', _, CurrentBranch) ->
-        % Get recent commits in session
-        run(command(git(log(['--oneline', '-5']))), LogResult),
-        (LogResult = ok(result(LogOutput, _)) ->
-            RecentCommits = LogOutput
-        ;
-            RecentCommits = "No commit history available"
-        )
-    ;
-        RecentCommits = "Not in session branch"
-    ),
-    Result = ok(comprehensive_session_status(CurrentSession, WorkingStatus, AllSessions, RecentCommits)).
+% Filter predicates
+command_has_type(Type, command_entry(_, Type, _, _, _)).
+command_has_source(Source, command_entry(_, _, _, _, Source)).

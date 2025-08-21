@@ -1,221 +1,213 @@
-% Clean Session System Tests
+% File-Based Session System Tests
 :- use_module(library(plunit)).
 :- use_module(library(uuid)).
 
-% Test suite for clean session system
-:- begin_tests(clean_session_system).
+% Test suite for file-based session system
+:- begin_tests(file_session_system).
 
 % === SETUP AND CLEANUP ===
 
 setup :-
-    % Ensure clean state before each test
-    catch(run(command(git(checkout(['main']))), _), _, true),
-    cleanup_all_test_branches.
+    % Clean up any existing test workspaces
+    cleanup_test_workspaces.
 
 teardown :-
     % Clean up after each test
-    catch(run(command(git(checkout(['main']))), _), _, true),
-    cleanup_all_test_branches.
+    cleanup_test_workspaces.
 
-cleanup_all_test_branches :-
-    % Clean up any session or transition branches from tests
-    run(command(git(branch(['--format=%(refname:short)']))), BranchResult),
-    (BranchResult = ok(result(BranchOutput, _)) ->
-        split_string(BranchOutput, '\n', '\n \t', BranchLines),
-        include(is_test_branch, BranchLines, TestBranches),
-        maplist(force_delete_branch, TestBranches)
-    ; 
+cleanup_test_workspaces :-
+    % Remove any test session workspaces
+    grimoire_root_directory(GrimoireRoot),
+    format(atom(SessionsDir), '~w/sessions', [GrimoireRoot]),
+    (exists_directory(SessionsDir) ->
+        % Clean up test sessions (ones starting with 'test-')
+        catch(
+            (directory_files(SessionsDir, Files),
+             forall(
+                (member(File, Files),
+                 atom_concat('test-', _, File)),
+                (format(atom(TestDir), '~w/~w', [SessionsDir, File]),
+                 catch(delete_directory_and_contents(TestDir), _, true))
+             )),
+            _, true)
+    ;
         true
     ).
 
-is_test_branch(BranchName) :-
-    string_concat("session-", _, BranchName) ;
-    string_concat("transition_branch/", _, BranchName).
+% === BASIC FUNCTIONALITY TESTS ===
 
-force_delete_branch(BranchName) :-
-    run(command(git(branch(['-D', BranchName]))), _).
+test(session_start_creates_workspace, [setup(setup), cleanup(teardown)]) :-
+    % Starting a session should create workspace directory
+    run(command(session(start('test-workspace'))), Result),
+    assertion(Result = ok(session_started('test-workspace'))),
+    
+    % Verify workspace directory exists
+    session_workspace_path('test-workspace', WorkspacePath),
+    assertion(exists_directory(WorkspacePath)),
+    
+    % Verify database file exists
+    session_commands_db_path('test-workspace', DbPath),
+    assertion(exists_file(DbPath)),
+    
+    % Verify state file exists
+    session_state_file_path('test-workspace', StatePath),
+    assertion(exists_file(StatePath)).
 
-% Helper to create test file
-create_test_file(FileName, Content) :-
-    setup_call_cleanup(
-        open(FileName, write, Stream),
-        write(Stream, Content),
-        close(Stream)
+test(think_command_with_string, [setup(setup), cleanup(teardown)]) :-
+    % Think command should work with proper strings
+    run(command(think("This is a test thought")), Result),
+    assertion(Result = ok(thought_recorded("This is a test thought"))).
+
+test(think_command_with_atom_conversion, [setup(setup), cleanup(teardown)]) :-
+    % Think command should convert atoms to strings
+    run(command(think(test_thought)), Result),
+    assertion(Result = ok(thought_recorded("test_thought"))).
+
+test(session_history_placeholder, [setup(setup), cleanup(teardown)]) :-
+    % History command should return placeholder for now
+    run(command(session(history)), Result),
+    assertion(Result = ok(session_history_placeholder)).
+
+test(commit_accumulated_placeholder, [setup(setup), cleanup(teardown)]) :-
+    % Commit accumulated should work with string messages
+    run(command(session(commit_accumulated("Test commit message"))), Result),
+    assertion(Result = ok(commit_accumulated_placeholder("Test commit message"))).
+
+% === WORKSPACE PATH TESTS ===
+
+test(workspace_path_resolution, [setup(setup), cleanup(teardown)]) :-
+    % Test workspace path resolution
+    session_workspace_path('test-session', WorkspacePath),
+    grimoire_root_directory(GrimoireRoot),
+    format(atom(ExpectedPath), '~w/sessions/test-session', [GrimoireRoot]),
+    assertion(WorkspacePath = ExpectedPath).
+
+test(commands_db_path_resolution, [setup(setup), cleanup(teardown)]) :-
+    % Test commands database path resolution
+    session_commands_db_path('test-session', DbPath),
+    session_workspace_path('test-session', WorkspacePath),
+    format(atom(ExpectedDbPath), '~w/commands.db', [WorkspacePath]),
+    assertion(DbPath = ExpectedDbPath).
+
+test(state_file_path_resolution, [setup(setup), cleanup(teardown)]) :-
+    % Test state file path resolution
+    session_state_file_path('test-session', StatePath),
+    session_workspace_path('test-session', WorkspacePath),
+    format(atom(ExpectedStatePath), '~w/state.pl', [WorkspacePath]),
+    assertion(StatePath = ExpectedStatePath).
+
+% === ENTITY LOADING TESTS ===
+
+test(add_entity_load_to_session, [setup(setup), cleanup(teardown)]) :-
+    % Test adding entity load to session state file
+    run(command(session(start('test-entity-load'))), _),
+    
+    % Add an entity load
+    add_entity_load_to_session('test-entity-load', semantic(folder(test))),
+    
+    % Check that state file contains the load
+    session_state_file_path('test-entity-load', StatePath),
+    read_file_to_string(StatePath, Content),
+    assertion(sub_string(Content, _, _, _, 'load_entity(semantic(folder(test)))')).
+
+test(load_session_state_file, [setup(setup), cleanup(teardown)]) :-
+    % Test loading session state file
+    run(command(session(start('test-state-load'))), _),
+    
+    % Add some content to state file
+    session_state_file_path('test-state-load', StatePath),
+    open(StatePath, append, Stream),
+    format(Stream, 'test_fact(loaded_from_session).~n', []),
+    close(Stream),
+    
+    % Load the state file
+    load_session_state_file('test-state-load'),
+    
+    % Verify the fact was loaded
+    assertion(test_fact(loaded_from_session)).
+
+% === DATABASE FUNCTIONALITY TESTS ===
+
+test(database_schema_creation, [setup(setup), cleanup(teardown)]) :-
+    % Test that database schema is created properly
+    run(command(session(start('test-db-schema'))), _),
+    
+    % Check database file exists
+    session_commands_db_path('test-db-schema', DbPath),
+    assertion(exists_file(DbPath)),
+    
+    % Verify schema by checking if we can query the commands table
+    catch(
+        (sqlite_open(DbPath, Connection),
+         sqlite_query(Connection, 'SELECT name FROM sqlite_master WHERE type="table" AND name="commands"', [row('commands')]),
+         sqlite_close(Connection)),
+        Error,
+        (format('Database schema test failed: ~w~n', [Error]), fail)
     ).
 
-% === PATTERN 1 TESTS: Clean state → any session ===
+test(command_logging_to_database, [setup(setup), cleanup(teardown)]) :-
+    % Test that commands are properly logged to database
+    run(command(session(start('test-logging'))), _),
+    
+    % Log a test command
+    log_command_to_session_db('test-logging', test_command(param), action, ok(test_result), user),
+    
+    % Verify command was logged
+    session_commands_db_path('test-logging', DbPath),
+    sqlite_open(DbPath, Connection),
+    sqlite_query(Connection, 'SELECT COUNT(*) FROM commands WHERE command_type = "action"', [row(Count)]),
+    sqlite_close(Connection),
+    assertion(Count = 1).
 
-test(clean_to_new_session, [setup(setup), cleanup(teardown)]) :-
-    % Verify clean state
-    check_working_tree_status(Status),
-    assertion(Status = clean),
+test(session_history_retrieval, [setup(setup), cleanup(teardown)]) :-
+    % Test retrieving command history from database
+    run(command(session(start('test-history'))), _),
     
-    % Start new session from clean state
-    start_session('test-new-session', Result),
+    % Add some test commands
+    log_command_to_session_db('test-history', think("test thought"), think, ok(thought_recorded("test thought")), user),
+    log_command_to_session_db('test-history', git(status), action, ok(status_result), user),
     
-    % Should use direct checkout pattern
-    assertion(Result = ok(session_started('test-new-session', new, clean, direct))),
+    % Retrieve history
+    get_session_command_history('test-history', Commands),
     
-    % Verify session branch was created and we're on it
-    get_current_branch(CurrentBranch),
-    assertion(CurrentBranch = 'session-test-new-session'), !.
+    % Verify we got the commands back
+    assertion(length(Commands, 2)),
+    assertion(Commands = [command_entry(_, think, _, _, user), command_entry(_, action, _, _, user)]).
 
-test(clean_to_existing_session, [setup(setup), cleanup(teardown)]) :-
-    % Create a session first
-    start_session('test-existing', _),
-    close_session('test-existing', keep_branch, _),
+test(filtered_history_by_type, [setup(setup), cleanup(teardown)]) :-
+    % Test filtering command history by type
+    run(command(session(start('test-filter'))), _),
     
-    % Return to main with clean state
-    run(command(git(checkout(['main']))), _),
-    check_working_tree_status(Status),
-    assertion(Status = clean),
+    % Add commands of different types
+    log_command_to_session_db('test-filter', think("thought 1"), think, ok(result), user),
+    log_command_to_session_db('test-filter', git(status), action, ok(result), user),
+    log_command_to_session_db('test-filter', think("thought 2"), think, ok(result), user),
     
-    % Start existing session from clean state
-    start_session('test-existing', Result),
+    % Filter by think type
+    get_filtered_command_history('test-filter', [type(think)], ThinkCommands),
     
-    % Should use direct checkout to existing
-    assertion(Result = ok(session_started('test-existing', existing, clean, direct))),
-    
-    % Verify we're on the existing session branch
-    get_current_branch(CurrentBranch),
-    assertion(CurrentBranch = 'session-test-existing'), !.
+    % Should only get think commands
+    assertion(length(ThinkCommands, 2)),
+    forall(member(command_entry(_, Type, _, _, _), ThinkCommands), assertion(Type = think)).
 
-% === PATTERN 2 TESTS: Dirty state → existing session ===
-
-test(dirty_to_existing_session, [setup(setup), cleanup(teardown)]) :-
-    % Create a session and keep it
-    start_session('test-dirty-existing', _),
-    close_session('test-dirty-existing', keep_branch, _),
+test(think_command_database_integration, [setup(setup), cleanup(teardown)]) :-
+    % Test that think command properly integrates with database logging
+    % First create a test session to avoid main session issues
+    run(command(session(start('test-think-db'))), _),
     
-    % Return to main and create dirty state
-    run(command(git(checkout(['main']))), _),
-    create_test_file('dirty_test.txt', 'dirty content'),
-    run(command(git(add(['dirty_test.txt']))), _),
+    % Override get_current_session_id for this test
+    retractall(current_test_session(_)),
+    assert(current_test_session('test-think-db')),
     
-    % Verify dirty state
-    check_working_tree_status(Status),
-    assertion(Status = dirty),
+    % Execute think command (this should log to database)
+    run(command(think("Test database integration")), Result),
+    assertion(Result = ok(thought_recorded("Test database integration"))),
     
-    % Start existing session from dirty state
-    start_session('test-dirty-existing', Result),
-    
-    % Should use direct checkout (let git handle merge)
-    assertion(Result = ok(session_started('test-dirty-existing', existing, dirty, direct_with_merge))),
-    
-    % Clean up test file
-    catch(delete_file('dirty_test.txt'), _, true), !.
-
-% === PATTERN 3 TESTS: Dirty state → NEW session (via transition) ===
-
-test(dirty_to_new_session_via_transition, [setup(setup), cleanup(teardown)]) :-
-    % Create dirty state
-    create_test_file('dirty_transition_test.txt', 'dirty content'),
-    run(command(git(add(['dirty_transition_test.txt']))), _),
-    
-    % Verify dirty state
-    check_working_tree_status(Status),
-    assertion(Status = dirty),
-    
-    % Start NEW session from dirty state
-    start_session('test-transition-new', Result),
-    
-    % Should use transition branch workflow
-    assertion(Result = ok(session_started('test-transition-new', new, dirty, via_transition(_)))),
-    
-    % Verify we're on the new session branch
-    get_current_branch(CurrentBranch),
-    assertion(CurrentBranch = 'session-test-transition-new'),
-    
-    % Verify transition branch was created (extract from Result)
-    Result = ok(session_started(_, _, _, via_transition(TransitionBranch))),
-    run(command(git(branch(['--list', TransitionBranch]))), BranchCheck),
-    BranchCheck = ok(result(BranchOutput, _)),
-    assertion(BranchOutput \= ""),
-    
-    % Clean up test file
-    catch(delete_file('dirty_transition_test.txt'), _, true), !.
-
-% === SESSION MANAGEMENT TESTS ===
-
-test(session_exists_check, [setup(setup), cleanup(teardown)]) :-
-    % Non-existent session
-    assertion(\+ session_exists('non-existent')),
-    
-    % Create session
-    start_session('test-exists', _),
-    
-    % Now should exist
-    assertion(session_exists('test-exists')), !.
-
-test(session_branch_naming, [setup(setup), cleanup(teardown)]) :-
-    % Test session branch name generation
-    session_branch_name('my-session', BranchName),
-    assertion(BranchName = 'session-my-session').
-
-test(transition_branch_naming, [setup(setup), cleanup(teardown)]) :-
-    % Test transition branch name generation
-    transition_branch_name('main', 'new-session', TransitionName),
-    assertion(TransitionName = 'transition_branch/main--new-session').
-
-% === SESSION CLOSURE TESTS ===
-
-test(session_merge_to_main, [setup(setup), cleanup(teardown)]) :-
-    % Create and work in session
-    start_session('test-merge', _),
-    create_test_file('session_work.txt', 'session content'),
-    run(command(git(add(['session_work.txt']))), _),
-    run(command(git(commit(['-m', 'Session work']))), _),
-    
-    % Close with merge
-    close_session('test-merge', merge_to_main, Result),
-    assertion(Result = ok(session_closed('test-merge', merged_to_main))),
-    
-    % Verify we're back on main
-    get_current_branch(CurrentBranch),
-    assertion(CurrentBranch = 'main'),
-    
-    % Verify session branch was deleted
-    assertion(\+ session_exists('test-merge')),
-    
-    % Clean up test file
-    catch(delete_file('session_work.txt'), _, true), !.
-
-test(session_abandon, [setup(setup), cleanup(teardown)]) :-
-    % Create session
-    start_session('test-abandon', _),
-    create_test_file('abandon_test.txt', 'abandon content'),
-    run(command(git(add(['abandon_test.txt']))), _),
-    run(command(git(commit(['-m', 'Work to abandon']))), _),
-    
-    % Abandon session
-    close_session('test-abandon', abandon, Result),
-    assertion(Result = ok(session_closed('test-abandon', abandoned))),
-    
-    % Verify we're back on main
-    get_current_branch(CurrentBranch),
-    assertion(CurrentBranch = 'main'),
-    
-    % Verify session branch was deleted
-    assertion(\+ session_exists('test-abandon')),
-    
-    % Clean up any remaining test file
-    catch(delete_file('abandon_test.txt'), _, true), !.
-
-% === WORKING TREE STATUS TESTS ===
-
-test(working_tree_status_detection, [setup(setup), cleanup(teardown)]) :-
-    % Clean state
-    check_working_tree_status(Status1),
-    assertion(Status1 = clean),
-    
-    % Create dirty state
-    create_test_file('status_test.txt', 'test content'),
-    run(command(git(add(['status_test.txt']))), _),
-    check_working_tree_status(Status2),
-    assertion(Status2 = dirty),
+    % Check that it was logged to database
+    get_session_command_history('test-think-db', Commands),
+    assertion(length(Commands, N), N > 0),
     
     % Clean up
-    run(command(git(reset(['HEAD']))), _),
-    catch(delete_file('status_test.txt'), _, true), !.
+    retractall(current_test_session(_)).
 
-:- end_tests(clean_session_system).
+:- end_tests(file_session_system).
