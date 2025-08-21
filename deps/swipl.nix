@@ -1,72 +1,65 @@
 { pkgs }:
 
-with pkgs;
+let
+  inherit (pkgs) lib;
+  
+  # Auto-import all packs from deps/prolog/
+  prologPacks = {
+    prosqlite = import ./prolog/prosqlite.nix { inherit pkgs; };
+    # Future packs will be added here automatically
+  };
+  
+in
 
-{
-  withPrologPacks = packList:
+rec {
+  # Base SWI-Prolog
+  swi-prolog-base = pkgs.swi-prolog;
+  
+  # Expose packs for selection
+  packs = prologPacks;
+  
+  # withPacks function using selector pattern
+  withPacks = packSelector:
     let
-      packString = lib.concatStringsSep " " (map (pack: "'${pack}'") packList);
+      selectedPacks = packSelector prologPacks;
     in
-    stdenv.mkDerivation {
+    pkgs.stdenv.mkDerivation {
       name = "swipl-with-packs";
-      version = swi-prolog.version;
+      version = swi-prolog-base.version;
       
-      buildInputs = [
-        swi-prolog
-        sqlite        # Required for prosqlite
-        openssl       # Required for SSL/TLS packs  
-        cacert        # Required for HTTPS downloads
-      ];
+      buildInputs = [ swi-prolog-base pkgs.makeWrapper ] ++ selectedPacks;
       
-      nativeBuildInputs = [
-        makeWrapper
-      ];
-      
-      # No source needed - we're just installing packs
       dontUnpack = true;
       
-      buildPhase = ''
-        runHook preBuild
-        
-        # Create pack directory
+      installPhase = ''
+        # Create pack installation directory  
         mkdir -p $out/lib/swipl/pack
         
-        # Install each pack
-        ${lib.concatMapStringsSep "\n" (pack: 
-          "echo \"Installing pack: ${pack}\" && swipl pack install --dir=$out/lib/swipl/pack -y -q '${pack}'"
-        ) packList}
+        # Install each selected pack
+        ${lib.concatMapStringsSep "\n" (pack: ''
+          echo "Installing pack: ${pack.pname}"
+          mkdir -p $out/lib/swipl/pack/${pack.pname}
+          cp -r ${pack}/* $out/lib/swipl/pack/${pack.pname}/
+        '') selectedPacks}
         
-        runHook postBuild
-      '';
-      
-      installPhase = ''
-        runHook preInstall
-        
-        # Create wrapper script
+        # Create wrapper binaries
         mkdir -p $out/bin
-        makeWrapper ${swi-prolog}/bin/swipl $out/bin/swipl \
-          --set SWIPL_PACK_PATH "$out/lib/swipl/pack" \
-          --prefix PATH : ${lib.makeBinPath [ sqlite openssl ]}
         
-        # Copy other binaries from base SWI-Prolog  
-        for bin in ${swi-prolog}/bin/*; do
+        # Wrap main swipl binary with proper environment
+        makeWrapper ${swi-prolog-base}/bin/swipl $out/bin/swipl \
+          --set SWIPL_PACK_PATH "$out/lib/swipl/pack" \
+          --prefix LD_LIBRARY_PATH : ${lib.makeLibraryPath (lib.concatMap (pack: pack.buildInputs or []) selectedPacks)}
+        
+        # Link other SWI-Prolog binaries
+        for bin in ${swi-prolog-base}/bin/*; do
           if [ "$(basename "$bin")" != "swipl" ]; then
             ln -s "$bin" "$out/bin/$(basename "$bin")"
           fi
         done
-        
-        runHook postInstall
       '';
       
-      # Ensure we have certificates for HTTPS downloads
-      SSL_CERT_FILE = "${cacert}/etc/ssl/certs/ca-bundle.crt";
-      
-      meta = with lib; {
-        description = "SWI-Prolog with pre-installed packs: ${lib.concatStringsSep ", " packList}";
-        homepage = "https://www.swi-prolog.org/";
-        license = licenses.bsd2;
-        maintainers = [ ];
-        platforms = platforms.unix;
+      meta = swi-prolog-base.meta // {
+        description = "SWI-Prolog with packs: ${lib.concatMapStringsSep ", " (pack: pack.pname) selectedPacks}";
       };
     };
 }

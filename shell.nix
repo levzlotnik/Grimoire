@@ -3,11 +3,11 @@
 let
   pyswip = import ./deps/pyswip.nix { inherit pkgs; };
   swipl = import ./deps/swipl.nix { inherit pkgs; };
-  swiplEnv = swipl.withPrologPacks [
-    "prosqlite"
-    "http"
-    "ssl"
-  ];
+  
+  # Python-style pack selection
+  swiplEnv = swipl.withPacks (p: with p; [
+    prosqlite
+  ]);
   python = pkgs.python313;
   pythonEnv = python.withPackages (
     p: with p; [

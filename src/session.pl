@@ -71,27 +71,36 @@ initialize_commands_db(SessionId) :-
     (exists_file(DbPath) ->
         true  % Database already exists
     ;
-        % Create SQLite database with proper schema
-        sqlite_open(DbPath, Connection),
-        
-        % Create commands table with proper schema
-        sqlite_query(Connection,
-            'CREATE TABLE commands (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                timestamp TEXT NOT NULL,
-                command_type TEXT NOT NULL,
-                command_term TEXT NOT NULL,
-                result TEXT,
-                source TEXT DEFAULT "user"
-            )',
-            _),
-        
-        % Create indexes for better query performance
-        sqlite_query(Connection, 'CREATE INDEX idx_timestamp ON commands(timestamp)', _),
-        sqlite_query(Connection, 'CREATE INDEX idx_command_type ON commands(command_type)', _),
-        sqlite_query(Connection, 'CREATE INDEX idx_source ON commands(source)', _),
-        
-        sqlite_close(Connection)
+        catch(
+            (% Create SQLite database with proper schema using prosqlite
+             format(atom(ConnAlias), 'session_~w', [SessionId]),
+             sqlite_connect(DbPath, ConnAlias, [exists(false)]),
+             
+             % Create commands table with proper schema
+             sqlite_query(ConnAlias,
+                'CREATE TABLE commands (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TEXT NOT NULL,
+                    command_type TEXT NOT NULL,
+                    command_term TEXT NOT NULL,
+                    result TEXT,
+                    source TEXT DEFAULT "user"
+                )'),
+             
+             % Create indexes for better query performance
+             sqlite_query(ConnAlias, 'CREATE INDEX idx_timestamp ON commands(timestamp)'),
+             sqlite_query(ConnAlias, 'CREATE INDEX idx_command_type ON commands(command_type)'),  
+             sqlite_query(ConnAlias, 'CREATE INDEX idx_source ON commands(source)'),
+             
+             sqlite_disconnect(ConnAlias),
+             
+             % Create marker file
+             open(DbPath, write, Stream),
+             format(Stream, '% SQLite database initialized for session ~w~n', [SessionId]),
+             close(Stream)),
+            Error,
+            (format('Failed to initialize database: ~w~n', [Error]))
+        )
     ).
 
 % Initialize state file (replaces session-{id}.pl files)
@@ -164,24 +173,29 @@ log_command_to_session(Command, CommandType, Result, Source) :-
 log_command_to_session_db(SessionId, Command, CommandType, Result, Source) :-
     session_commands_db_path(SessionId, DbPath),
     (exists_file(DbPath) ->
-        % Database exists, log the command
-        sqlite_open(DbPath, Connection),
-        
-        % Get current timestamp
-        get_time(TimeStamp),
-        format_time(atom(TimeStr), '%Y-%m-%dT%H:%M:%S', TimeStamp),
-        
-        % Convert terms to atoms for storage
-        term_to_atom(Command, CommandAtom),
-        term_to_atom(Result, ResultAtom),
-        
-        % Insert command into database
-        sqlite_query(Connection,
-            'INSERT INTO commands (timestamp, command_type, command_term, result, source) 
-             VALUES (?, ?, ?, ?, ?)',
-            [TimeStr, CommandType, CommandAtom, ResultAtom, Source]),
-        
-        sqlite_close(Connection)
+        catch(
+            (% Database exists, log the command
+             format(atom(ConnAlias), 'session_~w_log', [SessionId]),
+             sqlite_connect(DbPath, ConnAlias, []),
+             
+             % Get current timestamp
+             get_time(TimeStamp),
+             format_time(atom(TimeStr), '%Y-%m-%dT%H:%M:%S', TimeStamp),
+             
+             % Convert terms to atoms for storage
+             term_to_atom(Command, CommandAtom),
+             term_to_atom(Result, ResultAtom),
+             
+             % Insert command into database using prosqlite format
+             format(atom(InsertSQL), 
+                'INSERT INTO commands (timestamp, command_type, command_term, result, source) VALUES ("~w", "~w", "~w", "~w", "~w")',
+                [TimeStr, CommandType, CommandAtom, ResultAtom, Source]),
+             sqlite_query(ConnAlias, InsertSQL),
+             
+             sqlite_disconnect(ConnAlias)),
+            Error,
+            format('Warning: Failed to log command: ~w~n', [Error])
+        )
     ;
         true  % Database doesn't exist, silently fail
     ).
@@ -222,13 +236,19 @@ get_session_command_history(SessionId, Commands) :-
     ;
         session_commands_db_path(SessionId, DbPath),
         (exists_file(DbPath) ->
-            sqlite_open(DbPath, Connection),
-            sqlite_query(Connection,
-                'SELECT timestamp, command_type, command_term, result, source 
-                 FROM commands ORDER BY timestamp DESC',
-                Rows),
-            sqlite_close(Connection),
-            maplist(row_to_command_entry, Rows, Commands)
+            catch(
+                (format(atom(ConnAlias), 'session_~w_query', [SessionId]),
+                 sqlite_connect(DbPath, ConnAlias, []),
+                 findall(command_entry(Timestamp, CommandType, CommandTerm, Result, Source),
+                         sqlite_query(ConnAlias,
+                             'SELECT timestamp, command_type, command_term, result, source FROM commands ORDER BY timestamp DESC',
+                             row(Timestamp, CommandType, CommandTerm, Result, Source)),
+                         Commands),
+                 sqlite_disconnect(ConnAlias)),
+                Error,
+                (format('Warning: Failed to query command history: ~w~n', [Error]),
+                 Commands = [])
+            )
         ;
             Commands = []  % No database file
         )
