@@ -227,10 +227,12 @@ run(command(interface(test)), RetVal) :-
 run(command(interface(test(TestArgs))), RetVal) :-
     catch(
         (ensure_loaded('src/tests/run_tests.pl'), 
-         (member("--list", TestArgs) ->
-             (list_available_tests, RetVal = ok(tests_listed))
+         (member('--list', TestArgs) ->
+             (list_available_tests, 
+              RetVal = ok(tests_listed))
          ;
-             (run_specific_tests(TestArgs), RetVal = ok(tests_passed))
+             (run_specific_tests(TestArgs), 
+              RetVal = ok(tests_passed))
          ))
     ,
         Error,
