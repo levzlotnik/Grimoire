@@ -294,33 +294,40 @@ format_cli_result(ok(comprehensive_session_status(CurrentSession, WorkingStatus,
 % Format error results
 format_cli_result(error(session_not_found(SessionId))) :-
     !,
-    format('Error: Session "~w" not found. Use "grimoire session list" to see available sessions.~n', [SessionId]).
+    format('Error: Session "~w" not found. Use "grimoire session list" to see available sessions.~n', [SessionId]),
+    fail.
 
 format_cli_result(error(not_in_session_branch(Branch))) :-
     !,
-    format('Error: Not in a session branch (currently on "~w"). Use "grimoire session start" to create a session.~n', [Branch]).
+    format('Error: Not in a session branch (currently on "~w"). Use "grimoire session start" to create a session.~n', [Branch]),
+    fail.
 
 format_cli_result(error(failed_to_switch_to_session(GitResult))) :-
     !,
-    format('Error: Failed to switch to session. Git error: ~w~n', [GitResult]).
+    format('Error: Failed to switch to session. Git error: ~w~n', [GitResult]),
+    fail.
 
 % Format session validation errors
 format_cli_result(error(invalid_session_id(SessionId))) :-
     !,
-    format('Error: Invalid session ID "~w". Session IDs must be alphanumeric with dashes/underscores, 1-100 characters.~n', [SessionId]).
+    format('Error: Invalid session ID "~w". Session IDs must be alphanumeric with dashes/underscores, 1-100 characters.~n', [SessionId]),
+    fail.
 
 format_cli_result(error(not_in_git_repository)) :-
     !,
-    format('Error: Not in a Git repository. Sessions require a Git repository to function.~n', []).
+    format('Error: Not in a Git repository. Sessions require a Git repository to function.~n', []),
+    fail.
 
 % Format entity load errors
 format_cli_result(error(entity_load_failed(Entity, EntitySpec, Msg))) :-
     !,
-    format('Error: Failed to load entity "~w" (~w): ~w~n', [Entity, EntitySpec, Msg]).
+    format('Error: Failed to load entity "~w" (~w): ~w~n', [Entity, EntitySpec, Msg]),
+    fail.
 
 format_cli_result(error(Reason)) :-
     !,
-    format('Error: ~w~n', [Reason]).
+    format('Error: ~w~n', [Reason]),
+    fail.
 
 % Format command execution results
 format_cli_result(ok(result(Stdout, Stderr))) :-
