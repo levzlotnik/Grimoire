@@ -152,10 +152,10 @@ test(load_command_session_isolation, [setup(setup), cleanup(teardown)]) :-
     
     % First session file should contain load, second should not
     read_file_to_string(FilePath1, Content1, []),
-    assertion(string_concat(_, "load_entity", Content1)),
+    assertion(sub_string(Content1, _, _, _, "load_entity")),
     
     read_file_to_string(FilePath2, Content2, []),
-    assertion(\+ string_concat(_, "load_entity", Content2)).
+    assertion(\+ sub_string(Content2, _, _, _, "load_entity")).
 
 % === SESSION STATE FILE LIFECYCLE TESTS ===
 
