@@ -1,6 +1,8 @@
 % File-Based Session System Tests
 :- use_module(library(plunit)).
 :- use_module(library(uuid)).
+:- use_module(library(prosqlite)).
+:- use_module(library(readutil)).
 
 % Test suite for file-based session system
 :- begin_tests(file_session_system).
@@ -45,9 +47,10 @@ test(session_start_creates_workspace, [setup(setup), cleanup(teardown)]) :-
     session_workspace_path('test-workspace', WorkspacePath),
     assertion(exists_directory(WorkspacePath)),
     
-    % Verify database file exists
+    % Verify database file exists (prosqlite adds .sqlite extension)
     session_commands_db_path('test-workspace', DbPath),
-    assertion(exists_file(DbPath)),
+    format(atom(ActualDbPath), '~w.sqlite', [DbPath]),
+    assertion(exists_file(ActualDbPath)),
     
     % Verify state file exists
     session_state_file_path('test-workspace', StatePath),
@@ -63,10 +66,10 @@ test(think_command_with_atom_conversion, [setup(setup), cleanup(teardown)]) :-
     run(command(think(test_thought)), Result),
     assertion(Result = ok(thought_recorded("test_thought"))).
 
-test(session_history_placeholder, [setup(setup), cleanup(teardown)]) :-
-    % History command should return placeholder for now
+test(session_history_command, [setup(setup), cleanup(teardown)]) :-
+    % History command should return actual session history
     run(command(session(history)), Result),
-    assertion(Result = ok(session_history_placeholder)).
+    assertion(Result = ok(session_history(main, []))).
 
 test(commit_accumulated_placeholder, [setup(setup), cleanup(teardown)]) :-
     % Commit accumulated should work with string messages
@@ -86,7 +89,7 @@ test(commands_db_path_resolution, [setup(setup), cleanup(teardown)]) :-
     % Test commands database path resolution
     session_commands_db_path('test-session', DbPath),
     session_workspace_path('test-session', WorkspacePath),
-    format(atom(ExpectedDbPath), '~w/commands.db', [WorkspacePath]),
+    format(atom(ExpectedDbPath), '~w/commands', [WorkspacePath]),
     assertion(DbPath = ExpectedDbPath).
 
 test(state_file_path_resolution, [setup(setup), cleanup(teardown)]) :-
@@ -107,7 +110,7 @@ test(add_entity_load_to_session, [setup(setup), cleanup(teardown)]) :-
     
     % Check that state file contains the load
     session_state_file_path('test-entity-load', StatePath),
-    read_file_to_string(StatePath, Content),
+    read_file_to_string(StatePath, Content, []),
     assertion(sub_string(Content, _, _, _, 'load_entity(semantic(folder(test)))')).
 
 test(load_session_state_file, [setup(setup), cleanup(teardown)]) :-
@@ -132,15 +135,16 @@ test(database_schema_creation, [setup(setup), cleanup(teardown)]) :-
     % Test that database schema is created properly
     run(command(session(start('test-db-schema'))), _),
     
-    % Check database file exists
+    % Check database file exists (prosqlite adds .sqlite extension)
     session_commands_db_path('test-db-schema', DbPath),
-    assertion(exists_file(DbPath)),
+    format(atom(ActualDbPath), '~w.sqlite', [DbPath]),
+    assertion(exists_file(ActualDbPath)),
     
     % Verify schema by checking if we can query the commands table
     catch(
-        (sqlite_open(DbPath, Connection),
-         sqlite_query(Connection, 'SELECT name FROM sqlite_master WHERE type="table" AND name="commands"', [row('commands')]),
-         sqlite_close(Connection)),
+        (sqlite_connect(DbPath, test_schema_conn, []),
+         sqlite_query(test_schema_conn, 'SELECT name FROM sqlite_master WHERE type="table" AND name="commands"', row('commands')),
+         sqlite_disconnect(test_schema_conn)),
         Error,
         (format('Database schema test failed: ~w~n', [Error]), fail)
     ).
@@ -154,9 +158,9 @@ test(command_logging_to_database, [setup(setup), cleanup(teardown)]) :-
     
     % Verify command was logged
     session_commands_db_path('test-logging', DbPath),
-    sqlite_open(DbPath, Connection),
-    sqlite_query(Connection, 'SELECT COUNT(*) FROM commands WHERE command_type = "action"', [row(Count)]),
-    sqlite_close(Connection),
+    sqlite_connect(DbPath, test_logging_conn, []),
+    sqlite_query(test_logging_conn, 'SELECT COUNT(*) FROM commands WHERE command_type = "action"', row(Count)),
+    sqlite_disconnect(test_logging_conn),
     assertion(Count = 1).
 
 test(session_history_retrieval, [setup(setup), cleanup(teardown)]) :-
@@ -205,7 +209,8 @@ test(think_command_database_integration, [setup(setup), cleanup(teardown)]) :-
     
     % Check that it was logged to database
     get_session_command_history('test-think-db', Commands),
-    assertion(length(Commands, N), N > 0),
+    length(Commands, N),
+    assertion(N > 0),
     
     % Clean up
     retractall(current_test_session(_)).

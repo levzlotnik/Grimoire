@@ -42,10 +42,10 @@ session_workspace_path(SessionId, WorkspacePath) :-
     grimoire_root_directory(GrimoireRoot),
     format(atom(WorkspacePath), '~w/sessions/~w', [GrimoireRoot, SessionId]).
 
-% Commands database: workspace/commands.db
+% Commands database: workspace/commands.sqlite (prosqlite adds .sqlite automatically)
 session_commands_db_path(SessionId, DbPath) :-
     session_workspace_path(SessionId, WorkspacePath),
-    format(atom(DbPath), '~w/commands.db', [WorkspacePath]).
+    format(atom(DbPath), '~w/commands', [WorkspacePath]).
 
 % Session state file: workspace/state.pl
 session_state_file_path(SessionId, StatePath) :-
@@ -68,16 +68,16 @@ create_session_workspace(SessionId) :-
 % Initialize SQLite commands database with proper schema
 initialize_commands_db(SessionId) :-
     session_commands_db_path(SessionId, DbPath),
-    (exists_file(DbPath) ->
+    format(atom(ActualDbPath), '~w.sqlite', [DbPath]),
+    (exists_file(ActualDbPath) ->
         true  % Database already exists
     ;
         catch(
             (% Create SQLite database with proper schema using prosqlite
-             format(atom(ConnAlias), 'session_~w', [SessionId]),
-             sqlite_connect(DbPath, ConnAlias, [exists(false)]),
+             sqlite_connect(DbPath, session_init, [exists(false)]),
              
              % Create commands table with proper schema
-             sqlite_query(ConnAlias,
+             sqlite_query(session_init,
                 'CREATE TABLE commands (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     timestamp TEXT NOT NULL,
@@ -88,16 +88,13 @@ initialize_commands_db(SessionId) :-
                 )'),
              
              % Create indexes for better query performance
-             sqlite_query(ConnAlias, 'CREATE INDEX idx_timestamp ON commands(timestamp)'),
-             sqlite_query(ConnAlias, 'CREATE INDEX idx_command_type ON commands(command_type)'),  
-             sqlite_query(ConnAlias, 'CREATE INDEX idx_source ON commands(source)'),
+             sqlite_query(session_init, 'CREATE INDEX idx_timestamp ON commands(timestamp)'),
+             sqlite_query(session_init, 'CREATE INDEX idx_command_type ON commands(command_type)'),  
+             sqlite_query(session_init, 'CREATE INDEX idx_source ON commands(source)'),
              
-             sqlite_disconnect(ConnAlias),
+             sqlite_disconnect(session_init),
              
-             % Create marker file
-             open(DbPath, write, Stream),
-             format(Stream, '% SQLite database initialized for session ~w~n', [SessionId]),
-             close(Stream)),
+             true),
             Error,
             (format('Failed to initialize database: ~w~n', [Error]))
         )
@@ -172,10 +169,11 @@ log_command_to_session(Command, CommandType, Result, Source) :-
 % Log command to specific session database
 log_command_to_session_db(SessionId, Command, CommandType, Result, Source) :-
     session_commands_db_path(SessionId, DbPath),
-    (exists_file(DbPath) ->
+    format(atom(ActualDbPath), '~w.sqlite', [DbPath]),
+    (exists_file(ActualDbPath) ->
         catch(
             (% Database exists, log the command
-             format(atom(ConnAlias), 'session_~w_log', [SessionId]),
+             ConnAlias = session_log,
              sqlite_connect(DbPath, ConnAlias, []),
              
              % Get current timestamp
@@ -235,9 +233,10 @@ get_session_command_history(SessionId, Commands) :-
         Commands = []  % Main session has no accumulated commands
     ;
         session_commands_db_path(SessionId, DbPath),
-        (exists_file(DbPath) ->
+        format(atom(ActualDbPath), '~w.sqlite', [DbPath]),
+        (exists_file(ActualDbPath) ->
             catch(
-                (format(atom(ConnAlias), 'session_~w_query', [SessionId]),
+                (ConnAlias = session_query,
                  sqlite_connect(DbPath, ConnAlias, []),
                  findall(command_entry(Timestamp, CommandType, CommandTerm, Result, Source),
                          sqlite_query(ConnAlias,
