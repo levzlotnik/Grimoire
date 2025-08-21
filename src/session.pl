@@ -213,11 +213,28 @@ get_current_branch(Branch) :-
 
 check_working_tree_status(Status) :-
     run(command(git(status(['--porcelain']))), Result),
-    (Result = ok(result("", _)) ->
-        Status = clean
+    (Result = ok(result(Output, _)) ->
+        (has_tracked_file_changes(Output) ->
+            Status = dirty
+        ;
+            Status = clean
+        )
     ;
-        Status = dirty
+        % If git status fails, assume clean
+        Status = clean
     ).
+
+% Check if porcelain output contains tracked file changes (not just untracked files)
+has_tracked_file_changes("") :- !, fail.
+has_tracked_file_changes(Output) :-
+    string_lines(Output, Lines),
+    member(Line, Lines),
+    Line \= "",
+    % Porcelain format: XY filename
+    % X = index status, Y = working tree status
+    % ?? = untracked file (should be ignored)
+    % We care about any non-?? status
+    \+ string_concat("??", _, Line).
 
 % === SESSION OPERATIONS ===
 
