@@ -34,6 +34,11 @@ Grimoire is a knowledge-based operating system built on Entity-Component-System 
   - Atomic transaction execution with rollback support
   - Multi-transaction workflows within sessions
   - Clean integration with existing transaction system
+  - **Stateful Interface System**: Session-owned Prolog files for persistent entity state
+    - Entity loads persist across operations within sessions via `${GRIMOIRE_ROOT:-$HOME/.grimoire}/session-{uuid}.pl`
+    - Interface operations automatically load session state for stateful behavior
+    - Session isolation: different sessions maintain separate entity state
+    - CLI integration: `./grimoire load entity` persists entities for session-scoped access
 
 ### Filesystem Domain - Project Discovery
 - **Purpose**: Filesystem introspection and artifact discovery
@@ -93,12 +98,16 @@ The interface layer (`src/interface.pl`) provides a clean separation between the
 
 **Context-Aware Operation**: Auto-detect current working context and ensure local project loading
 
+**Stateful Session Integration**: Interface operations automatically load session state when in session context
+
 **Benefits**:
 - **Multi-Frontend Ready**: Same interface layer supports CLI, API, and MCP
 - **ECS Integration**: Interface commands follow established ECS patterns
 - **Context Awareness**: Automatically detects and loads local project semantics
 - **Structured Data**: Returns data structures, not formatted output
 - **Auto-Generated Usage**: CLI usage generated from ECS component definitions
+- **Session State Persistence**: Entity loads persist across operations within sessions
+- **Session Isolation**: Different sessions maintain separate interface state
 
 ## Entity Management System
 
@@ -193,11 +202,11 @@ Benefits:
 ## Current System Status
 
 **System State: Functional**
-- 66 tests passing across all subsystems
+- 94 tests passing across all subsystems
 - Core ECS architecture with knowledge locality
 - Spell system with multiple-solution perceive queries
-- Git-backed session management
-- Multi-frontend interface layer
+- Git-backed session management with stateful interface system
+- Multi-frontend interface layer with session-persistent entity state
 - 6 language templates with Nix-centric commands
 
 **CLI Commands:**
@@ -205,11 +214,12 @@ Benefits:
 - `./grimoire conjure "operation"` - Mutation operations
 - `./grimoire exec "query"` - Direct Prolog query execution
 - `./grimoire session switch/list/commit/rollback` - Transaction management
+- `./grimoire load entity` - Load entity into current session for persistent access
 - Domain queries work directly: `git(status(...))`, `session(current(...))`
 
 ### Completed Phases Overview
 
-**Phase 1-6 + Interface Layer Complete**: Foundation cleanup, Nix CLI mastery, testing infrastructure, simplified entity loading system, complete Nix-centric template revolution, Git-backed session system, and multi-frontend interface layer - **66 tests passing**
+**Phase 1-6 + Interface Layer + Stateful Sessions Complete**: Foundation cleanup, Nix CLI mastery, testing infrastructure, simplified entity loading system, complete Nix-centric template revolution, Git-backed session system, multi-frontend interface layer, and stateful interface session system - **94 tests passing**
 
 **All 6 Language Templates Complete**: Rust, Python, C++, Haskell (with full test suites), Lean4, MkDocs (templates appropriate to their domains)
 
@@ -218,7 +228,8 @@ Benefits:
 - Spell System: Fantasy-themed conjure/perceive with multiple-solution query capabilities
 - Session System: Git-backed sessions with transaction support and CLI management
 - Interface Layer: Multi-frontend system (`src/interface.pl`) with structured returns
-- CLI Tool: Context-aware `./grimoire` with `conjure`/`perceive`/`exec`/`session` commands
+- Stateful Interface Sessions: Entity loads persist across operations within sessions using session-owned Prolog files
+- CLI Tool: Context-aware `./grimoire` with `conjure`/`perceive`/`exec`/`session`/`load` commands
 - Templates: 6 language templates with Nix-centric commands and test coverage
 - Core Systems: git, nix, fs, project, session domains loaded and tested
 
@@ -548,6 +559,147 @@ execute(transaction(Commands), Result) :-
         (member(error(E), Results) -> Result = error(E) ; Result = ok(Results))
     ).
 ```
+
+## Stateful Interface Session System
+
+### Overview
+
+The stateful interface session system provides persistent entity state across operations within sessions using session-owned Prolog files. This enables workflows where entity loads persist for the duration of a session, providing a stateful context for interface operations.
+
+### Architecture
+
+**Session-Owned Prolog Files**: Each session creates a persistent state file at `${GRIMOIRE_ROOT:-$HOME/.grimoire}/session-{uuid}.pl` containing entity load directives.
+
+**Automatic State Loading**: Interface operations automatically load session state when operating within a session context.
+
+**Session Isolation**: Different sessions maintain completely separate entity state via independent state files.
+
+### Core Components
+
+#### Session State File Management
+
+```prolog
+% Session state file path resolution
+session_state_file_path(SessionId, FilePath) :-
+    session_storage_strategy(Strategy),
+    session_state_file_path(SessionId, Strategy, FilePath).
+
+% Global storage: ${GRIMOIRE_ROOT:-$HOME/.grimoire}/session-{uuid}.pl
+session_state_file_path(SessionId, global, FilePath) :-
+    grimoire_root_directory(GrimoireRoot),
+    format(atom(FileName), 'session-~w.pl', [SessionId]),
+    format(atom(FilePath), '~w/~w', [GrimoireRoot, FileName]).
+
+% Initialize empty session state file
+initialize_session_state_file(SessionId) :-
+    ensure_session_state_directory(SessionId),
+    session_state_file_path(SessionId, FilePath),
+    open(FilePath, write, Stream),
+    format(Stream, '% Session state file for session ~w~n', [SessionId]),
+    format(Stream, '% Auto-generated by Grimoire session system~n~n', []),
+    close(Stream).
+```
+
+#### Entity Loading with Session Persistence
+
+```prolog
+% Load entity into current session state
+load_entity_in_session(Entity) :-
+    get_current_session_id(SessionId),
+    entity_to_semantic_spec(Entity, EntitySpec),
+    % Validate that the entity exists before adding to session
+    (validate_entity_exists(Entity, EntitySpec) ->
+        (SessionId \= main ->
+            add_entity_load_to_session(SessionId, EntitySpec)
+        ;
+            true  % In main session, no persistent storage
+        )
+    ;
+        format(atom(ErrorMsg), 'Entity ~w not found', [Entity]),
+        throw(entity_load_failed(Entity, EntitySpec, ErrorMsg))
+    ).
+
+% Add entity load to session state file
+add_entity_load_to_session(SessionId, EntitySpec) :-
+    ensure_session_state_directory(SessionId),
+    session_state_file_path(SessionId, FilePath),
+    open(FilePath, append, Stream),
+    format(Stream, '% Entity loaded: ~w~n', [EntitySpec]),
+    format(Stream, ':- load_entity(~q).~n~n', [EntitySpec]),
+    close(Stream).
+```
+
+#### Interface Operation Integration
+
+```prolog
+% Interface operations automatically load session state
+run(command(interface(compt)), RetVal) :-
+    ensure_session_state_loaded,
+    current_entity(Entity),
+    interface_compt(Entity, Types),
+    RetVal = ok(component_types(Entity, Types)).
+
+% Ensure session state is loaded before interface operations
+ensure_session_state_loaded :-
+    get_current_session_id(SessionId),
+    (SessionId \= main ->
+        load_session_state_file(SessionId)
+    ;
+        true  % In main session, no persistent state to load
+    ).
+```
+
+### CLI Integration
+
+The `./grimoire load` command provides CLI access to the stateful interface system:
+
+```bash
+# Load entity into current session for persistent access
+./grimoire load system
+./grimoire load interface
+./grimoire load .
+
+# Entities persist across operations within the same session
+./grimoire compt system  # Uses loaded session state
+./grimoire comp system concept  # Uses loaded session state
+```
+
+### Session Workflow Example
+
+```prolog
+% Start a session
+?- start_session('my-work-session', Result).
+
+% Load entities for persistent access
+?- run(command(interface(load('system'))), LoadResult).
+% Session file now contains: :- load_entity(semantic(entity(system))).
+
+% Switch to another session temporarily
+?- start_session('temp-session', _).
+
+% Return to original session
+?- run(command(git(checkout(['session-my-work-session']))), _).
+
+% Interface operations automatically reload session state
+?- run(command(interface(compt)), Result).
+% Automatically loads session state including system entity
+
+% Close session with cleanup
+?- close_session('my-work-session', merge_to_main, _).
+% Session state file is cleaned up
+```
+
+### Testing
+
+The system includes comprehensive test coverage:
+
+- **Session State File Lifecycle**: Creation, persistence, and cleanup
+- **Entity Load Validation**: Proper error handling for non-existent entities
+- **Session Isolation**: Different sessions maintain separate state
+- **Interface Integration**: Automatic state loading in interface operations
+- **Semantic Specification Mapping**: Correct entity-to-semantic mappings
+
+All 94 tests pass, including 10 specific interface session integration tests that validate the complete stateful interface workflow.
 
 ### Key Design Benefits
 
