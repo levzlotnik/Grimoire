@@ -87,6 +87,35 @@ test_summary :-
     format('~n=== Test Suite Complete ===~n'),
     format('All core system tests PASSED ✓~n').
 
+% Run specific tests by ID
+run_specific_tests(TestArgs) :-
+    format('~n=== Running Specific Tests: ~w ===~n', [TestArgs]),
+    maplist(atom_string, TestAtoms, TestArgs),
+    run_tests(TestAtoms),
+    test_summary.
+
+% List all available test suites
+list_available_tests :-
+    format('~nAvailable test suites:~n'),
+    All_Tests = [
+        core_ecs,
+        git_semantics,
+        nix_semantics,
+        project_semantics,
+        integration_tests,
+        spell_system,
+        session_cli,
+        clean_session_system,
+        interface_session_integration,
+        template_instantiation,
+        rust_project_semantics,
+        cpp_project_semantics,
+        python_project_semantics,
+        haskell_project_semantics
+    ],
+    forall(member(Test, All_Tests), 
+           format('  ~w~n', [Test])).
+
 % Convenient alias
 :- multifile user:term_expansion/2.
 user:term_expansion((:- test), (:- run_all_tests)) :- !.

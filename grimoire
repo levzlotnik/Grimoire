@@ -101,9 +101,14 @@ handle_command(status, _) :-
     format_cli_result(Result).
 
 % Test command
-handle_command(test, _) :-
+handle_command(test, []) :-
     !,
     run(command(interface(test)), Result),
+    format_cli_result(Result).
+
+handle_command(test, TestArgs) :-
+    !,
+    run(command(interface(test(TestArgs))), Result),
     format_cli_result(Result).
 
 % Session commands
