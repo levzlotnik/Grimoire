@@ -223,6 +223,20 @@ run(command(interface(test)), RetVal) :-
         RetVal = error(tests_failed(Error))
     ).
 
+% Test command with specific test arguments
+run(command(interface(test(TestArgs))), RetVal) :-
+    catch(
+        (ensure_loaded('src/tests/run_tests.pl'), 
+         (TestArgs = ["--list"] ->
+             (list_available_tests, RetVal = ok(tests_listed))
+         ;
+             (run_specific_tests(TestArgs), RetVal = ok(tests_passed))
+         ))
+    ,
+        Error,
+        RetVal = error(tests_failed(Error))
+    ).
+
 % Session commands - forward to session.pl
 run(command(interface(session(Args))), RetVal) :-
     run(command(session(Args)), RetVal).
