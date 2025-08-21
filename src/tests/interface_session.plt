@@ -62,7 +62,7 @@ test(interface_operations_load_session_state, [setup(setup), cleanup(teardown)])
     % We can't directly test that load_session_state_file was called,
     % but we can test that the session context is maintained
     run(command(interface(compt)), Result),
-    assertion(Result = ok(component_types(_, _))).
+    assertion(Result = ok(component_types(_, _))), !.
 
 test(session_state_persistence_across_switches, [setup(setup), cleanup(teardown)]) :-
     % Start session and load entity
@@ -79,7 +79,7 @@ test(session_state_persistence_across_switches, [setup(setup), cleanup(teardown)
     % Session state should be reloaded
     % Test that interface operations work (implicitly loading session state)
     run(command(interface(status)), StatusResult),
-    assertion(StatusResult = ok(session_status(_))).
+    assertion(StatusResult = ok(session_status(_))), !.
 
 test(interface_commands_ensure_session_state, [setup(setup), cleanup(teardown)]) :-
     % Start session
@@ -94,7 +94,7 @@ test(interface_commands_ensure_session_state, [setup(setup), cleanup(teardown)])
     assertion(DocResult = ok(documentation(system, _))),
     
     run(command(interface(comp('system', 'concept'))), CompResult),
-    assertion(CompResult = ok(components(system, concept, _))).
+    assertion(CompResult = ok(components(system, concept, _))), !.
 
 % === LOAD COMMAND COMPREHENSIVE TESTS ===
 
@@ -111,7 +111,7 @@ test(load_command_semantic_spec_mapping, [setup(setup), cleanup(teardown)]) :-
     
     % Test entity name maps to entity semantic
     run(command(interface(load('nonexistent'))), EntityResult),
-    assertion(EntityResult = error(entity_load_failed(nonexistent, semantic(entity(nonexistent)), _))).
+    assertion(EntityResult = error(entity_load_failed(nonexistent, semantic(entity(nonexistent)), _))), !.
 
 test(load_command_existing_entity_handling, [setup(setup), cleanup(teardown)]) :-
     start_session('test-existing-entity', _),
@@ -122,7 +122,7 @@ test(load_command_existing_entity_handling, [setup(setup), cleanup(teardown)]) :
     
     % Loading interface entity should succeed
     run(command(interface(load('interface'))), InterfaceResult),
-    assertion(InterfaceResult = ok(entity_loaded(interface))).
+    assertion(InterfaceResult = ok(entity_loaded(interface))), !.
 
 test(load_command_error_types, [setup(setup), cleanup(teardown)]) :-
     start_session('test-error-types', _),
@@ -133,7 +133,7 @@ test(load_command_error_types, [setup(setup), cleanup(teardown)]) :-
     
     % Test path load failure
     run(command(interface(load('/nonexistent/path'))), BadPathResult),
-    assertion(BadPathResult = error(entity_load_failed('/nonexistent/path', semantic(folder('/nonexistent/path')), _))).
+    assertion(BadPathResult = error(entity_load_failed('/nonexistent/path', semantic(folder('/nonexistent/path')), _))), !.
 
 % === SESSION ISOLATION TESTS ===
 
@@ -155,7 +155,7 @@ test(load_command_session_isolation, [setup(setup), cleanup(teardown)]) :-
     assertion(sub_string(Content1, _, _, _, "load_entity")),
     
     read_file_to_string(FilePath2, Content2, []),
-    assertion(\+ sub_string(Content2, _, _, _, "load_entity")).
+    assertion(\+ sub_string(Content2, _, _, _, "load_entity")), !.
 
 % === SESSION STATE FILE LIFECYCLE TESTS ===
 
@@ -167,7 +167,7 @@ test(session_state_file_initialization, [setup(setup), cleanup(teardown)]) :-
     % File should exist and contain header
     assertion(exists_file(FilePath)),
     read_file_to_string(FilePath, Content, []),
-    assertion(string_concat("% Session state file for session init-test", _, Content)).
+    assertion(string_concat("% Session state file for session init-test", _, Content)), !.
 
 test(session_state_file_cleanup_on_closure, [setup(setup), cleanup(teardown)]) :-
     % Create session and load entity
@@ -187,7 +187,7 @@ test(session_state_file_cleanup_on_closure, [setup(setup), cleanup(teardown)]) :
     assertion(exists_file(AbandonPath)),
     
     close_session('abandon-cleanup-test', abandon, _),
-    assertion(\+ exists_file(AbandonPath)).
+    assertion(\+ exists_file(AbandonPath)), !.
 
 % === MAIN SESSION BEHAVIOR TESTS ===
 
@@ -203,6 +203,6 @@ test(main_session_no_persistence, [setup(setup), cleanup(teardown)]) :-
     
     % No session state file should be created for main
     session_state_file_path('main', MainPath),
-    assertion(\+ exists_file(MainPath)).
+    assertion(\+ exists_file(MainPath)), !.
 
 :- end_tests(interface_session_integration).

@@ -58,7 +58,7 @@ test(clean_to_new_session, [setup(setup), cleanup(teardown)]) :-
     
     % Verify session branch was created and we're on it
     get_current_branch(CurrentBranch),
-    assertion(CurrentBranch = 'session-test-new-session').
+    assertion(CurrentBranch = 'session-test-new-session'), !.
 
 test(clean_to_existing_session, [setup(setup), cleanup(teardown)]) :-
     % Create a session first
@@ -78,7 +78,7 @@ test(clean_to_existing_session, [setup(setup), cleanup(teardown)]) :-
     
     % Verify we're on the existing session branch
     get_current_branch(CurrentBranch),
-    assertion(CurrentBranch = 'session-test-existing').
+    assertion(CurrentBranch = 'session-test-existing'), !.
 
 % === PATTERN 2 TESTS: Dirty state → existing session ===
 
@@ -103,7 +103,7 @@ test(dirty_to_existing_session, [setup(setup), cleanup(teardown)]) :-
     assertion(Result = ok(session_started('test-dirty-existing', existing, dirty, direct_with_merge))),
     
     % Clean up test file
-    catch(delete_file('dirty_test.txt'), _, true).
+    catch(delete_file('dirty_test.txt'), _, true), !.
 
 % === PATTERN 3 TESTS: Dirty state → NEW session (via transition) ===
 
@@ -133,7 +133,7 @@ test(dirty_to_new_session_via_transition, [setup(setup), cleanup(teardown)]) :-
     assertion(BranchOutput \= ""),
     
     % Clean up test file
-    catch(delete_file('dirty_transition_test.txt'), _, true).
+    catch(delete_file('dirty_transition_test.txt'), _, true), !.
 
 % === SESSION MANAGEMENT TESTS ===
 
@@ -145,7 +145,7 @@ test(session_exists_check, [setup(setup), cleanup(teardown)]) :-
     start_session('test-exists', _),
     
     % Now should exist
-    assertion(session_exists('test-exists')).
+    assertion(session_exists('test-exists')), !.
 
 test(session_branch_naming, [setup(setup), cleanup(teardown)]) :-
     % Test session branch name generation
@@ -178,7 +178,7 @@ test(session_merge_to_main, [setup(setup), cleanup(teardown)]) :-
     assertion(\+ session_exists('test-merge')),
     
     % Clean up test file
-    catch(delete_file('session_work.txt'), _, true).
+    catch(delete_file('session_work.txt'), _, true), !.
 
 test(session_abandon, [setup(setup), cleanup(teardown)]) :-
     % Create session
@@ -199,7 +199,7 @@ test(session_abandon, [setup(setup), cleanup(teardown)]) :-
     assertion(\+ session_exists('test-abandon')),
     
     % Clean up any remaining test file
-    catch(delete_file('abandon_test.txt'), _, true).
+    catch(delete_file('abandon_test.txt'), _, true), !.
 
 % === WORKING TREE STATUS TESTS ===
 
@@ -216,6 +216,6 @@ test(working_tree_status_detection, [setup(setup), cleanup(teardown)]) :-
     
     % Clean up
     run(command(git(reset(['HEAD']))), _),
-    catch(delete_file('status_test.txt'), _, true).
+    catch(delete_file('status_test.txt'), _, true), !.
 
 :- end_tests(clean_session_system).
