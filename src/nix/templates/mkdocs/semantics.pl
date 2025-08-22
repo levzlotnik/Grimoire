@@ -14,7 +14,7 @@ component(mkdocs_template, language, markdown).
 component(mkdocs_template, paradigm, documentation).
 
 % Make this entity available as a command
-component(command, ctor, mkdocs_template).
+component(conjure, ctor, mkdocs_template).
 
 % Nix-provided subcommands (from flake apps)
 component(mkdocs_template, subcommand, build).

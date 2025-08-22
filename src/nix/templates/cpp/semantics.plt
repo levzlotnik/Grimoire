@@ -19,7 +19,7 @@ test(cpp_project_has_essentials) :-
     once(component(cpp_template, language, cpp)),
 
     % Verify command integration
-    once(component(command, ctor, cpp_template)).
+    once(component(conjure, ctor, cpp_template)).
 
 test(cpp_project_subcommands) :-
     once(load_entity(semantic(file('src/nix/templates/cpp/semantics.pl')))),

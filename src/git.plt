@@ -9,11 +9,11 @@ test(git_entity_exists, [true]) :-
 
 % Test Git command constructors
 test(git_command_constructors, [true]) :-
-    component(command, ctor, git(clone)), !,
-    component(command, ctor, git(init)), !,
-    component(command, ctor, git(add)), !,
-    component(command, ctor, git(commit)), !,
-    component(command, ctor, git(status)), !.
+    component(conjure, ctor, git(clone)), !,
+    component(conjure, ctor, git(init)), !,
+    component(conjure, ctor, git(add)), !,
+    component(conjure, ctor, git(commit)), !,
+    component(perceive, ctor, git(status)), !.
 
 % Test Git subcommand declarations
 test(git_subcommands, [true]) :-

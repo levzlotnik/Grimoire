@@ -12,7 +12,7 @@ component(cpp_template, build_system, nix).
 component(cpp_template, language, cpp).
 
 % Make this entity available as a command
-component(command, ctor, cpp_template).
+component(conjure, ctor, cpp_template).
 
 % Nix-provided subcommands (from flake apps)
 component(cpp_template, subcommand, run).

@@ -103,7 +103,7 @@ test(template_instantiation_rust, [cleanup(cleanup_test_project)]) :-
     % Test project creation
     TestProjectName = 'test_rust_project',
     catch(
-        run(conjure(mkproject(rust, TestProjectName)), Result),
+        cast(conjure(mkproject(rust, TestProjectName)), Result),
         Error,
         Result = error(caught_exception(Error))
     ), !,
@@ -149,7 +149,7 @@ test(template_instantiation_existing_project, [cleanup(cleanup_test_project)]) :
     load_entity(semantic(folder('src/project'))),
 
     % Try to create project that already exists
-    run(conjure(mkproject(rust, TestProjectName)), Result),
+    cast(conjure(mkproject(rust, TestProjectName)), Result),
 
     % Should fail with appropriate error
     assertion(Result = error(project_already_exists(ProjectPath))),
@@ -172,7 +172,7 @@ test(template_instantiation_invalid_template) :-
 
     % Try to create project with invalid template
     catch(
-        run(conjure(mkproject(nonexistent_template, 'test_project')), Result),
+        cast(conjure(mkproject(nonexistent_template, 'test_project')), Result),
         _Error,
         Result = error(template_instantiation_failed)
     ), !,

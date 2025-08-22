@@ -8,17 +8,17 @@
 
 setup :-
     % Ensure clean state before each test
-    catch(run(command(git(checkout(['main']))), _), _, true),
+    catch(cast(conjure(git(checkout(['main']))), _), _, true),
     cleanup_all_test_branches.
 
 teardown :-
     % Clean up after each test
-    catch(run(command(git(checkout(['main']))), _), _, true),
+    catch(cast(conjure(git(checkout(['main']))), _), _, true),
     cleanup_all_test_branches.
 
 cleanup_all_test_branches :-
     % Clean up any session or transition branches from tests
-    run(command(git(branch(['--format=%(refname:short)']))), BranchResult),
+    cast(conjure(git(branch(['--format=%(refname:short)']))), BranchResult),
     (BranchResult = ok(result(BranchOutput, _)) ->
         split_string(BranchOutput, '\n', '\n \t', BranchLines),
         include(is_test_branch, BranchLines, TestBranches),
@@ -32,7 +32,7 @@ is_test_branch(BranchName) :-
     string_concat("transition_branch/", _, BranchName).
 
 force_delete_branch(BranchName) :-
-    run(command(git(branch(['-D', BranchName]))), _).
+    cast(conjure(git(branch(['-D', BranchName]))), _).
 
 % === SESSION SUBCOMMAND TESTS ===
 
@@ -49,7 +49,7 @@ test(session_switch_nonexistent, [setup(setup), cleanup(teardown)]) :-
 
 test(session_status_command, [setup(setup), cleanup(teardown)]) :-
     % Test that session status can be called
-    run(command(interface(status)), Result),
+    cast(conjure(interface(status)), Result),
     !,
     assertion(Result = ok(session_status(_))).
 

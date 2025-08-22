@@ -9,8 +9,7 @@
 :- self_entity(session).
 entity(think).
 
-% Session commands
-component(command, ctor, session).
+% Session commands - removed legacy command ctor, using perceive/conjure below
 component(session, subcommand, start).
 component(session, subcommand, delete).
 component(session, subcommand, close).
@@ -30,13 +29,14 @@ component(conjure, ctor, session(close)).
 component(conjure, ctor, session(switch)).
 component(conjure, ctor, session(commit)).
 component(conjure, ctor, session(rollback)).
+component(conjure, ctor, session(commit_accumulated)).
 component(perceive, ctor, session(current)).
 component(perceive, ctor, session(list)).
 component(perceive, ctor, session(status)).
 component(perceive, ctor, session(history)).
 
-% Think command
-component(command, ctor, think).
+% Think command - conjure (state-changing: adds thought to session)
+component(conjure, ctor, think).
 
 % === CORE WORKSPACE PATHS ===
 
@@ -67,12 +67,12 @@ session_state_file_path(SessionId, StatePath) :-
 % === SESSION COMMAND IMPLEMENTATIONS ===
 
 % Start session without ID (generate UUID)
-run(command(session(start)), RetVal) :-
+cast(conjure(session(start)), RetVal) :-
     uuid(SessionId),
-    run(command(session(start(SessionId))), RetVal).
+    cast(conjure(session(start(SessionId))), RetVal).
 
 % Start session with specific ID
-run(command(session(start(SessionId))), RetVal) :-
+cast(conjure(session(start(SessionId))), RetVal) :-
     initialize_session_workspace(SessionId),
     initialize_session_database(SessionId),
     initialize_session_state_file(SessionId),
@@ -81,7 +81,7 @@ run(command(session(start(SessionId))), RetVal) :-
     RetVal = ok(session_started(SessionId)).
 
 % Delete session completely
-run(command(session(delete(SessionId))), RetVal) :-
+cast(conjure(session(delete(SessionId))), RetVal) :-
     session_workspace_path(SessionId, WorkspacePath),
     (exists_directory(WorkspacePath) ->
         delete_directory_and_contents(WorkspacePath),
@@ -91,29 +91,22 @@ run(command(session(delete(SessionId))), RetVal) :-
     ).
 
 % Show session history
-run(command(session(history)), RetVal) :-
+perceive(session(history(Commands))) :-
     get_current_session_id(SessionId),
-    get_session_command_history(SessionId, Commands),
-    (Commands = [] ->
-        RetVal = ok(no_commands)
-    ;
-        format('Session ~w command history:~n', [SessionId]),
-        maplist(print_command_entry, Commands),
-        RetVal = ok(history_shown(Commands))
-    ).
+    get_session_command_history(SessionId, Commands).
 
 % Commit accumulated commands (placeholder)
-run(command(session(commit_accumulated(Message))), RetVal) :-
+cast(conjure(session(commit_accumulated(Message))), RetVal) :-
     format('Committing accumulated commands: ~w~n', [Message]),
     RetVal = ok(commit_placeholder(Message)).
 
 % Think command implementations
-run(command(think(ThoughtString)), RetVal) :-
+cast(conjure(think(ThoughtString)), RetVal) :-
     string(ThoughtString),
     log_command_to_session(think, ThoughtString, thought_recorded),
     RetVal = ok(thought_recorded(ThoughtString)).
 
-run(command(think(ThoughtAtom)), RetVal) :-
+cast(conjure(think(ThoughtAtom)), RetVal) :-
     atom(ThoughtAtom),
     atom_string(ThoughtAtom, ThoughtString),
     log_command_to_session(think, ThoughtString, thought_recorded),
@@ -146,7 +139,7 @@ initialize_session_database(SessionId) :-
     
     % Create database using db creation command
     format(atom(SessionDbId), 'session_~w', [SessionId]),
-    run(command(db(create(SessionDbId, DbPath, schema(file(SchemaFile))))), _).
+    cast(conjure(db(create(SessionDbId, DbPath, schema(file(SchemaFile))))), _).
 
 % Initialize session state file
 initialize_session_state_file(SessionId) :-
@@ -351,7 +344,7 @@ close_session(SessionId, Strategy, Result) :-
 docstring(session, "File-based session system with SQLite command logging. Sessions accumulate commands in workspace directories with commands.db logs and state.pl files.").
 docstring(think, "Record reasoning/thought process. Takes a string argument for LLM audit trails.").
 
-docstring(command(session(start)),
+docstring(conjure(session(start)),
     {|string(_)||
     Start new session workspace.
     Creates session directory with commands.db, state.pl, and schema files.
@@ -360,7 +353,7 @@ docstring(command(session(start)),
     |}
 ).
 
-docstring(command(session(delete)),
+docstring(conjure(session(delete)),
     {|string(_)||
     Delete session workspace completely.
     Removes session directory and all associated files.
@@ -369,7 +362,7 @@ docstring(command(session(delete)),
     |}
 ).
 
-docstring(command(session(history)),
+docstring(perceive(session(history)),
     {|string(_)||
     Show command history for current session.
     Displays accumulated commands from session database.
@@ -377,7 +370,7 @@ docstring(command(session(history)),
     |}
 ).
 
-docstring(command(session(commit_accumulated)),
+docstring(conjure(session(commit_accumulated)),
     {|string(_)||
     Commit accumulated session commands (placeholder).
     Future implementation will handle command batching and persistence.
@@ -386,7 +379,7 @@ docstring(command(session(commit_accumulated)),
     |}
 ).
 
-docstring(command(think),
+docstring(conjure(think),
     {|string(_)||
     Record reasoning or thought process.
     Logs thoughts to current session for LLM audit trails.

@@ -12,7 +12,7 @@ component(python_template, build_system, nix).
 component(python_template, language, python).
 
 % Make this entity available as a command
-component(command, ctor, python_template).
+component(conjure, ctor, python_template).
 
 % Nix-provided subcommands (from flake apps)
 component(python_template, subcommand, run).

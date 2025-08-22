@@ -8,7 +8,7 @@ test(entity_declaration) :-
 test(component_relation) :-
     % Test component relationship
     load_entity(semantic(file('src/git.pl'))),
-    component(command, ctor, git), !.
+    component(conjure, ctor, git(init)), !.
 
 test(constructor_pattern) :-
     % Test constructor pattern

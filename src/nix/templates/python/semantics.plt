@@ -19,7 +19,7 @@ test(python_project_has_essentials) :-
     once(component(python_template, language, python)),
 
     % Verify command integration
-    once(component(command, ctor, python_template)).
+    once(component(conjure, ctor, python_template)).
 
 test(python_project_subcommands) :-
     once(load_entity(semantic(file('src/nix/templates/python/semantics.pl')))),

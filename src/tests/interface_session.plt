@@ -7,7 +7,7 @@
 
 % Helper function for starting sessions in tests
 start_session(SessionId, Result) :-
-    run(command(session(start(SessionId))), Result).
+    cast(conjure(session(start(SessionId))), Result).
 
 % === SETUP AND CLEANUP ===
 
@@ -29,7 +29,7 @@ cleanup_test_sessions :-
     maplist(cleanup_session, SessionIds).
 
 cleanup_session(SessionId) :-
-    catch(run(command(session(delete(SessionId))), _), _, true).
+    catch(cast(conjure(session(delete(SessionId))), _), _, true).
 
 % Define all test session IDs
 test_session_id('test-interface-loading').
@@ -55,16 +55,16 @@ safe_delete_file(File) :-
 test(interface_operations_load_session_state, [setup(setup), cleanup(teardown)]) :-
     % Start session and load an entity
     start_session('test-interface-loading', _),
-    run(command(interface(load('system'))), _),
+    cast(conjure(interface(load('system'))), _),
     
     % Interface operations should work in the session context
-    run(command(interface(compt)), Result),
+    cast(conjure(interface(compt)), Result),
     assertion(Result = ok(component_types(_, _))), !.
 
 test(session_state_persistence_in_workspace, [setup(setup), cleanup(teardown)]) :-
     % Start session and load entity
     start_session('test-persistence-switch', _),
-    run(command(interface(load('system'))), LoadResult1),
+    cast(conjure(interface(load('system'))), LoadResult1),
     assertion(LoadResult1 = ok(entity_loaded(system))),
     
     % Verify session state was persisted to file
@@ -74,7 +74,7 @@ test(session_state_persistence_in_workspace, [setup(setup), cleanup(teardown)]) 
     assertion(sub_string(Content, _, _, _, 'load_entity')),
     
     % Interface operations should work with the loaded state
-    run(command(interface(status)), StatusResult),
+    cast(conjure(interface(status)), StatusResult),
     assertion(StatusResult = ok(session_status(_))), !.
 
 test(interface_commands_ensure_session_state, [setup(setup), cleanup(teardown)]) :-
@@ -83,13 +83,13 @@ test(interface_commands_ensure_session_state, [setup(setup), cleanup(teardown)])
 
     % All interface commands should call ensure_session_state_loaded
     % Test various interface commands work correctly in session context
-    run(command(interface(compt)), ComptResult),
+    cast(conjure(interface(compt)), ComptResult),
     assertion(ComptResult = ok(component_types(_, _))),
 
-    run(command(interface(doc('system'))), DocResult),
+    cast(conjure(interface(doc('system'))), DocResult),
     assertion(DocResult = ok(documentation(system, _))),
 
-    run(command(interface(comp('system', 'concept'))), CompResult),
+    cast(conjure(interface(comp('system', 'concept'))), CompResult),
     assertion(CompResult = ok(components(system, concept, _))), !.
 
 % === LOAD COMMAND COMPREHENSIVE TESTS ===
@@ -98,37 +98,37 @@ test(load_command_semantic_spec_mapping, [setup(setup), cleanup(teardown)]) :-
     start_session('test-semantic-mapping', _),
 
     % Test current directory maps to folder semantic
-    run(command(interface(load('.'))), DotResult),
+    cast(conjure(interface(load('.'))), DotResult),
     assertion(DotResult = error(entity_load_failed('.', semantic(folder(.)), _))),
 
     % Test path with slash maps to folder semantic
-    run(command(interface(load('/tmp'))), PathResult),
+    cast(conjure(interface(load('/tmp'))), PathResult),
     assertion(PathResult = error(entity_load_failed('/tmp', semantic(folder('/tmp')), _))),
 
     % Test entity name maps to entity semantic
-    run(command(interface(load('nonexistent'))), EntityResult),
+    cast(conjure(interface(load('nonexistent'))), EntityResult),
     assertion(EntityResult = error(entity_load_failed(nonexistent, semantic(entity(nonexistent)), _))), !.
 
 test(load_command_existing_entity_handling, [setup(setup), cleanup(teardown)]) :-
     start_session('test-existing-entity', _),
 
     % Loading existing entity should succeed
-    run(command(interface(load('system'))), SystemResult),
+    cast(conjure(interface(load('system'))), SystemResult),
     assertion(SystemResult = ok(entity_loaded(system))),
 
     % Loading interface entity should succeed
-    run(command(interface(load('interface'))), InterfaceResult),
+    cast(conjure(interface(load('interface'))), InterfaceResult),
     assertion(InterfaceResult = ok(entity_loaded(interface))), !.
 
 test(load_command_error_types, [setup(setup), cleanup(teardown)]) :-
     start_session('test-error-types', _),
 
     % Test entity_load_failed error
-    run(command(interface(load('bad_entity'))), BadEntityResult),
+    cast(conjure(interface(load('bad_entity'))), BadEntityResult),
     assertion(BadEntityResult = error(entity_load_failed(bad_entity, semantic(entity(bad_entity)), _))),
 
     % Test path load failure
-    run(command(interface(load('/nonexistent/path'))), BadPathResult),
+    cast(conjure(interface(load('/nonexistent/path'))), BadPathResult),
     assertion(BadPathResult = error(entity_load_failed('/nonexistent/path', semantic(folder('/nonexistent/path')), _))), !.
 
 % === SESSION ISOLATION TESTS ===
@@ -136,7 +136,7 @@ test(load_command_error_types, [setup(setup), cleanup(teardown)]) :-
 test(load_command_session_isolation, [setup(setup), cleanup(teardown)]) :-
     % Start first session and load entity
     start_session('isolation-session-1', _),
-    run(command(interface(load('system'))), _),
+    cast(conjure(interface(load('system'))), _),
     session_state_file_path('isolation-session-1', FilePath1),
 
     % Start second session - should have separate state
@@ -168,7 +168,7 @@ test(session_state_file_initialization, [setup(setup), cleanup(teardown)]) :-
 test(session_state_file_cleanup_on_closure, [setup(setup), cleanup(teardown)]) :-
     % Create session and load entity
     start_session('cleanup-test', _),
-    run(command(interface(load('system'))), _),
+    cast(conjure(interface(load('system'))), _),
     session_state_file_path('cleanup-test', FilePath),
     assertion(exists_file(FilePath)),
 
@@ -178,7 +178,7 @@ test(session_state_file_cleanup_on_closure, [setup(setup), cleanup(teardown)]) :
 
     % Test abandon cleanup too
     start_session('abandon-cleanup-test', _),
-    run(command(interface(load('system'))), _),
+    cast(conjure(interface(load('system'))), _),
     session_state_file_path('abandon-cleanup-test', AbandonPath),
     assertion(exists_file(AbandonPath)),
 
@@ -193,7 +193,7 @@ test(main_session_no_persistence, [setup(setup), cleanup(teardown)]) :-
     assertion(SessionId = main),
 
     % Load in main session should succeed but not create files
-    run(command(interface(load('system'))), MainResult),
+    cast(conjure(interface(load('system'))), MainResult),
     assertion(MainResult = ok(entity_loaded(system))),
 
     % No session state file should be created for main

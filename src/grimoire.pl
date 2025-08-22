@@ -7,6 +7,7 @@
 :- dynamic execute/2.   % execute(Transaction, Status)
 :- dynamic([run/2], [discontiguous(true), multifile(true)]).       % run(Command, RetVal)
 :- dynamic([perceive/1], [discontiguous(true), multifile(true)]).  % perceive(Query)
+:- dynamic([cast/2], [discontiguous(true), multifile(true)]).      % cast(Spell, RetVal)
 
 % The most fundamental entity
 :- self_entity(system).
@@ -173,16 +174,15 @@ docstring(perceive,
       - perceive(nix(flake(show(Apps, Packages, DevShells))))
     |}).
 
-% Legacy command entity for backwards compatibility during transition
-entity(command).
-component(command, ctor, shell).
-component(command, ctor, mkdir).
-component(command, ctor, mkfile).
-component(command, ctor, edit_file).
-component(command, ctor, executable_program).
-component(command, ctor, session).
+% Conjure constructors (state-changing operations)
+component(conjure, ctor, shell).
+component(conjure, ctor, mkdir).
+component(conjure, ctor, mkfile).
+component(conjure, ctor, edit_file).
+component(conjure, ctor, executable_program).
 
 % Dynamic docstring for run based on command type
+% Legacy docstring support - remove after transition
 docstring(run(command(Command)), Doc) :-
     functor(Command, Type, _),
     docstring(Type, CmdDoc),
@@ -199,18 +199,18 @@ docstring(run(command(Command)), Doc) :-
     |}.
 
 
-docstring(command(executable_program),
+docstring(conjure(executable_program),
     {|string(_)||
     Executes a program with arguments.
     Format:
-      command(executable_program(Program, Args))           % Capture output mode
-      command(executable_program(Program, Args, interactive)) % Interactive mode
+      conjure(executable_program(Program, Args))           % Capture output mode
+      conjure(executable_program(Program, Args, interactive)) % Interactive mode
     Program is the executable path or name
     Args is a list of arguments
     |}
 ).
 
-run(command(executable_program(Program, Args)), RetVal) :-
+cast(conjure(executable_program(Program, Args)), RetVal) :-
     % Non-interactive mode - capture output and exit code
     setup_call_cleanup(
         process_create(
@@ -232,7 +232,7 @@ run(command(executable_program(Program, Args)), RetVal) :-
         RetVal = error(process_error(Program, exit(ExitCode), Stdout, Stderr))
     ).
 
-run(command(executable_program(Program, Args, interactive)), RetVal) :-
+cast(conjure(executable_program(Program, Args, interactive)), RetVal) :-
     % Interactive mode - pass through stdin/stdout
     setup_call_cleanup(
         process_create(
@@ -245,29 +245,29 @@ run(command(executable_program(Program, Args, interactive)), RetVal) :-
     ),
     RetVal = ok("Interactive program completed").
 
-docstring(command(shell),
+docstring(conjure(shell),
     {|string(_)||
     Executes a shell command with arguments.
     Format:
-      command(shell(Args))           % Capture output mode
-      command(shell(Args, interactive)) % Interactive mode
+      conjure(shell(Args))           % Capture output mode
+      conjure(shell(Args, interactive)) % Interactive mode
     Args is a list of strings that will be properly escaped.
     Equivalent to: executable_program(path(sh), ["-c", JoinedArgs])
     where JoinedArgs is the properly escaped and joined argument list.
     |}
 ).
 
-run(command(shell(Args)), RetVal) :-
+cast(conjure(shell(Args)), RetVal) :-
     join_args(Args, JoinedArgs),
-    run(
-        command(executable_program(path(sh), ["-c", JoinedArgs])),
+    cast(
+        conjure(executable_program(path(sh), ["-c", JoinedArgs])),
         RetVal
     ).
 
-run(command(shell(Args, interactive)), RetVal) :-
+cast(conjure(shell(Args, interactive)), RetVal) :-
     join_args(Args, JoinedArgs),
-    run(
-        command(executable_program(path(sh), ["-c", JoinedArgs], interactive)),
+    cast(
+        conjure(executable_program(path(sh), ["-c", JoinedArgs], interactive)),
         RetVal
     ).
 
@@ -279,10 +279,10 @@ join_args(Args, Cmd) :-
 shell_quote(Arg, Quoted) :-
     format(string(Quoted), "'~w'", [Arg]).
 
-docstring(command(mkdir),
+docstring(conjure(mkdir),
     {|string(_)||
     Creates a directory and initializes its semantic tracking.
-    Format: command(mkdir(Path)).
+    Format: conjure(mkdir(Path)).
     - Creates directory at Path
     - Creates semantics.pl inside it
     - Initializes directory entity in semantics.pl
@@ -290,9 +290,9 @@ docstring(command(mkdir),
     |}
 ).
 
-run(command(mkdir(Path)), RetVal) :-
+cast(conjure(mkdir(Path)), RetVal) :-
     % Create directory
-    run(command(shell({|string(Path)||mkdir -p '{Path}'|})), RetVal),
+    cast(conjure(shell({|string(Path)||mkdir -p '{Path}'|})), RetVal),
     % Initialize semantics.pl with proper module
     directory_file_path(Path, "semantics.pl", SemanticsFile),
     InitContent = {|string(Path)||
@@ -310,7 +310,7 @@ run(command(mkdir(Path)), RetVal) :-
     directory_file_path(Parent, _, Path),
     directory_file_path(Parent, "semantics.pl", ParentSemantic),
     (exists_file(ParentSemantic) ->
-        run(command(edit_file(file(ParentSemantic), [
+        cast(conjure(edit_file(file(ParentSemantic), [
             append({|string(Path)||
             entity(folder('{Parent}')).
             component(folder('{Parent}'), subfolder, folder('{Path}')).
@@ -318,23 +318,23 @@ run(command(mkdir(Path)), RetVal) :-
         ])), _)
     ; true).
 
-docstring(command(mkfile),
+docstring(conjure(mkfile),
     {|string(_)||
     Creates a file and updates semantic relationships.
-    Format: command(mkfile(Path)).
+    Format: conjure(mkfile(Path)).
     - Creates empty file at Path
     - If parent dir has semantics.pl, adds file as a component
     |}
 ).
 
-run(command(mkfile(Path)), RetVal) :-
+cast(conjure(mkfile(Path)), RetVal) :-
     % Create empty file
     write_file(Path, ""),
     % Update parent semantics if exists
     directory_file_path(Parent, Name, Path),
     directory_file_path(Parent, "semantics.pl", ParentSemantic),
     (exists_file(ParentSemantic) ->
-        run(command(edit_file(file(ParentSemantic), [
+        cast(conjure(edit_file(file(ParentSemantic), [
             append({|string(Parent,Name)||
             entity(folder('{Parent}')).
             component(folder('{Parent}'), file, file('{Name}')).
@@ -343,17 +343,17 @@ run(command(mkfile(Path)), RetVal) :-
     ; true),
     RetVal = ok("").
 
-docstring(command(edit_file), S) :-
+docstring(conjure(edit_file), S) :-
     make_ctors_docstring(edit_file, SubCmdsDoc),
     S = {|string(SubCmdsDoc)||
     Applies edits to a file.
-    Format: command(edit_file(file(Path), [Edit1, Edit2, ...])).
+    Format: conjure(edit_file(file(Path), [Edit1, Edit2, ...])).
 
     Edit terms:
     {SubCmdsDoc}
     |}.
 
-run(command(edit_file(file(Path), Edits)), RetVal) :-
+cast(conjure(edit_file(file(Path), Edits)), RetVal) :-
     read_file_to_lines(Path, Lines),
     maplist(validate_edit, Edits),
     apply_edits(Edits, Lines, NewLines),
@@ -445,14 +445,12 @@ docstring(cast,
       - cast(ritual([mkdir('dir'), mkfile('dir/file')]), Result)
     |}).
 
-cast(conjure(Operation), RetVal) :-
-    % Cast a single conjuration spell
-    run(command(Operation), RetVal).
+% Remove this dispatcher - let individual files handle cast(conjure(...)) directly
 
 cast(ritual(Operations), RetVal) :-
     % Cast multiple conjuration spells as a ritual (atomic transaction)
-    maplist([Op, command(Op)]>>true, Operations, Commands),
-    execute(transaction(Commands), RetVal).
+    maplist(cast, Operations, Results),
+    RetVal = ok(Results).
 
 execute_commands([], []).
 execute_commands([Cmd|Rest], [Res|Results]) :-
@@ -519,26 +517,26 @@ docstring(list_mounted_semantics,
 ).
 
 % Update mkdir/mkfile to support options
-run(command(mkdir(Path, Options)), RetVal) :-
-    run(command(mkdir(Path)), RetVal),
+cast(conjure(mkdir(Path, Options)), RetVal) :-
+    cast(conjure(mkdir(Path)), RetVal),
     % Auto git-add if we're in a repo and not disabled
     (option(git(false), Options) ->
         true
     ;
         is_git_directory(Path) ->
-            run(command(git(add([Path]))), _)
+            cast(conjure(git(add([Path]))), _)
         ;
         true
     ).
 
-run(command(mkfile(Path, Options)), RetVal) :-
-    run(command(mkfile(Path)), RetVal),
+cast(conjure(mkfile(Path, Options)), RetVal) :-
+    cast(conjure(mkfile(Path)), RetVal),
     % Auto git-add if we're in a repo and not disabled
     (option(git(false), Options) ->
         true
     ;
         is_git_directory(Path) ->
-            run(command(git(add([Path]))), _)
+            cast(conjure(git(add([Path]))), _)
         ;
         true
     ).

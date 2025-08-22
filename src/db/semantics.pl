@@ -55,18 +55,18 @@ registered_db_column(database(Db), column(TableName, ColumnName, ColumnInfo)) :-
 
 % === COMMAND SYSTEM ===
 
-% Database command constructor
-component(command, ctor, db).
+% Database conjure constructor (state-changing)
+component(conjure, ctor, db(create)).
 component(db, subcommand, create).
 
 % Create database from schema file
-run(command(db(create(DbId, DbPath, schema(file(SchemaFile))))), RetVal) :-
+cast(conjure(db(create(DbId, DbPath, schema(file(SchemaFile))))), RetVal) :-
     sqlite3_init_db(DbPath, SchemaFile),
     assertz(registered_db(database(DbId), data(file(DbPath)), schema(file(SchemaFile)))),
     RetVal = ok(database_created(DbId, DbPath)).
 
 % Create database from SQL string (creates schema file)
-run(command(db(create(DbId, DbPath, schema(sql(SchemaSQL))))), RetVal) :-
+cast(conjure(db(create(DbId, DbPath, schema(sql(SchemaSQL))))), RetVal) :-
     % Extract database base name and create schema file
     file_name_extension(DbBaseName, db, DbPath),
     format(atom(SchemaFile), '~w.schema.sql', [DbBaseName]),
@@ -82,11 +82,11 @@ run(command(db(create(DbId, DbPath, schema(sql(SchemaSQL))))), RetVal) :-
 
 docstring(db, "Database entity system with reverse proxy predicating. Register databases with registered_db(database(UniqueId), data(file(DbPath)), schema(file(SchemaPath))) to enable components").
 
-docstring(command(db(create)),
+docstring(conjure(db(create)),
     {|string(_)||
     Create SQLite database with schema.
     Creates a .db file and corresponding .schema.sql file.
-    Format: command(db(create(DbId, DbPath, schema(file(SchemaFile)|sql(SchemaSQL))))).
+    Format: conjure(db(create(DbId, DbPath, schema(file(SchemaFile)|sql(SchemaSQL))))).
         DbId - unique database identifier for ECS registration
         DbPath - path to .db file (must end with .db extension)
         schema(file(SchemaFile)) - path to existing .sql schema file

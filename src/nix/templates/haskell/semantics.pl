@@ -12,7 +12,7 @@ component(haskell_template, build_system, nix).  % Changed from stack/cabal to n
 component(haskell_template, language, haskell).
 
 % Make this entity available as a command
-component(command, ctor, haskell_template).
+component(conjure, ctor, haskell_template).
 
 % Nix-provided subcommands (from flake apps)
 component(haskell_template, subcommand, build).

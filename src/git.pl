@@ -3,7 +3,7 @@
 % Git entity declaration with automatic self-location
 :- self_entity(git).
 
-component(command, ctor, git).
+% Removed legacy command ctor - using perceive/conjure above
 component(git, subcommand, clone).
 component(git, subcommand, init).
 component(git, subcommand, add).
@@ -38,10 +38,9 @@ component(perceive, ctor, git(log)).
 component(perceive, ctor, git(branch)).
 component(perceive, ctor, git(rev_parse)).
 
-% Legacy support - mark those as ctors:
+% Legacy support - keep git namespace ctors:
 component(git, ctor, C) :- component(git, subcommand, C).
-% Make these available to top level command for backwards compatibility:
-component(command, ctor, git(C)) :- component(git, subcommand, C).
+% Removed command ctor compatibility - using perceive/conjure above
 
 % Git command docstrings
 docstring(git(clone),
@@ -204,12 +203,22 @@ run(command(git(Term)), RetVal) :-
         RetVal
     ).
 
+% Git conjure implementations
+cast(conjure(git(Term)), RetVal) :-
+    % Just validate the subcommand type exists
+    functor(Term, SubCmdType, _),
+    component(git, subcommand, SubCmdType),
+    % Convert to shell args
+    phrase(git_args(Term), Args),
+    % Execute
+    cast(conjure(executable_program(path(git), Args)), RetVal).
+
 % === PERCEIVE PREDICATES - Structured Git Queries ===
 
 % Git status perception - parse status into structured data
 perceive(git(status(Branch, WorkingStatus, Files))) :-
     % Get current branch
-    run(command(git(branch(['--show-current']))), BranchResult),
+    cast(conjure(git(branch(['--show-current']))), BranchResult),
     (BranchResult = ok(result(BranchOutput, _)) ->
         string_concat(BranchStr, "\n", BranchOutput),
         atom_string(Branch, BranchStr)
@@ -217,7 +226,7 @@ perceive(git(status(Branch, WorkingStatus, Files))) :-
         Branch = unknown
     ),
     % Get working tree status
-    run(command(git(status(['--porcelain']))), StatusResult),
+    cast(conjure(git(status(['--porcelain']))), StatusResult),
     (StatusResult = ok(result(StatusOutput, _)) ->
         (StatusOutput = "" ->
             WorkingStatus = clean,

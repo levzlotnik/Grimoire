@@ -37,14 +37,20 @@ component(perceive, ctor, nix(log)).
 component(perceive, ctor, nix(why_depends)).
 
 % Legacy command constructors (for backwards compatibility)
-component(command, ctor, nix(build)).
-component(command, ctor, nix(develop)).
-component(command, ctor, nix(flake)).
-component(command, ctor, nix(run)).
-component(command, ctor, nix(search)).
-component(command, ctor, nix(store)).
-component(command, ctor, nix(log)).
-component(command, ctor, nix(why_depends)).
+% Conjure constructors (state-changing operations)
+component(conjure, ctor, nix(build)).
+component(conjure, ctor, nix(develop)).
+component(conjure, ctor, nix(run)).
+component(conjure, ctor, nix(flake(new))).
+component(conjure, ctor, nix(store(gc))).
+component(conjure, ctor, nix(store(repair))).
+component(conjure, ctor, nix(store(optimise))).
+
+% Perceive constructors (read-only operations)
+component(perceive, ctor, nix(search)).
+component(perceive, ctor, nix(log)).
+component(perceive, ctor, nix(why_depends)).
+component(perceive, ctor, nix(flake(show))).
 
 % Store relationships
 component(nix(store), contains, nix(derivation)).
@@ -223,13 +229,13 @@ docstring(nix(search),
     |}
 ).
 
-run(command(nix(search(Query))), RetVal) :-
-    run(command(nix(search(nixpkgs, Query))), RetVal).
+perceive(nix(search(Query, Results))) :-
+    perceive(nix(search(nixpkgs, Query, Results))).
 
-run(command(nix(search(Flake, Query))), RetVal) :-
+perceive(nix(search(Flake, Query, Results))) :-
     format(atom(FlakeQuery), '~w#~w', [Flake, Query]),
     Args = ["nix", "search", FlakeQuery],
-    run(command(shell(Args)), RetVal).
+    cast(conjure(shell(Args)), ok(result(Results, _))).
 
 % Run command
 docstring(nix(run),
@@ -241,13 +247,13 @@ docstring(nix(run),
     |}
 ).
 
-run(command(nix(run(Installable))), RetVal) :-
+cast(conjure(nix(run(Installable))), RetVal) :-
     Args = ["nix", "run", Installable],
-    run(command(shell(Args, interactive)), RetVal).
+    cast(conjure(shell(Args, interactive)), RetVal).
 
-run(command(nix(run(Installable, AppArgs))), RetVal) :-
+cast(conjure(nix(run(Installable, AppArgs))), RetVal) :-
     flatten([["nix", "run", Installable, "--"], AppArgs], Args),
-    run(command(shell(Args, interactive)), RetVal).
+    cast(conjure(shell(Args, interactive)), RetVal).
 
 % Command docstrings
 docstring(nix(build),
@@ -263,18 +269,18 @@ docstring(nix(build),
 ).
 
 % Command implementations
-run(command(nix(build(Installable))), RetVal) :-
+cast(conjure(nix(build(Installable))), RetVal) :-
     Args = ["nix", "build", Installable],
-    run(command(shell(Args)), RetVal),
+    cast(conjure(shell(Args)), RetVal),
     % Track built derivation
     (RetVal = ok(Output) ->
         assert(entity(nix(derivation(Output)))),
         assert(component(build_result, output_path, Output))
     ; true).
 
-run(command(nix(build(Installable, Options))), RetVal) :-
+cast(conjure(nix(build(Installable, Options))), RetVal) :-
     flatten([["nix", "build", Installable], Options], Args),
-    run(command(shell(Args)), RetVal).
+    cast(conjure(shell(Args)), RetVal).
 
 % Store commands
 entity(nix(store)).
@@ -290,17 +296,21 @@ docstring(nix(store),
     |}
 ).
 
-run(command(nix(store(gc))), RetVal) :-
+docstring(nix(store(gc)), "Garbage collect unused store paths").
+docstring(nix(store(repair)), "Repair corrupted store paths").  
+docstring(nix(store(optimise)), "Optimize store by hardlinking identical files").
+
+cast(conjure(nix(store(gc))), RetVal) :-
     Args = ["nix", "store", "gc"],
-    run(command(shell(Args)), RetVal).
+    cast(conjure(shell(Args)), RetVal).
 
-run(command(nix(store(repair(Path)))), RetVal) :-
+cast(conjure(nix(store(repair(Path)))), RetVal) :-
     Args = ["nix", "store", "repair", Path],
-    run(command(shell(Args)), RetVal).
+    cast(conjure(shell(Args)), RetVal).
 
-run(command(nix(store(optimise))), RetVal) :-
+cast(conjure(nix(store(optimise))), RetVal) :-
     Args = ["nix", "store", "optimise"],
-    run(command(shell(Args)), RetVal).
+    cast(conjure(shell(Args)), RetVal).
 
 % Utility commands for debugging and analysis
 docstring(nix(why_depends),
@@ -311,9 +321,9 @@ docstring(nix(why_depends),
     |}
 ).
 
-run(command(nix(why_depends(Pkg1, Pkg2))), RetVal) :-
+perceive(nix(why_depends(Pkg1, Pkg2, Result))) :-
     Args = ["nix", "why-depends", Pkg1, Pkg2],
-    run(command(shell(Args)), RetVal).
+    cast(conjure(shell(Args)), ok(result(Result, _))).
 
 docstring(nix(log),
     {|string(_)||
@@ -323,9 +333,9 @@ docstring(nix(log),
     |}
 ).
 
-run(command(nix(log(Installable))), RetVal) :-
+perceive(nix(log(Installable, Result))) :-
     Args = ["nix", "log", Installable],
-    run(command(shell(Args)), RetVal).
+    cast(conjure(shell(Args)), ok(result(Result, _))).
 
 component(nix(develop), option(unique), shell_cmd).
 component(nix(develop), option(unique), phase).
@@ -356,7 +366,7 @@ docstring(nix(develop), S) :-
         phase(Phase): {PhaseDoc}
     |}.
 
-run(command(nix(develop(Options))), RetVal) :-
+cast(conjure(nix(develop(Options))), RetVal) :-
     % Convert options to args
     findall(
         OptionArgs,
@@ -369,11 +379,11 @@ run(command(nix(develop(Options))), RetVal) :-
         AllOptionArgs
     ),
     flatten([["nix", "develop"] | AllOptionArgs], Args),
-    run(command(shell(Args, interactive)), RetVal).
+    cast(conjure(shell(Args, interactive)), RetVal).
 
 % Flake commands
 entity(nix(flake)).
-component(command, ctor, nix(flake)).
+% Removed legacy command ctor - using perceive above
 component(nix(flake), ctor, new).
 docstring(nix(flake), S) :-
     S = {|string(_)||
@@ -433,21 +443,31 @@ docstring(nix(flake(template(Id))), Desc) :-
     member(Id-V, Pairs),
     Desc = V.description.
 
-docstring(command(nix(flake(new))),
+docstring(nix(flake(new)),
     {|string(_)||
     Initialize a new flake from template.
     Creates a new flake.nix from specified template.
-    Format: command(nix(flake(new(TemplateId, DestPath)))).
+    Format: conjure(nix(flake(new(TemplateId, DestPath)))).
         TemplateId - the ID of the template as it appears in `templates.*` attribute within the flake. default: none
         DestPath - where to create the new flake
     |}
 ).
 
-run(command(nix(flake(new(TemplateId, DestPath)))), RetVal) :-
+docstring(conjure(nix(flake(new))),
+    {|string(_)||
+    Initialize a new flake from template.
+    Creates a new flake.nix from specified template.
+    Format: conjure(nix(flake(new(TemplateId, DestPath)))).
+        TemplateId - the ID of the template as it appears in `templates.*` attribute within the flake. default: none
+        DestPath - where to create the new flake
+    |}
+).
+
+cast(conjure(nix(flake(new(TemplateId, DestPath)))), RetVal) :- 
     ( TemplateId = none -> TId = default ; TId = TemplateId ),
     nix_templates_expr_id(TId, Template),
     Args = ["nix", "flake", "new", DestPath, "-t", Template],
-    run(command(shell(Args)), RetVal).
+    cast(conjure(shell(Args)), RetVal).
 
 % Nix subsystem extension for load_entity
 % Lazy loading for nix semantic folders

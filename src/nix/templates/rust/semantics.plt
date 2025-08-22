@@ -19,7 +19,7 @@ test(rust_project_has_essentials) :-
     component(rust_template, language, rust),
 
     % Verify command integration
-    component(command, ctor, rust_template).
+    component(conjure, ctor, rust_template).
 
 test(rust_project_subcommands) :-
     load_entity(semantic(file('src/nix/templates/rust/semantics.pl'))),

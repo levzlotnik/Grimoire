@@ -62,53 +62,53 @@ show_usage :-
 % Component types command
 handle_command(compt, []) :-
     !,
-    run(command(interface(compt)), Result),
+    cast(conjure(interface(compt)), Result),
     format_cli_result(Result).
 
 handle_command(compt, [EntityStr]) :-
     !,
-    run(command(interface(compt(EntityStr))), Result),
+    cast(conjure(interface(compt(EntityStr))), Result),
     format_cli_result(Result).
 
 % Component listing command - requires both entity and component type
 handle_command(comp, [EntityStr, TypeStr]) :-
     !,
-    run(command(interface(comp(EntityStr, TypeStr))), Result),
+    cast(conjure(interface(comp(EntityStr, TypeStr))), Result),
     format_cli_result(Result).
 
 % Documentation command
 handle_command(doc, []) :-
     !,
-    run(command(interface(doc)), Result),
+    cast(conjure(interface(doc)), Result),
     format_cli_result(Result).
 
 handle_command(doc, [EntityStr]) :-
     !,
     atom_string(EntityAtom, EntityStr),
-    run(command(interface(doc(EntityAtom))), Result),
+    cast(conjure(interface(doc(EntityAtom))), Result),
     format_cli_result(Result).
 
 % REPL command
 handle_command(repl, _) :-
     !,
-    run(command(interface(repl)), Result),
+    cast(conjure(interface(repl)), Result),
     format_cli_result(Result).
 
 % Status command  
 handle_command(status, _) :-
     !,
-    run(command(interface(status)), Result),
+    cast(conjure(interface(status)), Result),
     format_cli_result(Result).
 
 % Test command
 handle_command(test, []) :-
     !,
-    run(command(interface(test)), Result),
+    cast(conjure(interface(test)), Result),
     format_cli_result(Result).
 
 handle_command(test, TestArgs) :-
     !,
-    run(command(interface(test(TestArgs))), Result),
+    cast(conjure(interface(test(TestArgs))), Result),
     format_cli_result(Result).
 
 % Session commands
@@ -121,7 +121,7 @@ handle_command(session, [SubCmd|Args]) :-
         % Parse session subcommand
         atom_string(SubCmdAtom, SubCmd),
         parse_session_args(SubCmdAtom, Args, SessionArgs),
-        run(command(interface(session(SessionArgs))), Result),
+        cast(conjure(interface(session(SessionArgs))), Result),
         format_cli_result(Result)
     ).
 
@@ -130,22 +130,38 @@ handle_command(session, []) :-
     !,
     show_session_help.
 
+% Conjure command with --list support
+handle_command(conjure, ['--list']) :-
+    !,
+    findall(Op, component(conjure, ctor, Op), Operations),
+    sort(Operations, SortedOps),
+    format('Available conjure operations:~n'),
+    forall(member(Op, SortedOps), format('  ~w~n', [Op])).
+
 % Conjure command - execute conjuration spells (validation is whether cast succeeds)
 handle_command(conjure, [SpellStr]) :-
     !,
     % Parse and try to cast - if it fails, it's an invalid conjure
     catch(
         (read_term_from_atom(SpellStr, SpellTerm, []),
-         (run(command(interface(cast(conjure(SpellTerm)))), Result) ->
+         (cast(conjure(interface(conjure(SpellTerm))), Result) ->
              format_cli_result(Result)
          ;
              format('~nSorry, "~w" is not a proper conjuration spell. 🧙‍♂️~n', [SpellTerm]),
-             format('Try checking available conjure operations with: grimoire comp conjure ctor~n'),
+             format('Try checking available conjure operations with: grimoire conjure --list~n'),
              fail
          )),
         Error,
         (format_cli_result(error(invalid_spell_syntax(Error))), fail)
     ).
+
+% Perceive command with --list support
+handle_command(perceive, ['--list']) :-
+    !,
+    findall(Op, component(perceive, ctor, Op), Operations),
+    sort(Operations, SortedOps),
+    format('Available perceive operations:~n'),
+    forall(member(Op, SortedOps), format('  ~w~n', [Op])).
 
 % Perceive command - execute perception spells with auto-variable output
 handle_command(perceive, [QueryStr]) :-
@@ -158,22 +174,12 @@ handle_command(perceive, [QueryStr]) :-
         format_cli_result(error(invalid_query_syntax(Error)))
     ).
 
-% Legacy run command - for backwards compatibility
-handle_command(run, [CommandStr]) :-
-    !,
-    % Parse the command string as a Prolog term
-    catch(
-        (read_term_from_atom(CommandStr, CommandTerm, []),
-         run(command(interface(run(CommandTerm))), Result),
-         format_cli_result(Result)),
-        Error,
-        format_cli_result(error(invalid_command_syntax(Error)))
-    ).
+% Removed legacy run command
 
 % Load command - load entity into current session
 handle_command(load, [EntityStr]) :-
     !,
-    run(command(interface(load(EntityStr))), Result),
+    cast(conjure(interface(load(EntityStr))), Result),
     format_cli_result(Result).
 
 % Exec command - execute arbitrary Prolog queries

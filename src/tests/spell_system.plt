@@ -32,8 +32,8 @@ test(cast_single_conjure_spell) :-
 test(cast_ritual_multiple_spells, [cleanup(cleanup_test_files)]) :-
     % Test casting a ritual (multiple spells)
     cast(ritual([
-        mkfile('/tmp/test1.txt'),
-        mkfile('/tmp/test2.txt')
+        conjure(mkfile('/tmp/test1.txt')),
+        conjure(mkfile('/tmp/test2.txt'))
     ]), Result),
     Result = ok([ok(""), ok("")]),
     exists_file('/tmp/test1.txt'),
@@ -107,7 +107,7 @@ test(git_status_file_terms) :-
     % Test that git status returns clean file terms
     perceive(git(status(_, _, Files))), !,
     is_list(Files),
-    (Files = [] -> 
+    (Files = [] ->
         true  % No files is valid
     ;
         Files = [FirstFile|_],
@@ -124,15 +124,15 @@ valid_file_status_term(unknown(_)) :- !.
 
 % === BACKWARDS COMPATIBILITY TESTS ===
 
-test(legacy_command_system_still_works) :-
-    % Test that old run(command(...)) still works
-    run(command(shell(['echo', 'legacy'])), Result),
-    Result = ok(result("legacy\n", "")).
+test(conjure_shell_works) :-
+    % Test that conjure shell works
+    cast(conjure(shell(['echo', 'test'])), Result),
+    Result = ok(result("test\n", "")).
 
-test(legacy_git_commands_work) :-
-    % Test legacy git commands still work
-    run(command(git(status)), Result),
-    Result = ok(result(_, _)), !.
+test(perceive_git_status_works) :-
+    % Test perceive git status works
+    perceive(git(status(Branch, _, _))),
+    atom(Branch), !.
 
 % === DOCSTRING TESTS ===
 

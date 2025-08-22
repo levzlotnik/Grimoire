@@ -13,13 +13,11 @@ component(interface, subcommand, repl).
 component(interface, subcommand, status).
 component(interface, subcommand, test).
 component(interface, subcommand, session).
-component(interface, subcommand, cast).
+component(interface, subcommand, conjure).
 component(interface, subcommand, perceive).
-component(interface, subcommand, run).
 component(interface, subcommand, load).
 
-% Make interface subcommands available as command constructors (like git does)
-component(command, ctor, interface(C)) :- component(interface, subcommand, C).
+% Removed legacy command constructor - interface functions called directly by CLI
 
 % Also make them available as interface constructors
 component(interface, ctor, C) :- component(interface, subcommand, C).
@@ -32,9 +30,8 @@ entity(interface(repl)).
 entity(interface(status)).
 entity(interface(test)).
 entity(interface(session)).
-entity(interface(cast)).
+entity(interface(conjure)).
 entity(interface(perceive)).
-entity(interface(run)).
 entity(interface(load)).
 
 % Docstrings follow namespacing pattern
@@ -45,9 +42,8 @@ docstring(interface(repl), "Start interactive REPL with context awareness").
 docstring(interface(status), "Show session/transaction status").
 docstring(interface(test), "Run the test suite").
 docstring(interface(session), "File-based session management with SQLite command logging (start, history, commit_accumulated)").
-docstring(interface(cast), "Cast conjuration spells (mutable operations)").
+docstring(interface(conjure), "Execute conjuration spells (mutable operations)").
 docstring(interface(perceive), "Execute perception spells (query operations)").
-docstring(interface(run), "Execute arbitrary command term structures (legacy)").
 docstring(interface(load), "Load entity into current session for persistent access").
 
 % Main interface docstring
@@ -161,39 +157,39 @@ ensure_session_state_loaded :-
 % === INTERFACE COMMAND IMPLEMENTATIONS ===
 
 % Component types listing
-run(command(interface(compt)), RetVal) :-
+cast(conjure(interface(compt)), RetVal) :-
     ensure_session_state_loaded,
     current_entity(Entity),
     interface_compt(Entity, Types),
     RetVal = ok(component_types(Entity, Types)).
 
-run(command(interface(compt(EntityPath))), RetVal) :-
+cast(conjure(interface(compt(EntityPath))), RetVal) :-
     ensure_session_state_loaded,
     resolve_entity_path(EntityPath, Entity),
     interface_compt(Entity, Types),
     RetVal = ok(component_types(Entity, Types)).
 
 % Component listing with new argument order: entity first, then type
-run(command(interface(comp(EntityPath, Type))), RetVal) :-
+cast(conjure(interface(comp(EntityPath, Type))), RetVal) :-
     ensure_session_state_loaded,
     resolve_entity_path(EntityPath, Entity),
     interface_comp(Entity, Type, Components),
     RetVal = ok(components(Entity, Type, Components)).
 
 % Documentation retrieval
-run(command(interface(doc)), RetVal) :-
+cast(conjure(interface(doc)), RetVal) :-
     ensure_session_state_loaded,
     current_entity(Entity),
     interface_doc(Entity, Doc),
     RetVal = ok(documentation(Entity, Doc)).
 
-run(command(interface(doc(Entity))), RetVal) :-
+cast(conjure(interface(doc(Entity))), RetVal) :-
     ensure_session_state_loaded,
     interface_doc(Entity, Doc),
     RetVal = ok(documentation(Entity, Doc)).
 
 % REPL command - delegate to existing implementation
-run(command(interface(repl)), RetVal) :-
+cast(conjure(interface(repl)), RetVal) :-
     % Load and call existing REPL functionality
     catch(
         (ensure_loaded('src/repl.pl'), grimoire_repl_command, RetVal = ok(repl_completed))
@@ -203,12 +199,12 @@ run(command(interface(repl)), RetVal) :-
     ).
 
 % Status command - show session/transaction status
-run(command(interface(status)), RetVal) :-
+cast(conjure(interface(status)), RetVal) :-
     get_session_status(Status),
     RetVal = ok(session_status(Status)).
 
 % Test command - delegate to existing implementation
-run(command(interface(test)), RetVal) :-
+cast(conjure(interface(test)), RetVal) :-
     catch(
         (ensure_loaded('src/tests/run_tests.pl'), run_all_tests, RetVal = ok(tests_passed))
     ,
@@ -217,7 +213,7 @@ run(command(interface(test)), RetVal) :-
     ).
 
 % Test command with specific test arguments
-run(command(interface(test(TestArgs))), RetVal) :-
+cast(conjure(interface(test(TestArgs))), RetVal) :-
     catch(
         (ensure_loaded('src/tests/run_tests.pl'), 
          (member('--list', TestArgs) ->
@@ -233,27 +229,25 @@ run(command(interface(test(TestArgs))), RetVal) :-
     ).
 
 % Session commands - forward to session.pl
-run(command(interface(session(Args))), RetVal) :-
-    run(command(session(Args)), RetVal).
+cast(conjure(interface(session(Args))), RetVal) :-
+    cast(conjure(session(Args)), RetVal).
 
-% Cast command - execute conjuration spells
-run(command(interface(cast(SpellTerm))), RetVal) :-
-    cast(SpellTerm, RetVal).
+% Conjure command - execute conjuration spells
+cast(conjure(interface(conjure(SpellTerm))), RetVal) :-
+    cast(conjure(SpellTerm), RetVal).
 
 % Perceive command - execute perception spells directly
-run(command(interface(perceive(QueryTerm))), RetVal) :-
-    (call(QueryTerm) ->
+cast(conjure(interface(perceive(QueryTerm))), RetVal) :-
+    (perceive(QueryTerm) ->
         RetVal = ok(query_succeeded)
     ;
         RetVal = error(query_failed)
     ).
 
-% Run command - execute arbitrary command structures (legacy)
-run(command(interface(run(CommandTerm))), RetVal) :-
-    run(CommandTerm, RetVal).
+% Removed legacy run command
 
 % Load command - load entity into current session
-run(command(interface(load(EntitySpec))), RetVal) :-
+cast(conjure(interface(load(EntitySpec))), RetVal) :-
     resolve_entity_path(EntitySpec, Entity),
     catch(
         (load_entity_in_session(Entity),
@@ -288,14 +282,14 @@ interface_doc(Entity, Doc) :-
 % Get comprehensive session status
 get_session_status(Status) :-
     % Use git directly instead of session.pl predicates to avoid hanging
-    run(command(git(branch(['--show-current']))), BranchResult),
+    perceive(git(status(BranchResult, _, _))),
     (BranchResult = ok(result(BranchOutput, _)) ->
         string_concat(BranchStr, "\n", BranchOutput),
         atom_string(CurrentBranch, BranchStr)
     ;
         CurrentBranch = main
     ),
-    run(command(git(status(['--porcelain']))), StatusResult),
+    perceive(git(status(_, StatusResult, _))),
     (StatusResult = ok(result("", _)) ->
         WorkingStatus = clean
     ;
@@ -307,7 +301,7 @@ get_session_status(Status) :-
 
 % Find all session branches
 find_all_sessions(Sessions) :-
-    run(command(git(branch(['--list']))), Result),
+    perceive(git(branch(Result))),
     (Result = ok(result(BranchOutput, _)) ->
         string_lines(BranchOutput, BranchLines),
         include_session_branches(BranchLines, Sessions)

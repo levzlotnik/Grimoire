@@ -7,9 +7,9 @@ test(nix_entity_exists, [true]) :-
     entity(nix).
 
 test(nix_command_constructors, [true]) :-
-    component(command, ctor, nix(build)), !,
-    component(command, ctor, nix(develop)), !,
-    component(command, ctor, nix(run)), !.
+    component(conjure, ctor, nix(build)), !,
+    component(conjure, ctor, nix(develop)), !,
+    component(conjure, ctor, nix(run)), !.
 
 test(nix_target_constructors, [true]) :-
     component(nix(target), ctor, package), !,
@@ -17,7 +17,7 @@ test(nix_target_constructors, [true]) :-
     component(nix(target), ctor, devShell), !.
 
 test(nix_docstrings_exist, [
-    forall(component(command, ctor, nix(Cmd)))
+    forall(component(conjure, ctor, nix(Cmd)))
 ]) :-
     docstring(nix(Cmd), _).
 

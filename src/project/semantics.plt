@@ -9,7 +9,7 @@ test(project_entity_exists, [true]) :-
 
 % Test project command constructors
 test(project_command_constructors, [true]) :-
-    component(command, ctor, mkproject), !.
+    component(conjure, ctor, mkproject), !.
 
 % Test project context entities
 test(project_contexts, [true]) :-

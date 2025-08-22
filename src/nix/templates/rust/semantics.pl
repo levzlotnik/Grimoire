@@ -13,7 +13,7 @@ component(rust_template, build_system, nix).  % Changed from cargo to nix
 component(rust_template, language, rust).
 
 % Make this entity available as a command
-component(command, ctor, rust_template).
+component(conjure, ctor, rust_template).
 
 % Nix-provided subcommands (from flake apps)
 component(rust_template, subcommand, build).

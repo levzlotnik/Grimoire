@@ -8,7 +8,7 @@
 
 % Test cleanup helper
 cleanup_session(SessionId) :-
-    catch(run(command(session(delete(SessionId))), _), _, true).
+    catch(cast(conjure(session(delete(SessionId))), _), _, true).
 
 
 % === SETUP AND CLEANUP ===
@@ -45,12 +45,12 @@ cleanup_test_sessions :-
 
 test(session_start_without_id) :-
     % Session start without ID should generate UUID
-    run(command(session(start)), Result),
+    cast(conjure(session(start)), Result),
     assertion(Result = ok(session_started(_))), !.
 
 test(session_start_with_id, [cleanup(reset_to_main)]) :-
     % Session start with specific ID should create named session
-    run(command(session(start('test-session-1'))), Result),
+    cast(conjure(session(start('test-session-1'))), Result),
     assertion(Result = ok(session_started('test-session-1'))),
     
     % Verify workspace was created
@@ -70,31 +70,31 @@ reset_to_main :-
 
 test(session_history_main_session) :-
     % Main session should return empty history
-    run(command(session(history)), Result),
-    assertion(Result = ok(no_commands)), !.
+    perceive(session(history(Commands))),
+    assertion(Commands = []), !.
 
 test(commit_accumulated_placeholder) :-
     % Commit accumulated should work as placeholder
-    run(command(session(commit_accumulated("Test commit"))), Result),
+    cast(conjure(session(commit_accumulated("Test commit"))), Result),
     assertion(Result = ok(commit_placeholder("Test commit"))).
 
 % === THINK COMMAND TESTS ===
 
 test(think_command_string) :-
     % Think command should work with strings
-    run(command(think("Test thought")), Result),
+    cast(conjure(think("Test thought")), Result),
     assertion(Result = ok(thought_recorded("Test thought"))), !.
 
 test(think_command_atom) :-
     % Think command should convert atoms to strings
-    run(command(think(test_atom)), Result),
+    cast(conjure(think(test_atom)), Result),
     assertion(Result = ok(thought_recorded("test_atom"))).
 
 % === DATABASE FUNCTIONALITY ===
 
 test(database_schema_creation) :-
     % Starting a session should create proper database schema
-    run(command(session(start('test-db-schema'))), _),
+    cast(conjure(session(start('test-db-schema'))), _),
     
     % Check that database file exists
     session_commands_db_path('test-db-schema', DbPath),
@@ -112,7 +112,7 @@ test(database_schema_creation) :-
 test(command_logging, [cleanup(cleanup_session('test-logging'))]) :-
     % Test that commands can be logged to session database
     cleanup_session('test-logging'),  % Clean up any previous run
-    run(command(session(start('test-logging'))), _),
+    cast(conjure(session(start('test-logging'))), _),
     
     % Log a test command directly
     log_command_to_session_db('test-logging', action, test_command, ok(success)),
@@ -127,7 +127,7 @@ test(command_logging, [cleanup(cleanup_session('test-logging'))]) :-
 test(session_history_retrieval, [cleanup(cleanup_session('test-history'))]) :-
     % Test retrieving command history from database
     cleanup_session('test-history'),  % Clean up any previous run
-    run(command(session(start('test-history'))), _),
+    cast(conjure(session(start('test-history'))), _),
     
     % Add some test commands
     log_command_to_session_db('test-history', think, "test thought", ok(result)),
@@ -166,7 +166,7 @@ test(state_file_path_resolution) :-
 
 test(session_state_file_initialization) :-
     % Test that session state file is properly initialized
-    run(command(session(start('test-state'))), _),
+    cast(conjure(session(start('test-state'))), _),
     
     session_state_file_path('test-state', StatePath),
     assertion(exists_file(StatePath)),
@@ -177,7 +177,7 @@ test(session_state_file_initialization) :-
 
 test(add_entity_load_to_session) :-
     % Test adding entity loads to session state
-    run(command(session(start('test-entity'))), _),
+    cast(conjure(session(start('test-entity'))), _),
     
     add_entity_load_to_session('test-entity', semantic(folder(test))),
     
@@ -187,7 +187,7 @@ test(add_entity_load_to_session) :-
 
 test(load_session_state_file) :-
     % Test loading session state file
-    run(command(session(start('test-load-state'))), _),
+    cast(conjure(session(start('test-load-state'))), _),
     
     % Add a test fact to state file
     session_state_file_path('test-load-state', StatePath),

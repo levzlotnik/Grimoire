@@ -154,7 +154,7 @@ docstring(test,
 
 % Template discovery and conjure integration
 component(conjure, ctor, mkproject).
-component(command, ctor, mkproject).
+% Removed legacy command ctor - using conjure above
 
 % Template discovery - query nix domain for available templates
 discover_available_templates(Templates) :-
@@ -184,7 +184,7 @@ docstring(mkproject,
 ).
 
 % Conjure implementation for mkproject
-run(conjure(mkproject(TemplateId, ProjectName)), RetVal) :-
+cast(conjure(mkproject(TemplateId, ProjectName)), RetVal) :-
     catch(
         (
             % Get projects directory
@@ -204,7 +204,7 @@ run(conjure(mkproject(TemplateId, ProjectName)), RetVal) :-
             ;
                 % Use nix flake new to instantiate template
                 catch(
-                    run(command(nix(flake(new(TemplateId, DestPath)))), NixResult),
+                    cast(conjure(nix(flake(new(TemplateId, DestPath)))), NixResult),
                     NixError,
                     NixResult = error(nix_command_failed(NixError))
                 ),

@@ -14,7 +14,7 @@ component(lean4_template, language, lean4).
 component(lean4_template, paradigm, formal_verification).
 
 % Make this entity available as a command
-component(command, ctor, lean4_template).
+component(conjure, ctor, lean4_template).
 
 % Nix-provided subcommands (from flake apps)
 component(lean4_template, subcommand, build).
