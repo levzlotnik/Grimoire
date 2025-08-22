@@ -10,6 +10,7 @@
 :- ensure_loaded('spell_system.plt').
 :- ensure_loaded('session_cli.plt').
 :- ensure_loaded('session.plt').
+:- ensure_loaded('../db/semantics.plt').
 :- ensure_loaded('interface_session.plt').
 :- ensure_loaded('template_instantiation.plt').
 
@@ -31,7 +32,8 @@ run_all_tests :-
         integration_tests,
         spell_system,
         session_cli,
-        file_session_system,
+        session_system,
+        db_entity,
         interface_session_integration,
         template_instantiation,
         rust_project_semantics,
@@ -105,7 +107,8 @@ list_available_tests :-
         integration_tests,
         spell_system,
         session_cli,
-        file_session_system,
+        session_system,
+        db_entity,
         interface_session_integration,
         template_instantiation,
         rust_project_semantics,

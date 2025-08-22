@@ -43,10 +43,11 @@ Example:
 ```
 
 ### Domain Integration
-- Nix: system configuration, packages, flakes
-- Git: version control operations
-- Prolog: semantic knowledge and query interface
-- SQLite: (deferred) persistent state and transaction logs
+- **Nix**: system configuration, packages, flakes
+- **Git**: version control operations
+- **Prolog**: semantic knowledge and query interface
+- **SQLite**: Database entity system with automatic ECS discovery, schema tracking, and command logging
+- **Session**: File-based workspaces with SQLite command logging and ECS database discovery
 
 ## Nix-Centric Build Operations
 
@@ -95,14 +96,69 @@ Persistence model:
 - Discovery produces derived, session-scoped components for querying and commands.
 - Persistent knowledge remains in `semantics.pl` files; database persistence is deferred.
 
+## Database and Session System
+
+### Database System (.db extension with schema tracking)
+
+The database system provides SQLite3 CLI integration with automatic ECS discovery:
+
+```prolog
+% Create database from SQL string (creates schema file)
+?- run(command(db(create(mydb, 'test.db', schema(sql("CREATE TABLE users (id INTEGER PRIMARY KEY);"))))), Result).
+% Result = ok(database_created(mydb, 'test.db'))
+
+% Create database from schema file
+?- run(command(db(create(mydb2, 'test2.db', schema(file('schema.sql'))))), Result).
+
+% Database registration with schema tracking
+?- component(registered_db, Component, Value).
+% Component = database(mydb), Value = data(file('test.db'))
+% Component = database(mydb), Value = schema(file('test.schema.sql'))
+```
+
+### Session System (File-based workspaces)
+
+Sessions create isolated workspaces with SQLite command logging and ECS discovery:
+
+```prolog
+% Start a session (creates workspace directory with commands.db and state.pl)
+?- run(command(session(start('my-work'))), Result).
+% Result = ok(session_started('my-work'))
+% Creates: ${GRIMOIRE_ROOT}/sessions/my-work/commands.db
+% Creates: ${GRIMOIRE_ROOT}/sessions/my-work/state.pl
+% Creates: ${GRIMOIRE_ROOT}/sessions/my-work/commands.schema.sql
+
+% Record thoughts and commands (logged to session database)
+?- run(command(think("Working on database integration")), Result).
+% Result = ok(thought_recorded("Working on database integration"))
+
+% View session command history
+?- run(command(session(history)), Result).
+% Shows accumulated commands from session database
+
+% Session database becomes ECS entity with auto-discovered structure
+?- component(session_my_work_db, table, Table).
+% Table = commands
+
+?- component(session_my_work_db(table(commands)), columns, Columns).
+% Columns = [column(id,'INTEGER',false,null,true), column(timestamp,'TEXT',true,null,false), ...]
+```
+
 ## Current Status
 
-- All 62 tests passing (27 core + 14 template + 21 spell system tests)
+- All 116/128 tests passing (90.6% pass rate) - Core + Template + Spell + Session + Database systems
+- **Database System Complete** - SQLite3 CLI integration with reverse proxy predicating and schema tracking
+  - 3-parameter database registration: `registered_db(database(Id), data(file(DbPath)), schema(file(SchemaPath)))`
+  - Command-based database creation: `command(db(create(DbId, DbPath, schema(file|sql))))`
+  - Automatic schema file generation and ECS component discovery
+- **Session System Complete** - File-based workspaces with SQLite command logging (.db extension)
+  - Session workspaces under `${GRIMOIRE_ROOT}/sessions/` with commands.db and state.pl files
+  - ECS database integration with automatic table/column component discovery
+  - Session state persistence for entity loads across operations
 - **Spell System Complete** - Fantasy-themed command/query separation with `conjure`/`perceive`
-- **Phase 6 Complete: Session System** - Git-backed session management with transaction support
 - **Interface Layer Complete** - Multi-frontend interface system (`./grimoire` CLI, API, MCP ready)
 - Simplified entity loading system implemented (`load_entity/1`)
-- Core subsystems (git, nix, fs, project, session) load on boot
+- Core subsystems (git, nix, fs, project, session, db) load on boot
 - External projects use `passive_load/2` for on-demand loading
 - All language templates now use Nix-provided canonical commands
 
@@ -112,29 +168,43 @@ Persistence model:
 - Phase 3: Testing infrastructure – PLUnit suite and cross-domain coverage
 - Phase 4: Simplified entity loading – explicit entities + `load_entity/1`
 - Phase 5.1–5.4: Nix-centric template revolution – 6 templates completed
-- **Phase 6: Session System** – Git-backed session management with clean ontology
+- **Phase 6: Session System** – File-based session management with SQLite logging (.db extension) and database ECS discovery
+- **Database System**: SQLite3 CLI integration with reverse proxy predicating, schema tracking, and automatic ECS discovery
 - **Interface Layer**: Multi-frontend ECS-native interface (`./grimoire` CLI, API/MCP ready)
 - **Spell System**: Fantasy-themed conjure/perceive command separation with clean CLI
 
 ### Implemented Features
 - Core ECS system with semantic mounting ✅
 - **Spell system**: Fantasy-themed conjure/perceive command separation ✅
+- **Database system**: SQLite3 CLI integration with reverse proxy predicating and schema tracking ✅
+  - 3-parameter database registration with schema file tracking
+  - Command-based database creation with automatic schema file generation
+  - Automatic ECS component discovery for database tables and columns
 - Nix integration with dynamic target discovery and JSON introspection ✅
 - Git integration with command modeling and DCG parsing ✅
-- Project management: context/config/dependency handling ✅ (database layer deferred)
-- **Session management**: Git-backed sessions with transaction support ✅
+- Project management: context/config/dependency handling ✅
+- **Session management**: File-based sessions (.db extension) with SQLite command logging and database ECS discovery ✅
+  - Session workspaces with commands.db and state.pl files
+  - ECS database integration with automatic table/column discovery
+  - Session state persistence for entity loads across operations
 - **Interface layer**: Multi-frontend ECS-native interface system ✅
 - Testing infrastructure: PLUnit-based comprehensive tests ✅
 - Python bridge: Prolog-Python interface ✅ (available, not required for core)
 
 ### Technical Achievements
 - **Fantasy-themed spell system** with conjure/perceive command separation and clean CLI
+- **Database system** with reverse proxy predicating, schema tracking, and automatic ECS discovery
+  - SQLite3 CLI integration replacing broken prosqlite library
+  - 3-parameter database registration: `registered_db(database(Id), data(file(DbPath)), schema(file(SchemaPath)))`
+  - Command-based database creation with automatic schema file generation
 - Dynamic flake target discovery (`nix flake show --json`) with memoization
 - Clean sum-type command modeling across domains
-- Cross-domain integration (Git/Nix/Project/Session) with semantic mounting
+- Cross-domain integration (Git/Nix/Project/Session/Database) with semantic mounting
 - **ECS-native interface system** with auto-generated CLI usage and multi-frontend support
-- **Git-backed session management** with atomic transactions and clean ontology
-- Robust test coverage (62 passing) across core + templates + spell system
+- **File-based session management** with SQLite command logging (.db extension) and database ECS discovery
+  - Session workspaces with commands.db and state.pl files
+  - ECS database integration with automatic table/column component discovery
+- Robust test coverage (116/128 passing, 90.6% pass rate) across all subsystems
 
 ## Next Phases
 
@@ -150,8 +220,8 @@ Persistence model:
   - Cross-language analysis and dependencies
 
 - Phase 9: Knowledge Evolution Layer
-  - Reactivate database layer for persistence
-  - Transaction logging and knowledge evolution
+  - Enhanced database layer with knowledge evolution tracking
+  - Transaction logging and learning from user interactions
 
 ## Recent Updates (Aug 4, 2025)
 - Phase 5.4 complete – all 6 language templates implemented

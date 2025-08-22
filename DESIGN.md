@@ -17,25 +17,38 @@ Grimoire is a knowledge-based operating system built on Entity-Component-System 
   - All language templates use `nix run .#command` pattern for canonical operations
 - **Revolutionary Design**: All 6 language templates (Rust, Python, C++, Haskell, Lean4, MkDocs) use Nix flake apps instead of language-native commands
 
-### Git Domain - Version Control & Session Backend
-- **Purpose**: Version control operations and session state management
-- **Paradigm**: Git-native operations with branch-based session isolation
+### Database Domain - SQLite ECS Integration
+- **Purpose**: Database creation, management, and automatic ECS discovery
+- **Paradigm**: Reverse proxy predicating with schema tracking and command-based creation
+- **Key Features**:
+  - Schema-aware database registration: `registered_db(database(Id), data(file(DbPath)), schema(file(SchemaPath)))`
+  - Command-based database creation: `command(db(create(DbId, DbPath, schema(file|sql))))`
+  - Automatic schema file generation for inline SQL
+  - ECS component discovery for database tables and columns
+  - Integration with session command logging system
+
+### Git Domain - Version Control
+- **Purpose**: Version control operations and repository management
+- **Paradigm**: Git-native operations with command modeling
 - **Key Features**:
   - Command modeling for all Git operations
-  - Session-based branching for concurrent work streams
-  - Atomic transactions backed by Git commits
-  - Clean rollback capabilities via Git reset
+  - Repository state introspection and management
+  - Integration with project discovery system
 
-### Session Domain - Transaction Management
-- **Purpose**: Logical work contexts with Git-backed isolation
-- **Paradigm**: Session → Git branch, Transaction → Git commit
+### Session Domain - File-Based Workspace Management
+- **Purpose**: Logical work contexts with file-based command logging and ECS database discovery
+- **Paradigm**: Session → Workspace directory with commands.db (.db extension) and state.pl files
 - **Key Features**:
-  - Session lifecycle: start → work → close with merge strategies
-  - Atomic transaction execution with rollback support
-  - Multi-transaction workflows within sessions
-  - Clean integration with existing transaction system
+  - File-based session workspaces under `${GRIMOIRE_ROOT}/sessions/`
+  - SQLite command logging (.db extension) with automatic ECS discovery and schema tracking
+  - Session database registration: `registered_db(database(session_SessionId), data(file(DbPath)), schema(file(SchemaPath)))`
+  - Session state management via state.pl files for persistent entity loads
+  - **ECS Database Integration**: Session commands database becomes discoverable ECS entity
+    - Automatic table/column component discovery for session database
+    - Schema files automatically created: `{session_workspace}/commands.schema.sql`
+    - Database creation via command system: `command(db(create(SessionDbId, DbPath, schema(file(SchemaFile)))))`
   - **Stateful Interface System**: Session-owned Prolog files for persistent entity state
-    - Entity loads persist across operations within sessions via `${GRIMOIRE_ROOT:-$HOME/.grimoire}/session-{uuid}.pl`
+    - Entity loads persist across operations within sessions
     - Interface operations automatically load session state for stateful behavior
     - Session isolation: different sessions maintain separate entity state
     - CLI integration: `./grimoire load entity` persists entities for session-scoped access
@@ -85,7 +98,7 @@ Grimoire is a knowledge-based operating system built on Entity-Component-System 
 - **Nix**: System configuration, packages, flakes
 - **Git**: Version control operations
 - **Prolog**: Semantic queries and knowledge representation
-- **SQLite**: Transaction logs and persistent state
+- **SQLite**: Database entity system with automatic ECS discovery
 - Each tool speaks its natural language
 
 ### 4. Multi-Frontend Interface System
@@ -226,7 +239,7 @@ Benefits:
 **Current System Features**:
 - Pure Prolog Implementation: All Python components removed, system now runs entirely in SWI-Prolog
 - Spell System: Fantasy-themed conjure/perceive with multiple-solution query capabilities
-- Session System: Git-backed sessions with transaction support and CLI management
+- Session System: DB backed session system with persistent state `state.pl`
 - Interface Layer: Multi-frontend system (`src/interface.pl`) with structured returns
 - Stateful Interface Sessions: Entity loads persist across operations within sessions using session-owned Prolog files
 - CLI Tool: Context-aware `./grimoire` with `conjure`/`perceive`/`exec`/`session`/`load` commands
@@ -374,13 +387,13 @@ All templates follow a standardized structure:
 ```
 src/nix/templates/{language}/
 ├── semantics.pl          # Generative context with discovery
-├── semantics.plt         # Discriminative test suite  
+├── semantics.plt         # Discriminative test suite
 └── [existing template files...]
 ```
 
 ### Template Requirements
 - Project type and build tool identification
-- Build system subcommand integration 
+- Build system subcommand integration
 - Docstrings for all commands
 - Filesystem pattern matching for language-specific files
 - Discovery system integration
@@ -416,80 +429,83 @@ src/nix/templates/{language}/
 
 ## Session + Transaction System Design
 
-### Git-Backed Session Management
+### File-Based Session Management with Database ECS Discovery
 
-**Core Architecture**: Sessions create Git branches for isolation, transactions create commits within sessions.
+**Core Architecture**: Sessions create workspace directories with SQLite command logging and automatic ECS discovery.
 
-**Session**: A logical work context that creates its own Git branch for concurrent work streams
-**Transaction**: An atomic set of operations within a session that results in a Git commit
+**Session**: A logical work context that creates a workspace directory with commands.db and state.pl
+**Database Integration**: Session commands database becomes an ECS entity with auto-discovered table structures
 
-### Session Lifecycle Management
+### Session Workspace Management
 
 ```prolog
 entity(session).
-entity(transaction).
+entity(session_commands_db).  % ECS entity for session database
 
-% Session states and strategies
-component(session, state, active).
-component(session, state, closed).
-component(session, branch_strategy, new_branch).
-component(session, branch_strategy, current_branch).
+% Session workspace structure
+component(session, workspace_path, path(WorkspacePath)) :-
+    session_workspace_path(SessionId, WorkspacePath).
 
-% Transaction states
-component(transaction, state, planned).
-component(transaction, state, executing).
-component(transaction, state, committed).
-component(transaction, state, failed).
-component(transaction, state, rolled_back).
+% Session database as ECS entity with auto-discovery
+component(session_commands_db, data, data(file(DbPath))) :-
+    session_commands_db_path(SessionId, DbPath).
 
-% Start session with branch isolation
-start_session(SessionId, BranchStrategy, Result) :-
+% Auto-discovered database structure
+entity(session_commands_db(table(commands))).
+component(session_commands_db(table(commands)), columns, [
+    column(id, 'INTEGER', false, null, true),
+    column(timestamp, 'TEXT', true, null, false),
+    column(command_type, 'TEXT', true, null, false),
+    column(command_term, 'TEXT', true, null, false),
+    column(result, 'TEXT', false, null, false),
+    column(source, 'TEXT', false, 'user', false)
+]).
+
+% Create session workspace with database discovery
+start_session(SessionId, Result) :-
     uuid(SessionId),
-    get_current_commit(StartCommit),
-
-    (BranchStrategy = new_branch ->
-        format(string(BranchName), "session-~w", [SessionId]),
-        run(command(git(checkout(['-b', BranchName]))), _)
-    ; BranchStrategy = current_branch ->
-        get_current_branch(BranchName)
-    ),
-
-    assertz(active_session(SessionId, BranchName, StartCommit)).
+    create_session_workspace(SessionId),
+    % Discover database structure as ECS components
+    discover_database_artifacts(session_commands_db),
+    Result = ok(session_started(SessionId)).
 ```
 
-### Transaction Execution Within Sessions
+### Command Logging with Database ECS Integration
 
 ```prolog
-% Execute transaction in session context
-execute_transaction(SessionId, Commands, Result) :-
-    active_session(SessionId, BranchName, _),
-    uuid(TransactionId),
-
-    % Switch to session branch
-    run(command(git(checkout([BranchName]))), _),
-
-    % Execute with atomic rollback
-    execute_commands_atomically(Commands, ExecuteResult),
-
-    (ExecuteResult = ok(Results) ->
-        commit_transaction(SessionId, TransactionId, Commands, CommitResult),
-        Result = ok(transaction_committed(TransactionId, CommitResult, Results))
+% Log commands to session database with ECS discovery
+log_command_to_session(Command, CommandType, Result, Source) :-
+    get_current_session_id(SessionId),
+    (SessionId = main ->
+        true  % Don't log commands in main session
     ;
-        rollback_transaction(SessionId, TransactionId),
-        Result = error(commands_failed(ExecuteResult))
+        log_command_to_session_db(SessionId, Command, CommandType, Result, Source),
+        % Update ECS components after logging
+        discover_database_artifacts(session_commands_db)
     ).
 
-% Atomic execution with Git-based rollback
-execute_commands_atomically(Commands, Result) :-
-    get_current_commit(PreCommit),
-    execute_commands(Commands, Results),
-
-    (member(error(E), Results) ->
-        run(command(git(reset(['--hard', PreCommit]))), _),
-        Result = error(E)
+% Query session history via ECS components
+get_session_command_history(SessionId, Commands) :-
+    (SessionId = main ->
+        Commands = []  % Main session has no accumulated commands
     ;
-        Result = ok(Results)
+        % Query via database entity
+        component(session_commands_db, data, data(file(DbPath))),
+        sqlite3_query(DbPath,
+            'SELECT timestamp, command_type, command_term, result, source FROM commands ORDER BY timestamp DESC',
+            QueryResults),
+        maplist(json_to_command_entry, QueryResults, Commands)
     ).
+
+% ECS-based database introspection
+inspect_session_database_structure(SessionId) :-
+    discover_database_artifacts(session_commands_db),
+    findall(Table, component(session_commands_db, table, Table), Tables),
+    forall(member(TableName, Tables), (
+        TableEntity =.. [session_commands_db, table(TableName)],
+        component(TableEntity, columns, Columns),
+        format('Table ~w: ~w~n', [TableName, Columns])
+    )).
 ```
 
 ### Session Management Patterns

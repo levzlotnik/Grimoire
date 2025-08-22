@@ -6,7 +6,7 @@ let
   
   # Python-style pack selection
   swiplEnv = swipl.withPacks (p: with p; [
-    prosqlite
+    # No packs needed - using sqlite3 CLI directly
   ]);
   python = pkgs.python313;
   pythonEnv = python.withPackages (

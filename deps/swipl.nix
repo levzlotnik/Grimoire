@@ -5,7 +5,6 @@ let
   
   # Auto-import all packs from deps/prolog/
   prologPacks = {
-    prosqlite = import ./prolog/prosqlite.nix { inherit pkgs; };
     # Future packs will be added here automatically
   };
   

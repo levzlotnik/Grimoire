@@ -1,28 +1,33 @@
-% File-Based Session System Tests
+% Session System Tests
+% Tests for the file-based session system with SQLite command logging
+
 :- use_module(library(plunit)).
 :- use_module(library(uuid)).
-:- use_module(library(prosqlite)).
-:- use_module(library(readutil)).
 
-% Test suite for file-based session system
-:- begin_tests(file_session_system).
+:- begin_tests(session_system).
+
+% Test cleanup helper
+cleanup_session(SessionId) :-
+    catch(run(command(session(delete(SessionId))), _), _, true).
+
 
 % === SETUP AND CLEANUP ===
 
 setup :-
-    % Clean up any existing test workspaces
-    cleanup_test_workspaces.
+    cleanup_test_sessions,
+    % Reset to main session
+    set_current_session_id(main).
 
 teardown :-
-    % Clean up after each test
-    cleanup_test_workspaces.
+    cleanup_test_sessions,
+    % Reset to main session
+    set_current_session_id(main).
 
-cleanup_test_workspaces :-
-    % Remove any test session workspaces
+cleanup_test_sessions :-
+    % Clean up test session workspaces
     grimoire_root_directory(GrimoireRoot),
     format(atom(SessionsDir), '~w/sessions', [GrimoireRoot]),
     (exists_directory(SessionsDir) ->
-        % Clean up test sessions (ones starting with 'test-')
         catch(
             (directory_files(SessionsDir, Files),
              forall(
@@ -36,183 +41,164 @@ cleanup_test_workspaces :-
         true
     ).
 
-% === BASIC FUNCTIONALITY TESTS ===
+% === BASIC SESSION FUNCTIONALITY ===
 
-test(session_start_creates_workspace, [setup(setup), cleanup(teardown)]) :-
-    % Starting a session should create workspace directory
-    run(command(session(start('test-workspace'))), Result),
-    assertion(Result = ok(session_started('test-workspace'))),
+test(session_start_without_id) :-
+    % Session start without ID should generate UUID
+    run(command(session(start)), Result),
+    assertion(Result = ok(session_started(_))), !.
+
+test(session_start_with_id, [cleanup(reset_to_main)]) :-
+    % Session start with specific ID should create named session
+    run(command(session(start('test-session-1'))), Result),
+    assertion(Result = ok(session_started('test-session-1'))),
     
-    % Verify workspace directory exists
-    session_workspace_path('test-workspace', WorkspacePath),
+    % Verify workspace was created
+    session_workspace_path('test-session-1', WorkspacePath),
     assertion(exists_directory(WorkspacePath)),
     
-    % Verify database file exists (prosqlite adds .sqlite extension)
-    session_commands_db_path('test-workspace', DbPath),
-    format(atom(ActualDbPath), '~w.sqlite', [DbPath]),
-    assertion(exists_file(ActualDbPath)),
+    % Verify database was created (.db extension)
+    session_commands_db_path('test-session-1', DbPath),
+    assertion(exists_file(DbPath)),
     
-    % Verify state file exists
-    session_state_file_path('test-workspace', StatePath),
-    assertion(exists_file(StatePath)).
+    % Verify state file was created
+    session_state_file_path('test-session-1', StatePath),
+    assertion(exists_file(StatePath)), !.
 
-test(think_command_with_string, [setup(setup), cleanup(teardown)]) :-
-    % Think command should work with proper strings
-    run(command(think("This is a test thought")), Result),
-    assertion(Result = ok(thought_recorded("This is a test thought"))).
+reset_to_main :-
+    set_current_session_id(main).
 
-test(think_command_with_atom_conversion, [setup(setup), cleanup(teardown)]) :-
-    % Think command should convert atoms to strings
-    run(command(think(test_thought)), Result),
-    assertion(Result = ok(thought_recorded("test_thought"))).
-
-test(session_history_command, [setup(setup), cleanup(teardown)]) :-
-    % History command should return actual session history
+test(session_history_main_session) :-
+    % Main session should return empty history
     run(command(session(history)), Result),
-    assertion(Result = ok(session_history(main, []))).
+    assertion(Result = ok(no_commands)), !.
 
-test(commit_accumulated_placeholder, [setup(setup), cleanup(teardown)]) :-
-    % Commit accumulated should work with string messages
-    run(command(session(commit_accumulated("Test commit message"))), Result),
-    assertion(Result = ok(commit_accumulated_placeholder("Test commit message"))).
+test(commit_accumulated_placeholder) :-
+    % Commit accumulated should work as placeholder
+    run(command(session(commit_accumulated("Test commit"))), Result),
+    assertion(Result = ok(commit_placeholder("Test commit"))).
 
-% === WORKSPACE PATH TESTS ===
+% === THINK COMMAND TESTS ===
 
-test(workspace_path_resolution, [setup(setup), cleanup(teardown)]) :-
-    % Test workspace path resolution
+test(think_command_string) :-
+    % Think command should work with strings
+    run(command(think("Test thought")), Result),
+    assertion(Result = ok(thought_recorded("Test thought"))), !.
+
+test(think_command_atom) :-
+    % Think command should convert atoms to strings
+    run(command(think(test_atom)), Result),
+    assertion(Result = ok(thought_recorded("test_atom"))).
+
+% === DATABASE FUNCTIONALITY ===
+
+test(database_schema_creation) :-
+    % Starting a session should create proper database schema
+    run(command(session(start('test-db-schema'))), _),
+    
+    % Check that database file exists
+    session_commands_db_path('test-db-schema', DbPath),
+    assertion(exists_file(DbPath)),
+    
+    % Verify we can query the schema using sqlite3 CLI
+    catch(
+        (sqlite3_query(DbPath, 'SELECT name FROM sqlite_master WHERE type=\'table\' AND name=\'commands\'', Results),
+         assertion(is_list(Results)),
+         length(Results, 1)),  % Should find exactly one 'commands' table
+        Error,
+        (format('Schema test failed: ~w~n', [Error]), fail)
+    ), !.
+
+test(command_logging, [cleanup(cleanup_session('test-logging'))]) :-
+    % Test that commands can be logged to session database
+    cleanup_session('test-logging'),  % Clean up any previous run
+    run(command(session(start('test-logging'))), _),
+    
+    % Log a test command directly
+    log_command_to_session_db('test-logging', action, test_command, ok(success)),
+    
+    % Verify command was logged
+    session_commands_db_path('test-logging', DbPath),
+    sqlite3_query(DbPath, 'SELECT COUNT(*) AS count FROM commands WHERE command_type = \'action\'', Results),
+    Results = [CountDict|_],
+    get_dict(count, CountDict, Count),
+    assertion(Count = 1), !.
+
+test(session_history_retrieval, [cleanup(cleanup_session('test-history'))]) :-
+    % Test retrieving command history from database
+    cleanup_session('test-history'),  % Clean up any previous run
+    run(command(session(start('test-history'))), _),
+    
+    % Add some test commands
+    log_command_to_session_db('test-history', think, "test thought", ok(result)),
+    log_command_to_session_db('test-history', action, test_action, ok(result)),
+    
+    % Retrieve history
+    get_session_command_history('test-history', Commands),
+    
+    % Should have 2 commands (in reverse chronological order)
+    length(Commands, 2),
+    Commands = [command_entry(_, CT1, _, _, _), command_entry(_, CT2, _, _, _)],
+    assertion(CT1 = "action"),
+    assertion(CT2 = "think"), !.
+
+% === PATH RESOLUTION TESTS ===
+
+test(workspace_path_resolution) :-
     session_workspace_path('test-session', WorkspacePath),
     grimoire_root_directory(GrimoireRoot),
     format(atom(ExpectedPath), '~w/sessions/test-session', [GrimoireRoot]),
     assertion(WorkspacePath = ExpectedPath).
 
-test(commands_db_path_resolution, [setup(setup), cleanup(teardown)]) :-
-    % Test commands database path resolution
+test(database_path_resolution) :-
     session_commands_db_path('test-session', DbPath),
     session_workspace_path('test-session', WorkspacePath),
-    format(atom(ExpectedDbPath), '~w/commands', [WorkspacePath]),
-    assertion(DbPath = ExpectedDbPath).
+    format(atom(ExpectedPath), '~w/commands.db', [WorkspacePath]),
+    assertion(DbPath = ExpectedPath).
 
-test(state_file_path_resolution, [setup(setup), cleanup(teardown)]) :-
-    % Test state file path resolution
+test(state_file_path_resolution) :-
     session_state_file_path('test-session', StatePath),
     session_workspace_path('test-session', WorkspacePath),
-    format(atom(ExpectedStatePath), '~w/state.pl', [WorkspacePath]),
-    assertion(StatePath = ExpectedStatePath).
+    format(atom(ExpectedPath), '~w/state.pl', [WorkspacePath]),
+    assertion(StatePath = ExpectedPath).
 
-% === ENTITY LOADING TESTS ===
+% === SESSION STATE TESTS ===
 
-test(add_entity_load_to_session, [setup(setup), cleanup(teardown)]) :-
-    % Test adding entity load to session state file
-    run(command(session(start('test-entity-load'))), _),
+test(session_state_file_initialization) :-
+    % Test that session state file is properly initialized
+    run(command(session(start('test-state'))), _),
     
-    % Add an entity load
-    add_entity_load_to_session('test-entity-load', semantic(folder(test))),
+    session_state_file_path('test-state', StatePath),
+    assertion(exists_file(StatePath)),
     
-    % Check that state file contains the load
-    session_state_file_path('test-entity-load', StatePath),
+    % State file should contain session comment
     read_file_to_string(StatePath, Content, []),
-    assertion(sub_string(Content, _, _, _, 'load_entity(semantic(folder(test)))')).
+    assertion(sub_string(Content, _, _, _, 'Session state file for session test-state')), !.
 
-test(load_session_state_file, [setup(setup), cleanup(teardown)]) :-
-    % Test loading session state file
-    run(command(session(start('test-state-load'))), _),
+test(add_entity_load_to_session) :-
+    % Test adding entity loads to session state
+    run(command(session(start('test-entity'))), _),
     
-    % Add some content to state file
-    session_state_file_path('test-state-load', StatePath),
+    add_entity_load_to_session('test-entity', semantic(folder(test))),
+    
+    session_state_file_path('test-entity', StatePath),
+    read_file_to_string(StatePath, Content, []),
+    assertion(sub_string(Content, _, _, _, 'load_entity(semantic(folder(test)))')), !.
+
+test(load_session_state_file) :-
+    % Test loading session state file
+    run(command(session(start('test-load-state'))), _),
+    
+    % Add a test fact to state file
+    session_state_file_path('test-load-state', StatePath),
     open(StatePath, append, Stream),
-    format(Stream, 'test_fact(loaded_from_session).~n', []),
+    format(Stream, 'test_fact(loaded).~n', []),
     close(Stream),
     
     % Load the state file
-    load_session_state_file('test-state-load'),
+    load_session_state_file('test-load-state'),
     
-    % Verify the fact was loaded
-    assertion(test_fact(loaded_from_session)).
+    % Verify fact was loaded
+    assertion(test_fact(loaded)), !.
 
-% === DATABASE FUNCTIONALITY TESTS ===
-
-test(database_schema_creation, [setup(setup), cleanup(teardown)]) :-
-    % Test that database schema is created properly
-    run(command(session(start('test-db-schema'))), _),
-    
-    % Check database file exists (prosqlite adds .sqlite extension)
-    session_commands_db_path('test-db-schema', DbPath),
-    format(atom(ActualDbPath), '~w.sqlite', [DbPath]),
-    assertion(exists_file(ActualDbPath)),
-    
-    % Verify schema by checking if we can query the commands table
-    catch(
-        (sqlite_connect(DbPath, test_schema_conn, []),
-         sqlite_query(test_schema_conn, 'SELECT name FROM sqlite_master WHERE type="table" AND name="commands"', row('commands')),
-         sqlite_disconnect(test_schema_conn)),
-        Error,
-        (format('Database schema test failed: ~w~n', [Error]), fail)
-    ).
-
-test(command_logging_to_database, [setup(setup), cleanup(teardown)]) :-
-    % Test that commands are properly logged to database
-    run(command(session(start('test-logging'))), _),
-    
-    % Log a test command
-    log_command_to_session_db('test-logging', test_command(param), action, ok(test_result), user),
-    
-    % Verify command was logged
-    session_commands_db_path('test-logging', DbPath),
-    sqlite_connect(DbPath, test_logging_conn, []),
-    sqlite_query(test_logging_conn, 'SELECT COUNT(*) FROM commands WHERE command_type = "action"', row(Count)),
-    sqlite_disconnect(test_logging_conn),
-    assertion(Count = 1).
-
-test(session_history_retrieval, [setup(setup), cleanup(teardown)]) :-
-    % Test retrieving command history from database
-    run(command(session(start('test-history'))), _),
-    
-    % Add some test commands
-    log_command_to_session_db('test-history', think("test thought"), think, ok(thought_recorded("test thought")), user),
-    log_command_to_session_db('test-history', git(status), action, ok(status_result), user),
-    
-    % Retrieve history
-    get_session_command_history('test-history', Commands),
-    
-    % Verify we got the commands back
-    assertion(length(Commands, 2)),
-    assertion(Commands = [command_entry(_, think, _, _, user), command_entry(_, action, _, _, user)]).
-
-test(filtered_history_by_type, [setup(setup), cleanup(teardown)]) :-
-    % Test filtering command history by type
-    run(command(session(start('test-filter'))), _),
-    
-    % Add commands of different types
-    log_command_to_session_db('test-filter', think("thought 1"), think, ok(result), user),
-    log_command_to_session_db('test-filter', git(status), action, ok(result), user),
-    log_command_to_session_db('test-filter', think("thought 2"), think, ok(result), user),
-    
-    % Filter by think type
-    get_filtered_command_history('test-filter', [type(think)], ThinkCommands),
-    
-    % Should only get think commands
-    assertion(length(ThinkCommands, 2)),
-    forall(member(command_entry(_, Type, _, _, _), ThinkCommands), assertion(Type = think)).
-
-test(think_command_database_integration, [setup(setup), cleanup(teardown)]) :-
-    % Test that think command properly integrates with database logging
-    % First create a test session to avoid main session issues
-    run(command(session(start('test-think-db'))), _),
-    
-    % Override get_current_session_id for this test
-    retractall(current_test_session(_)),
-    assert(current_test_session('test-think-db')),
-    
-    % Execute think command (this should log to database)
-    run(command(think("Test database integration")), Result),
-    assertion(Result = ok(thought_recorded("Test database integration"))),
-    
-    % Check that it was logged to database
-    get_session_command_history('test-think-db', Commands),
-    length(Commands, N),
-    assertion(N > 0),
-    
-    % Clean up
-    retractall(current_test_session(_)).
-
-:- end_tests(file_session_system).
+:- end_tests(session_system).

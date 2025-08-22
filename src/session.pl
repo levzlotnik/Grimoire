@@ -1,13 +1,8 @@
 % File-Based Session System with Command Accumulation
-% Sessions are workspaces that accumulate commands, separate from Git
+% Sessions are workspaces that accumulate commands, with SQLite logging and ECS integration
 :- use_module(library(uuid)).
-
-% Ensure prosqlite is installed, then import SQLite support
-:- catch(use_module(library(prosqlite)), 
-         error(existence_error(source_sink, library(prosqlite)), _),
-         (format('Installing prosqlite pack...~n'),
-          pack_install(prosqlite, [silent(true), interactive(false)]),
-          use_module(library(prosqlite)))).
+:- use_module(library(filesex)).
+:- load_entity(semantic(folder("src/db"))).
 
 % === ENTITIES AND COMPONENTS ===
 
@@ -17,14 +12,31 @@ entity(think).
 % Session commands
 component(command, ctor, session).
 component(session, subcommand, start).
+component(session, subcommand, delete).
+component(session, subcommand, close).
+component(session, subcommand, switch).
+component(session, subcommand, commit).
+component(session, subcommand, rollback).
+component(session, subcommand, current).
+component(session, subcommand, list).
+component(session, subcommand, status).
 component(session, subcommand, history).
 component(session, subcommand, commit_accumulated).
 
+% Session conjure/perceive constructors for spell system
+component(conjure, ctor, session(start)).
+component(conjure, ctor, session(delete)).
+component(conjure, ctor, session(close)).
+component(conjure, ctor, session(switch)).
+component(conjure, ctor, session(commit)).
+component(conjure, ctor, session(rollback)).
+component(perceive, ctor, session(current)).
+component(perceive, ctor, session(list)).
+component(perceive, ctor, session(status)).
+component(perceive, ctor, session(history)).
+
 % Think command
 component(command, ctor, think).
-
-docstring(session, "File-based session system. Sessions accumulate commands in workspace directories and can commit to Git when ready.").
-docstring(think, "Record reasoning/thought process. Takes a string argument for LLM audit trails.").
 
 % === CORE WORKSPACE PATHS ===
 
@@ -37,176 +49,135 @@ grimoire_root_directory(RootDir) :-
         format(atom(RootDir), '~w/.grimoire', [HomeDir])
     ).
 
-% Session workspace directory: ${GRIMOIRE_ROOT}/sessions/{session-id}/
+% Session workspace directory
 session_workspace_path(SessionId, WorkspacePath) :-
-    grimoire_root_directory(GrimoireRoot),
-    format(atom(WorkspacePath), '~w/sessions/~w', [GrimoireRoot, SessionId]).
+    grimoire_root_directory(RootDir),
+    format(atom(WorkspacePath), '~w/sessions/~w', [RootDir, SessionId]).
 
-% Commands database: workspace/commands.sqlite (prosqlite adds .sqlite automatically)
+% Session commands database path
 session_commands_db_path(SessionId, DbPath) :-
     session_workspace_path(SessionId, WorkspacePath),
-    format(atom(DbPath), '~w/commands', [WorkspacePath]).
+    format(atom(DbPath), '~w/commands.db', [WorkspacePath]).
 
-% Session state file: workspace/state.pl
+% Session state file path
 session_state_file_path(SessionId, StatePath) :-
     session_workspace_path(SessionId, WorkspacePath),
     format(atom(StatePath), '~w/state.pl', [WorkspacePath]).
 
-% === WORKSPACE MANAGEMENT ===
+% === SESSION COMMAND IMPLEMENTATIONS ===
 
-% Create session workspace
-create_session_workspace(SessionId) :-
+% Start session without ID (generate UUID)
+run(command(session(start)), RetVal) :-
+    uuid(SessionId),
+    run(command(session(start(SessionId))), RetVal).
+
+% Start session with specific ID
+run(command(session(start(SessionId))), RetVal) :-
+    initialize_session_workspace(SessionId),
+    initialize_session_database(SessionId),
+    initialize_session_state_file(SessionId),
+    set_current_session_id(SessionId),  % Set as current session
+    format('🔮 Session ~w started~n', [SessionId]),
+    RetVal = ok(session_started(SessionId)).
+
+% Delete session completely
+run(command(session(delete(SessionId))), RetVal) :-
+    session_workspace_path(SessionId, WorkspacePath),
+    (exists_directory(WorkspacePath) ->
+        delete_directory_and_contents(WorkspacePath),
+        RetVal = ok(session_deleted(SessionId))
+    ;
+        RetVal = error(session_not_found(SessionId))
+    ).
+
+% Show session history
+run(command(session(history)), RetVal) :-
+    get_current_session_id(SessionId),
+    get_session_command_history(SessionId, Commands),
+    (Commands = [] ->
+        RetVal = ok(no_commands)
+    ;
+        format('Session ~w command history:~n', [SessionId]),
+        maplist(print_command_entry, Commands),
+        RetVal = ok(history_shown(Commands))
+    ).
+
+% Commit accumulated commands (placeholder)
+run(command(session(commit_accumulated(Message))), RetVal) :-
+    format('Committing accumulated commands: ~w~n', [Message]),
+    RetVal = ok(commit_placeholder(Message)).
+
+% Think command implementations
+run(command(think(ThoughtString)), RetVal) :-
+    string(ThoughtString),
+    log_command_to_session(think, ThoughtString, thought_recorded),
+    RetVal = ok(thought_recorded(ThoughtString)).
+
+run(command(think(ThoughtAtom)), RetVal) :-
+    atom(ThoughtAtom),
+    atom_string(ThoughtAtom, ThoughtString),
+    log_command_to_session(think, ThoughtString, thought_recorded),
+    RetVal = ok(thought_recorded(ThoughtString)).
+
+% === SESSION WORKSPACE INITIALIZATION ===
+
+% Initialize session workspace directory
+initialize_session_workspace(SessionId) :-
     session_workspace_path(SessionId, WorkspacePath),
     (exists_directory(WorkspacePath) ->
         true
     ;
         make_directory_path(WorkspacePath)
-    ),
-    initialize_commands_db(SessionId),
-    initialize_state_file(SessionId).
-
-% Initialize SQLite commands database with proper schema
-initialize_commands_db(SessionId) :-
-    session_commands_db_path(SessionId, DbPath),
-    format(atom(ActualDbPath), '~w.sqlite', [DbPath]),
-    (exists_file(ActualDbPath) ->
-        true  % Database already exists
-    ;
-        catch(
-            (% Create SQLite database with proper schema using prosqlite
-             sqlite_connect(DbPath, session_init, [exists(false)]),
-             
-             % Create commands table with proper schema
-             sqlite_query(session_init,
-                'CREATE TABLE commands (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    timestamp TEXT NOT NULL,
-                    command_type TEXT NOT NULL,
-                    command_term TEXT NOT NULL,
-                    result TEXT,
-                    source TEXT DEFAULT "user"
-                )'),
-             
-             % Create indexes for better query performance
-             sqlite_query(session_init, 'CREATE INDEX idx_timestamp ON commands(timestamp)'),
-             sqlite_query(session_init, 'CREATE INDEX idx_command_type ON commands(command_type)'),  
-             sqlite_query(session_init, 'CREATE INDEX idx_source ON commands(source)'),
-             
-             sqlite_disconnect(session_init),
-             
-             true),
-            Error,
-            (format('Failed to initialize database: ~w~n', [Error]))
-        )
     ).
 
-% Initialize state file (replaces session-{id}.pl files)
-initialize_state_file(SessionId) :-
+% Initialize session database with schema and ECS registration
+initialize_session_database(SessionId) :-
+    session_commands_db_path(SessionId, DbPath),
+    session_workspace_path(SessionId, WorkspacePath),
+    format(atom(SchemaFile), '~w/commands.schema.sql', [WorkspacePath]),
+    
+    % Create schema file
+    SessionSchema = 
+        "CREATE TABLE IF NOT EXISTS commands (\n    id INTEGER PRIMARY KEY AUTOINCREMENT,\n    timestamp TEXT NOT NULL,\n    command_type TEXT NOT NULL,\n    command_term TEXT NOT NULL,\n    result TEXT,\n    source TEXT DEFAULT 'user'\n);\nCREATE INDEX IF NOT EXISTS idx_timestamp ON commands(timestamp);\nCREATE INDEX IF NOT EXISTS idx_command_type ON commands(command_type);\nCREATE INDEX IF NOT EXISTS idx_source ON commands(source);",
+    
+    open(SchemaFile, write, Stream),
+    write(Stream, SessionSchema),
+    close(Stream),
+    
+    % Create database using db creation command
+    format(atom(SessionDbId), 'session_~w', [SessionId]),
+    run(command(db(create(SessionDbId, DbPath, schema(file(SchemaFile))))), _).
+
+% Initialize session state file
+initialize_session_state_file(SessionId) :-
     session_state_file_path(SessionId, StatePath),
     (exists_file(StatePath) ->
         true
     ;
         open(StatePath, write, Stream),
         format(Stream, '%% Session state file for session ~w~n', [SessionId]),
-        format(Stream, '%% Auto-generated by Grimoire session system~n~n', []),
+        format(Stream, '%% Entity loads and persistent state~n~n', []),
         close(Stream)
     ).
 
-% === SESSION OPERATIONS ===
+% === SESSION STATE MANAGEMENT ===
 
-% Start new session
-run(command(session(start)), RetVal) :-
-    uuid(SessionId),
-    run(command(session(start(SessionId))), RetVal).
+% Dynamic predicate to track current session
+:- dynamic current_session_id/1.
 
-run(command(session(start(SessionId))), RetVal) :-
-    atom(SessionId),
-    create_session_workspace(SessionId),
-    format('🔮 Session ~w started~n', [SessionId]),
-    RetVal = ok(session_started(SessionId)).
-
-% Show session command history
-run(command(session(history)), RetVal) :-
-    get_current_session_id(SessionId),
-    get_session_command_history(SessionId, Commands),
-    format('📚 Command history for session ~w:~n', [SessionId]),
-    display_command_history(Commands),
-    RetVal = ok(session_history(SessionId, Commands)).
-
-% Commit accumulated commands to Git branch
-run(command(session(commit_accumulated(Message))), RetVal) :-
-    string(Message),
-    format('🔮 Would commit accumulated commands with message: ~s~n', [Message]),
-    RetVal = ok(commit_accumulated_placeholder(Message)).
-
-% === THINK COMMAND ===
-
-% Think command - records reasoning with proper string handling
-run(command(think(ThoughtString)), RetVal) :-
-    string(ThoughtString), !,
-    format('💭 ~s~n', [ThoughtString]),
-    % Log to session database
-    log_command_to_session(think(ThoughtString), think, ok(thought_recorded(ThoughtString)), user),
-    RetVal = ok(thought_recorded(ThoughtString)).
-
-% Handle atom input by converting to string
-run(command(think(ThoughtAtom)), RetVal) :-
-    atom(ThoughtAtom),
-    atom_string(ThoughtAtom, ThoughtString),
-    run(command(think(ThoughtString)), RetVal).
-
-% === COMMAND LOGGING ===
-
-% Log command to current session database
-log_command_to_session(Command, CommandType, Result, Source) :-
-    get_current_session_id(SessionId),
-    (SessionId = main ->
-        true  % Don't log commands in main session
-    ;
-        log_command_to_session_db(SessionId, Command, CommandType, Result, Source)
-    ).
-
-% Log command to specific session database
-log_command_to_session_db(SessionId, Command, CommandType, Result, Source) :-
-    session_commands_db_path(SessionId, DbPath),
-    format(atom(ActualDbPath), '~w.sqlite', [DbPath]),
-    (exists_file(ActualDbPath) ->
-        catch(
-            (% Database exists, log the command
-             ConnAlias = session_log,
-             sqlite_connect(DbPath, ConnAlias, []),
-             
-             % Get current timestamp
-             get_time(TimeStamp),
-             format_time(atom(TimeStr), '%Y-%m-%dT%H:%M:%S', TimeStamp),
-             
-             % Convert terms to atoms for storage
-             term_to_atom(Command, CommandAtom),
-             term_to_atom(Result, ResultAtom),
-             
-             % Insert command into database using prosqlite format
-             format(atom(InsertSQL), 
-                'INSERT INTO commands (timestamp, command_type, command_term, result, source) VALUES ("~w", "~w", "~w", "~w", "~w")',
-                [TimeStr, CommandType, CommandAtom, ResultAtom, Source]),
-             sqlite_query(ConnAlias, InsertSQL),
-             
-             sqlite_disconnect(ConnAlias)),
-            Error,
-            format('Warning: Failed to log command: ~w~n', [Error])
-        )
-    ;
-        true  % Database doesn't exist, silently fail
-    ).
-
-% Get current session ID 
+% Get current session ID
 get_current_session_id(SessionId) :-
-    % TODO: Implement proper session tracking
-    % For now, always return main
-    SessionId = main.
+    (current_session_id(SessionId) ->
+        true
+    ;
+        % Default to main if no session is set
+        SessionId = main
+    ).
 
-% Session exists check (placeholder)
-session_exists(_SessionId) :- 
-    fail.  % For now, no sessions exist
+% Set current session ID (for testing and session switching)
+set_current_session_id(SessionId) :-
+    retractall(current_session_id(_)),
+    assertz(current_session_id(SessionId)).
 
 % Add entity load to session state
 add_entity_load_to_session(SessionId, EntitySpec) :-
@@ -225,6 +196,44 @@ load_session_state_file(SessionId) :-
         true
     ).
 
+% === COMMAND LOGGING ===
+
+% Log command to current session database
+log_command_to_session(CommandType, CommandTerm, Result) :-
+    get_current_session_id(SessionId),
+    (SessionId = main ->
+        true  % Main session doesn't log commands
+    ;
+        log_command_to_session_db(SessionId, CommandType, CommandTerm, Result)
+    ).
+
+% Log command to specific session database
+log_command_to_session_db(SessionId, CommandType, CommandTerm, Result) :-
+    session_commands_db_path(SessionId, DbPath),
+    (exists_file(DbPath) ->
+        catch(
+            (% Get current timestamp
+             get_time(TimeStamp),
+             format_time(atom(FormattedTime), '%Y-%m-%d %H:%M:%S', TimeStamp),
+             
+             % Escape command term for SQL
+             term_string(CommandTerm, CommandTermStr),
+             escape_sql_string(CommandTermStr, EscapedCommandTerm),
+             term_string(Result, ResultStr),
+             escape_sql_string(ResultStr, EscapedResult),
+             
+             % Insert command into database
+             format(atom(InsertSQL), 
+                'INSERT INTO commands (timestamp, command_type, command_term, result) VALUES (\'~w\', \'~w\', \'~w\', \'~w\')',
+                [FormattedTime, CommandType, EscapedCommandTerm, EscapedResult]),
+             sqlite3_exec(DbPath, InsertSQL)),
+            Error,
+            format('Warning: Failed to log command: ~w~n', [Error])
+        )
+    ;
+        format('Warning: Session database not found: ~w~n', [DbPath])
+    ).
+
 % === DATABASE QUERY FUNCTIONS ===
 
 % Get command history from session database
@@ -233,17 +242,13 @@ get_session_command_history(SessionId, Commands) :-
         Commands = []  % Main session has no accumulated commands
     ;
         session_commands_db_path(SessionId, DbPath),
-        format(atom(ActualDbPath), '~w.sqlite', [DbPath]),
-        (exists_file(ActualDbPath) ->
+        (exists_file(DbPath) ->
             catch(
-                (ConnAlias = session_query,
-                 sqlite_connect(DbPath, ConnAlias, []),
-                 findall(command_entry(Timestamp, CommandType, CommandTerm, Result, Source),
-                         sqlite_query(ConnAlias,
-                             'SELECT timestamp, command_type, command_term, result, source FROM commands ORDER BY timestamp DESC',
-                             row(Timestamp, CommandType, CommandTerm, Result, Source)),
-                         Commands),
-                 sqlite_disconnect(ConnAlias)),
+                (% Query command history
+                 sqlite3_query(DbPath,
+                     'SELECT timestamp, command_type, command_term, result, source FROM commands ORDER BY timestamp DESC',
+                     QueryResults),
+                 maplist(json_to_command_entry, QueryResults, Commands)),
                 Error,
                 (format('Warning: Failed to query command history: ~w~n', [Error]),
                  Commands = [])
@@ -253,30 +258,139 @@ get_session_command_history(SessionId, Commands) :-
         )
     ).
 
-% Convert database row to command entry structure
-row_to_command_entry(row(Timestamp, CommandType, CommandTerm, Result, Source), 
-                     command_entry(Timestamp, CommandType, CommandTerm, Result, Source)).
+% Convert JSON query result to command entry
+json_to_command_entry(JsonDict, command_entry(Timestamp, CommandType, CommandTerm, Result, Source)) :-
+    get_dict(timestamp, JsonDict, Timestamp),
+    get_dict(command_type, JsonDict, CommandType),
+    get_dict(command_term, JsonDict, CommandTerm),
+    get_dict(result, JsonDict, Result),
+    get_dict(source, JsonDict, Source).
 
-% Display command history in readable format
-display_command_history([]).
-display_command_history([command_entry(Timestamp, CommandType, CommandTerm, Result, Source)|Rest]) :-
-    format('  ~w [~w] (~w): ~w -> ~w~n', [Timestamp, Source, CommandType, CommandTerm, Result]),
-    display_command_history(Rest).
+% Print command entry
+print_command_entry(command_entry(Timestamp, CommandType, CommandTerm, Result, Source)) :-
+    format('[~w] ~w: ~w -> ~w (source: ~w)~n', [Timestamp, CommandType, CommandTerm, Result, Source]).
 
-% Get filtered command history
-get_filtered_command_history(SessionId, Filters, Commands) :-
-    get_session_command_history(SessionId, AllCommands),
-    apply_command_filters(AllCommands, Filters, Commands).
+% === PERCEIVE PREDICATES ===
 
-% Apply filters to command history
-apply_command_filters(Commands, [], Commands).
-apply_command_filters(Commands, [type(Type)|RestFilters], FilteredCommands) :-
-    include(command_has_type(Type), Commands, TypeFiltered),
-    apply_command_filters(TypeFiltered, RestFilters, FilteredCommands).
-apply_command_filters(Commands, [source(Source)|RestFilters], FilteredCommands) :-
-    include(command_has_source(Source), Commands, SourceFiltered),
-    apply_command_filters(SourceFiltered, RestFilters, FilteredCommands).
+% Perceive current session
+perceive(session(current(SessionId))) :-
+    get_current_session_id(SessionId).
 
-% Filter predicates
-command_has_type(Type, command_entry(_, Type, _, _, _)).
-command_has_source(Source, command_entry(_, _, _, _, Source)).
+% Perceive session list
+perceive(session(list(Sessions))) :-
+    grimoire_root_directory(RootDir),
+    format(atom(SessionsDir), '~w/sessions', [RootDir]),
+    (exists_directory(SessionsDir) ->
+        directory_files(SessionsDir, AllFiles),
+        exclude(=(.), AllFiles, Files1),
+        exclude(=(..), Files1, SessionDirs),
+        maplist(atom_string, SessionDirs, Sessions)
+    ;
+        Sessions = []
+    ).
+
+% Perceive session status
+perceive(session(status(Status))) :-
+    get_current_session_id(SessionId),
+    session_workspace_path(SessionId, WorkspacePath),
+    (exists_directory(WorkspacePath) ->
+        Status = active(SessionId)
+    ;
+        Status = inactive(SessionId)
+    ).
+
+% Perceive session history
+perceive(session(history(Commands))) :-
+    get_current_session_id(SessionId),
+    get_session_command_history(SessionId, Commands).
+
+% === SESSION CLI PREDICATES ===
+
+% List all sessions
+list_all_sessions(Result) :-
+    grimoire_root_directory(RootDir),
+    format(atom(SessionsDir), '~w/sessions', [RootDir]),
+    (exists_directory(SessionsDir) ->
+        directory_files(SessionsDir, AllFiles),
+        exclude(=(.), AllFiles, Files1),
+        exclude(=(..), Files1, SessionDirs),
+        maplist(atom_string, SessionDirs, Sessions),
+        Result = ok(session_list(Sessions))
+    ;
+        Result = ok(session_list([]))
+    ).
+
+% Switch to session
+switch_to_session(SessionId, Result) :-
+    session_workspace_path(SessionId, WorkspacePath),
+    (exists_directory(WorkspacePath) ->
+        Result = ok(session_switched(SessionId))
+    ;
+        Result = error(session_not_found(SessionId))
+    ).
+
+% Close session
+close_session(SessionId, Strategy, Result) :-
+    session_workspace_path(SessionId, WorkspacePath),
+    (exists_directory(WorkspacePath) ->
+        (Strategy = abandon ->
+            % Just remove workspace directory for abandon
+            delete_directory_and_contents(WorkspacePath),
+            Result = ok(session_closed(SessionId, abandon))
+        ;
+            % For merge_to_main, would normally merge but just clean up for now
+            delete_directory_and_contents(WorkspacePath),
+            Result = ok(session_closed(SessionId, merge_to_main))
+        )
+    ;
+        Result = error(session_not_found(SessionId))
+    ).
+
+% === DOCSTRINGS ===
+
+docstring(session, "File-based session system with SQLite command logging. Sessions accumulate commands in workspace directories with commands.db logs and state.pl files.").
+docstring(think, "Record reasoning/thought process. Takes a string argument for LLM audit trails.").
+
+docstring(command(session(start)),
+    {|string(_)||
+    Start new session workspace.
+    Creates session directory with commands.db, state.pl, and schema files.
+    Format: command(session(start)) or command(session(start(SessionId))).
+        SessionId - unique session identifier (auto-generated if not provided)
+    |}
+).
+
+docstring(command(session(delete)),
+    {|string(_)||
+    Delete session workspace completely.
+    Removes session directory and all associated files.
+    Format: command(session(delete(SessionId))).
+        SessionId - session identifier to delete
+    |}
+).
+
+docstring(command(session(history)),
+    {|string(_)||
+    Show command history for current session.
+    Displays accumulated commands from session database.
+    Format: command(session(history)).
+    |}
+).
+
+docstring(command(session(commit_accumulated)),
+    {|string(_)||
+    Commit accumulated session commands (placeholder).
+    Future implementation will handle command batching and persistence.
+    Format: command(session(commit_accumulated(Message))).
+        Message - commit message for the accumulated commands
+    |}
+).
+
+docstring(command(think),
+    {|string(_)||
+    Record reasoning or thought process.
+    Logs thoughts to current session for LLM audit trails.
+    Format: command(think(ThoughtString)).
+        ThoughtString - the thought or reasoning to record
+    |}
+).

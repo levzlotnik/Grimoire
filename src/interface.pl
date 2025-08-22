@@ -44,7 +44,7 @@ docstring(interface(doc), "Show docstring of current entity").
 docstring(interface(repl), "Start interactive REPL with context awareness").
 docstring(interface(status), "Show session/transaction status").
 docstring(interface(test), "Run the test suite").
-docstring(interface(session), "Session management commands (start, close, execute)").
+docstring(interface(session), "File-based session management with SQLite command logging (start, history, commit_accumulated)").
 docstring(interface(cast), "Cast conjuration spells (mutable operations)").
 docstring(interface(perceive), "Execute perception spells (query operations)").
 docstring(interface(run), "Execute arbitrary command term structures (legacy)").

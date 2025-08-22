@@ -1,11 +1,7 @@
-% Dynamic declarations
-:- dynamic entity/1.
-:- dynamic component/3.
-
 % Core entities
+:- self_entity(project).
 entity(package).
 entity(application).
-:- self_entity(project).
 entity(environment).
 entity(context).
 entity(language).
@@ -162,7 +158,7 @@ component(command, ctor, mkproject).
 
 % Template discovery - query nix domain for available templates
 discover_available_templates(Templates) :-
-    findall(TemplateId, 
+    findall(TemplateId,
             component(nix(flake(template)), instance, nix(flake(template(TemplateId)))),
             Templates).
 
@@ -182,7 +178,7 @@ docstring(mkproject,
     - git(bool)          : Initialize git repo (default: true)
     - template(Template) : Flake template to use (default: none)
     - lang(Language)     : Programming language (affects template)
-    
+
     Conjure variant uses GRIMOIRE_PROJECTS_DIR environment variable or defaults to ~/.grimoire/Projects/
     |}
 ).
@@ -194,14 +190,14 @@ run(conjure(mkproject(TemplateId, ProjectName)), RetVal) :-
             % Get projects directory
             get_projects_directory(ProjectsDir),
             directory_file_path(ProjectsDir, ProjectName, DestPath),
-            
+
             % Ensure projects directory exists
             (exists_directory(ProjectsDir) ->
                 true
             ;
                 make_directory_path(ProjectsDir)
             ),
-            
+
             % Check if project already exists
             (exists_directory(DestPath) ->
                 RetVal = error(project_already_exists(DestPath))
@@ -239,17 +235,17 @@ rename_project_entities(ProjectPath, TemplateId, ProjectName, Result) :-
         % Fallback: assume template_id naming pattern, but this will evolve
         format(atom(TemplateEntityName), '~w_template', [TemplateId])
     ),
-    
+
     % Find semantics.pl and semantics.plt files in project directory
     findall(File, (
         member(FileName, ['semantics.pl', 'semantics.plt']),
         directory_file_path(ProjectPath, FileName, File),
         exists_file(File)
     ), SemanticsFiles),
-    
+
     % Rename entities in each file
     maplist(rename_entities_in_file(TemplateEntityName, ProjectName), SemanticsFiles, Results),
-    
+
     % Check if all renamings succeeded
     (member(error(_), Results) ->
         Result = error(Results)
@@ -263,15 +259,15 @@ rename_entities_in_file(OldEntityName, NewEntityName, FilePath, Result) :-
         (
             % Read the entire file
             read_file_to_string(FilePath, Content, []),
-            
+
             % Perform comprehensive entity renaming
             rename_all_entity_occurrences(Content, OldEntityName, NewEntityName, NewContent),
-            
+
             % Write back to file
             open(FilePath, write, Stream),
             write(Stream, NewContent),
             close(Stream),
-            
+
             Result = ok
         ),
         Error,
@@ -283,24 +279,24 @@ rename_all_entity_occurrences(Content, OldEntity, NewEntity, NewContent) :-
     % Create atom names for replacement
     atom_string(OldEntityAtom, OldEntity),
     atom_string(NewEntityAtom, NewEntity),
-    
+
     % Replace various patterns:
     % 1. :- self_entity(OldEntity).
     format(string(OldSelfEntity), ':- self_entity(~w).', [OldEntityAtom]),
     format(string(NewSelfEntity), ':- self_entity(~w).', [NewEntityAtom]),
-    
+
     % 2. component(OldEntity, ...)
     format(string(OldComponentPattern), 'component(~w,', [OldEntityAtom]),
     format(string(NewComponentPattern), 'component(~w,', [NewEntityAtom]),
-    
+
     % 3. entity(OldEntity)
     format(string(OldEntityPattern), 'entity(~w)', [OldEntityAtom]),
     format(string(NewEntityPattern), 'entity(~w)', [NewEntityAtom]),
-    
+
     % 4. docstring(OldEntity, ...)
     format(string(OldDocPattern), 'docstring(~w,', [OldEntityAtom]),
     format(string(NewDocPattern), 'docstring(~w,', [NewEntityAtom]),
-    
+
     % Apply all replacements using literal replacement
     re_replace(OldSelfEntity, NewSelfEntity, Content, Content1, [literal, global]),
     re_replace(OldComponentPattern, NewComponentPattern, Content1, Content2, [literal, global]),

@@ -2,3 +2,4 @@
 - Use `./grimoire exec` in place of `swipl`; it loads the system stuff
 - Never ever use `git add .` or `git add -A` - at most use `git add -u` and otherwise add files individually
 - You can use `./grimoire test <test name>` to test (multiple) individual tests
+- Don't ever use `user:` namespacing for the `entity/1`, `component/3`, `docstring/2`.
