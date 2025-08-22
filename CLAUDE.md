@@ -1,5 +1,41 @@
-- Testing the project is done using `./grimoire test`
-- Use `./grimoire exec` in place of `swipl`; it loads the system stuff
-- Never ever use `git add .` or `git add -A` - at most use `git add -u` and otherwise add files individually
-- You can use `./grimoire test <test name>` to test (multiple) individual tests
-- Don't ever use `user:` namespacing for the `entity/1`, `component/3`, `docstring/2`.
+## Core Philosophy
+- Knowledge-based OS built on Entity-Component-System (ECS) architecture
+- Semantic knowledge lives in Prolog files (`semantics.pl`)
+- Knowledge is local to where it belongs (git-like distributed patterns)
+- No runtime asserts – all knowledge lives in files
+- Each domain uses its natural tools while integrating through common patterns
+
+## ECS Architecture Patterns
+- `entity/1` to declare things that exist
+- `component/3` to express relationships between things
+- Extensible sum types via `component(Type, ctor, ...)`
+- Relation meta-patterns via `component(Type, relation_pattern, Pattern)`
+- Don't use `user:` namespacing for `entity/1`, `component/3`, `docstring/2`
+
+## File Structure Conventions
+- `semantics.pl/semantics.plt` pattern for logic/tests
+- Self-entity declarations: `:- self_entity(EntityName).`
+- Single-arity loading API: `load_entity(semantic(folder/file(...)))`
+- Explicit entity declarations, no magic binding
+
+## Testing & CLI Workflows
+- Testing: `./grimoire test` (full suite) or `./grimoire test <test name>` (specific)
+- Use `./grimoire exec` instead of `swipl` - loads system components
+- Spell system: `./grimoire cast "conjure(...)"` for mutations, `./grimoire perceive "..."` for queries
+
+## Git Practices
+- Never use `git add .` or `git add -A` - use `git add -u` or add files individually
+- Session-based workflows with SQLite command logging
+- File-based workspaces under `${GRIMOIRE_ROOT}/sessions/`
+
+## Nix Command Patterns
+- Building: `nix(build(Installable))` or fallback `nix(build("."))`
+- Running: `nix(run(Installable))` or `nix(run(Target, Args))`
+- Testing: `nix(check("."))` or discovered test targets
+- Templates use `nix run .#<command>` pattern for apps
+- Canonical operations ensure reproducibility across environments
+
+## Domain Integration
+- Mount semantics via `mount_semantic(file/folder(...))`
+- Passive loading: `passive_load(Entity, semantic(Source))`
+- Core domains auto-load: git, nix, fs, project, session, db
