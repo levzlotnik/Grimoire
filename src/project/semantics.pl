@@ -325,20 +325,20 @@ string_replace_all(String, Old, New, Result) :-
 entity(db).
 component(db, source, source(semantic(folder("db")))).
 
-run(command(mkproject(Path, Options)), RetVal) :-
+cast(conjure(mkproject(Path, Options)), RetVal) :-
     % Create project directory with semantics
-    run(command(mkdir(Path)), RetVal0),
+    cast(conjure(mkdir(Path)), RetVal0),
     (RetVal0 = error(_) -> RetVal = RetVal0
     ;
         % Create .mypaos and initialize agent DB
         directory_file_path(Path, ".mypaos", MypaosDir),
-        run(command(mkdir(MypaosDir)), RetVal1),
+        cast(conjure(mkdir(MypaosDir)), RetVal1),
         (RetVal1 = error(_) -> RetVal = RetVal1
         ;
             % Initialize git if requested (before DB so we can track .mypaos)
             (option(git(false), Options) -> RetVal2 = ok("")
             ;
-                run(command(git(init(Path))), RetVal2)
+                cast(conjure(git(init(Path))), RetVal2)
             ),
             (RetVal2 = error(_) -> RetVal = RetVal2
             ;
@@ -351,7 +351,7 @@ run(command(mkproject(Path, Options)), RetVal) :-
                 ),
                 % Apply template if specified
                 (option(template(Template), Options, none) ->
-                    run(command(nix(flake(init(Template)))), RetVal4)
+                    cast(conjure(nix(flake(init(Template)))), RetVal4)
                 ; RetVal4 = ok("")),
                 (RetVal4 = error(_) -> RetVal = RetVal4
                 ;
@@ -451,57 +451,57 @@ extract_nix_apps(Entity, JsonDict, FlakeRef) :-
 % These work for any project entity that has discovered Nix targets
 
 % Build command - uses nix build
-run(command(Cmd), RetVal) :-
+cast(conjure(Cmd), RetVal) :-
     Cmd =.. [Entity, build],
     entity(Entity),
     component(Entity, nix_target, app(FlakeRef, _, build)),
     !,
-    run(command(nix(build(FlakeRef))), RetVal).
+    cast(conjure(nix(build(FlakeRef))), RetVal).
 
-run(command(Cmd), RetVal) :-
+cast(conjure(Cmd), RetVal) :-
     Cmd =.. [Entity, build],
     entity(Entity),
     % Fallback: use current directory if no specific build target
-    run(command(nix(build("."))), RetVal).
+    cast(conjure(nix(build("."))), RetVal).
 
 % Test command - uses nix check or test target
-run(command(Cmd), RetVal) :-
+cast(conjure(Cmd), RetVal) :-
     Cmd =.. [Entity, test],
     entity(Entity),
     component(Entity, nix_target, app(FlakeRef, _, test)),
     !,
     format(atom(Target), '~w#test', [FlakeRef]),
-    run(command(nix(run(Target))), RetVal).
+    cast(conjure(nix(run(Target))), RetVal).
 
-run(command(Cmd), RetVal) :-
+cast(conjure(Cmd), RetVal) :-
     Cmd =.. [Entity, test],
     entity(Entity),
     % Fallback: use nix flake check
-    run(command(nix(check("."))), RetVal).
+    cast(conjure(nix(check("."))), RetVal).
 
 % Run command - uses nix run
-run(command(Cmd), RetVal) :-
+cast(conjure(Cmd), RetVal) :-
     Cmd =.. [Entity, run],
     entity(Entity),
     component(Entity, nix_target, app(FlakeRef, _, run)),
     !,
     format(atom(Target), '~w#run', [FlakeRef]),
-    run(command(nix(run(Target))), RetVal).
+    cast(conjure(nix(run(Target))), RetVal).
 
-run(command(Cmd), RetVal) :-
+cast(conjure(Cmd), RetVal) :-
     Cmd =.. [Entity, run],
     entity(Entity),
     component(Entity, nix_target, app(FlakeRef, _, default)),
     !,
-    run(command(nix(run(FlakeRef))), RetVal).
+    cast(conjure(nix(run(FlakeRef))), RetVal).
 
 % Generic command for any discovered Nix target
-run(command(Cmd), RetVal) :-
+cast(conjure(Cmd), RetVal) :-
     Cmd =.. [Entity, Command],
     entity(Entity),
     component(Entity, nix_target, app(FlakeRef, _, Command)),
     format(atom(Target), '~w#~w', [FlakeRef, Command]),
-    run(command(nix(run(Target))), RetVal).
+    cast(conjure(nix(run(Target))), RetVal).
 
 % Discover flake.nix artifact
 discover_flake_artifact(Entity, BaseDir) :-

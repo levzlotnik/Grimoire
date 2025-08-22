@@ -104,11 +104,11 @@ The database system provides SQLite3 CLI integration with automatic ECS discover
 
 ```prolog
 % Create database from SQL string (creates schema file)
-?- run(command(db(create(mydb, 'test.db', schema(sql("CREATE TABLE users (id INTEGER PRIMARY KEY);"))))), Result).
+?- cast(conjure(db(create(mydb, 'test.db', schema(sql("CREATE TABLE users (id INTEGER PRIMARY KEY);"))))), Result).
 % Result = ok(database_created(mydb, 'test.db'))
 
 % Create database from schema file
-?- run(command(db(create(mydb2, 'test2.db', schema(file('schema.sql'))))), Result).
+?- cast(conjure(db(create(mydb2, 'test2.db', schema(file('schema.sql'))))), Result).
 
 % Database registration with schema tracking
 ?- component(registered_db, Component, Value).
@@ -122,18 +122,18 @@ Sessions create isolated workspaces with SQLite command logging and ECS discover
 
 ```prolog
 % Start a session (creates workspace directory with commands.db and state.pl)
-?- run(command(session(start('my-work'))), Result).
+?- cast(conjure(session(start('my-work'))), Result).
 % Result = ok(session_started('my-work'))
 % Creates: ${GRIMOIRE_ROOT}/sessions/my-work/commands.db
 % Creates: ${GRIMOIRE_ROOT}/sessions/my-work/state.pl
 % Creates: ${GRIMOIRE_ROOT}/sessions/my-work/commands.schema.sql
 
 % Record thoughts and commands (logged to session database)
-?- run(command(think("Working on database integration")), Result).
+?- cast(conjure(think("Working on database integration")), Result).
 % Result = ok(thought_recorded("Working on database integration"))
 
 % View session command history
-?- run(command(session(history)), Result).
+?- perceive(session(history(Commands))).
 % Shows accumulated commands from session database
 
 % Session database becomes ECS entity with auto-discovered structure

@@ -28,14 +28,14 @@ docstring(python_template(develop), "Enter development shell using 'nix develop'
 component(python_template, ctor, C) :- component(python_template, subcommand, C).
 
 % Command implementations using Nix
-run(command(python_template(run)), RetVal) :-
-    run(command(nix(run(['.#run']))), RetVal).
+cast(conjure(python_template(run)), RetVal) :-
+    cast(conjure(nix(run(['.#run']))), RetVal).
 
-run(command(python_template(build)), RetVal) :-
-    run(command(nix(build(['.']))), RetVal).
+cast(conjure(python_template(build)), RetVal) :-
+    cast(conjure(nix(build(['.']))), RetVal).
 
-run(command(python_template(develop)), RetVal) :-
-    run(command(nix(develop(['.']))), RetVal).
+cast(conjure(python_template(develop)), RetVal) :-
+    cast(conjure(nix(develop(['.']))), RetVal).
 
 % Python project structure expectations
 component(python_template, expected_file, file("pyproject.toml")).

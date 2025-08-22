@@ -190,18 +190,6 @@ git_args(reset(Args)) --> ["reset" | Args].
 git_args(merge(Args)) --> ["merge" | Args].
 git_args(commit(Args)) --> ["commit" | Args].  % Handle commit with args list
 
-% Main git command implementation (legacy)
-run(command(git(Term)), RetVal) :-
-    % Just validate the subcommand type exists
-    functor(Term, SubCmdType, _),
-    component(git, subcommand, SubCmdType),
-    % Convert to shell args
-    phrase(git_args(Term), Args),
-    % Execute
-    run(
-        command(executable_program(path(git), Args)),
-        RetVal
-    ).
 
 % Git conjure implementations
 cast(conjure(git(Term)), RetVal) :-

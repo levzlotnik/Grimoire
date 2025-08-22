@@ -32,20 +32,20 @@ docstring(haskell_template(hlint), "Run HLint linter using 'nix run .#hlint'").
 component(haskell_template, ctor, C) :- component(haskell_template, subcommand, C).
 
 % Command implementations using proper Nix CLI semantics
-run(command(haskell_template(build)), RetVal) :-
-    run(command(nix(build(['.']))), RetVal).
+cast(conjure(haskell_template(build)), RetVal) :-
+    cast(conjure(nix(build(['.']))), RetVal).
 
-run(command(haskell_template(test)), RetVal) :-
-    run(command(nix(flake(['check']))), RetVal).
+cast(conjure(haskell_template(test)), RetVal) :-
+    cast(conjure(nix(flake(['check']))), RetVal).
 
-run(command(haskell_template(run)), RetVal) :-
-    run(command(nix(run(['.#run']))), RetVal).
+cast(conjure(haskell_template(run)), RetVal) :-
+    cast(conjure(nix(run(['.#run']))), RetVal).
 
-run(command(haskell_template(ghci)), RetVal) :-
-    run(command(nix(run(['.#ghci']))), RetVal).
+cast(conjure(haskell_template(ghci)), RetVal) :-
+    cast(conjure(nix(run(['.#ghci']))), RetVal).
 
-run(command(haskell_template(hlint)), RetVal) :-
-    run(command(nix(run(['.#hlint']))), RetVal).
+cast(conjure(haskell_template(hlint)), RetVal) :-
+    cast(conjure(nix(run(['.#hlint']))), RetVal).
 
 % Filesystem pattern matching for Haskell projects
 component(haskell_template, file_pattern, glob("*.hs")).

@@ -35,23 +35,23 @@ docstring(rust_template(fmt), "Format the Rust code using 'nix run .#fmt'").
 component(rust_template, ctor, C) :- component(rust_template, subcommand, C).
 
 % Command implementations using proper Nix CLI semantics
-run(command(rust_template(build)), RetVal) :-
-    run(command(nix(build(['.']))), RetVal).
+cast(conjure(rust_template(build)), RetVal) :-
+    cast(conjure(nix(build(['.']))), RetVal).
 
-run(command(rust_template(test)), RetVal) :-
-    run(command(nix(flake(['check']))), RetVal).
+cast(conjure(rust_template(test)), RetVal) :-
+    cast(conjure(nix(flake(['check']))), RetVal).
 
-run(command(rust_template(run)), RetVal) :-
-    run(command(nix(run(['.#run']))), RetVal).
+cast(conjure(rust_template(run)), RetVal) :-
+    cast(conjure(nix(run(['.#run']))), RetVal).
 
-run(command(rust_template(check)), RetVal) :-
-    run(command(nix(flake(['check']))), RetVal).
+cast(conjure(rust_template(check)), RetVal) :-
+    cast(conjure(nix(flake(['check']))), RetVal).
 
-run(command(rust_template(clippy)), RetVal) :-
-    run(command(nix(run(['.#clippy']))), RetVal).
+cast(conjure(rust_template(clippy)), RetVal) :-
+    cast(conjure(nix(run(['.#clippy']))), RetVal).
 
-run(command(rust_template(fmt)), RetVal) :-
-    run(command(nix(run(['.#fmt']))), RetVal).
+cast(conjure(rust_template(fmt)), RetVal) :-
+    cast(conjure(nix(run(['.#fmt']))), RetVal).
 
 % Discover project artifacts with Rust-specific patterns
 % TODO: Fix discover_project_artifacts integration

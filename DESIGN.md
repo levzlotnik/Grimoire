@@ -516,12 +516,12 @@ close_session(SessionId, CloseStrategy, Result) :-
     active_session(SessionId, BranchName, StartCommit),
 
     (CloseStrategy = merge_to_main ->
-        run(command(git(checkout(['main']))), _),
-        run(command(git(merge(['--no-ff', BranchName]))), _),
-        run(command(git(branch(['-d', BranchName]))), _)
+        cast(conjure(git(checkout(['main']))), _),
+        cast(conjure(git(merge(['--no-ff', BranchName]))), _),
+        cast(conjure(git(branch(['-d', BranchName]))), _)
     ; CloseStrategy = abandon ->
-        run(command(git(checkout(['main']))), _),
-        run(command(git(branch(['-D', BranchName]))), _)
+        cast(conjure(git(checkout(['main']))), _),
+        cast(conjure(git(branch(['-D', BranchName]))), _)
     ; CloseStrategy = keep_branch ->
         true  % Keep branch for later reference
     ),
@@ -558,7 +558,7 @@ list_session_transactions(SessionId, Transactions) :-
 % Git-native session history
 show_session_history(SessionId) :-
     active_session(SessionId, BranchName, _),
-    run(command(git(log(['--oneline', '--graph', BranchName]))), ok(History)),
+    cast(conjure(git(log(['--oneline', '--graph', BranchName]))), ok(History)),
     format("Session ~w history:~n~w~n", [SessionId, History]).
 ```
 
@@ -649,7 +649,7 @@ add_entity_load_to_session(SessionId, EntitySpec) :-
 
 ```prolog
 % Interface operations automatically load session state
-run(command(interface(compt)), RetVal) :-
+cast(conjure(interface(compt)), RetVal) :-
     ensure_session_state_loaded,
     current_entity(Entity),
     interface_compt(Entity, Types),
@@ -687,17 +687,17 @@ The `./grimoire load` command provides CLI access to the stateful interface syst
 ?- start_session('my-work-session', Result).
 
 % Load entities for persistent access
-?- run(command(interface(load('system'))), LoadResult).
+?- cast(conjure(interface(load('system'))), LoadResult).
 % Session file now contains: :- load_entity(semantic(entity(system))).
 
 % Switch to another session temporarily
 ?- start_session('temp-session', _).
 
 % Return to original session
-?- run(command(git(checkout(['session-my-work-session']))), _).
+?- cast(conjure(git(checkout(['session-my-work-session']))), _).
 
 % Interface operations automatically reload session state
-?- run(command(interface(compt)), Result).
+?- cast(conjure(interface(compt)), Result).
 % Automatically loads session state including system entity
 
 % Close session with cleanup
@@ -901,8 +901,8 @@ component(command, ctor, fullstack_app).
 component(fullstack_app, subcommand, dev).
 component(fullstack_app, subcommand, build).
 
-run(command(fullstack_app(dev)), RetVal) :-
-    run(command(nix(run(['.#dev']))), RetVal).
+cast(conjure(fullstack_app(dev)), RetVal) :-
+    cast(conjure(nix(run(['.#dev']))), RetVal).
 ```
 
 ### Nix Flake Composition

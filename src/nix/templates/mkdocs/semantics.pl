@@ -32,17 +32,17 @@ docstring(mkdocs_template(new), "Create new documentation pages using 'nix run .
 component(mkdocs_template, ctor, C) :- component(mkdocs_template, subcommand, C).
 
 % Command implementations using proper Nix CLI semantics
-run(command(mkdocs_template(build)), RetVal) :-
-    run(command(nix(build(['.']))), RetVal).
+cast(conjure(mkdocs_template(build)), RetVal) :-
+    cast(conjure(nix(build(['.']))), RetVal).
 
-run(command(mkdocs_template(serve)), RetVal) :-
-    run(command(nix(run(['.#serve']))), RetVal).
+cast(conjure(mkdocs_template(serve)), RetVal) :-
+    cast(conjure(nix(run(['.#serve']))), RetVal).
 
-run(command(mkdocs_template(deploy)), RetVal) :-
-    run(command(nix(run(['.#deploy']))), RetVal).
+cast(conjure(mkdocs_template(deploy)), RetVal) :-
+    cast(conjure(nix(run(['.#deploy']))), RetVal).
 
-run(command(mkdocs_template(new)), RetVal) :-
-    run(command(nix(run(['.#new']))), RetVal).
+cast(conjure(mkdocs_template(new)), RetVal) :-
+    cast(conjure(nix(run(['.#new']))), RetVal).
 
 % Filesystem pattern matching for MkDocs projects
 component(mkdocs_template, file_pattern, glob("mkdocs.yml")).

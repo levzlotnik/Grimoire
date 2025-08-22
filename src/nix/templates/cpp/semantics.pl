@@ -28,14 +28,14 @@ docstring(cpp_template(develop), "Enter development shell using 'nix develop'").
 component(cpp_template, ctor, C) :- component(cpp_template, subcommand, C).
 
 % Command implementations using Nix
-run(command(cpp_template(run)), RetVal) :-
-    run(command(nix(run(['.#run']))), RetVal).
+cast(conjure(cpp_template(run)), RetVal) :-
+    cast(conjure(nix(run(['.#run']))), RetVal).
 
-run(command(cpp_template(build)), RetVal) :-
-    run(command(nix(build(['.']))), RetVal).
+cast(conjure(cpp_template(build)), RetVal) :-
+    cast(conjure(nix(build(['.']))), RetVal).
 
-run(command(cpp_template(develop)), RetVal) :-
-    run(command(nix(develop(['.']))), RetVal).
+cast(conjure(cpp_template(develop)), RetVal) :-
+    cast(conjure(nix(develop(['.']))), RetVal).
 
 % C++ project structure expectations
 component(cpp_template, expected_file, file("CMakeLists.txt")).

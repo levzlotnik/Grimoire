@@ -183,7 +183,7 @@ component(conjure, ctor, executable_program).
 
 % Dynamic docstring for run based on command type
 % Legacy docstring support - remove after transition
-docstring(run(command(Command)), Doc) :-
+docstring(cast(conjure(Command)), Doc) :-
     functor(Command, Type, _),
     docstring(Type, CmdDoc),
     indent_lines('  ', CmdDoc, CmdDocN),

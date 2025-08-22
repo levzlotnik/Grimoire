@@ -32,17 +32,17 @@ docstring(lean4_template(doc), "Generate documentation using 'nix run .#doc'").
 component(lean4_template, ctor, C) :- component(lean4_template, subcommand, C).
 
 % Command implementations using proper Nix CLI semantics
-run(command(lean4_template(build)), RetVal) :-
-    run(command(nix(build(['.']))), RetVal).
+cast(conjure(lean4_template(build)), RetVal) :-
+    cast(conjure(nix(build(['.']))), RetVal).
 
-run(command(lean4_template(check)), RetVal) :-
-    run(command(nix(flake(['check']))), RetVal).
+cast(conjure(lean4_template(check)), RetVal) :-
+    cast(conjure(nix(flake(['check']))), RetVal).
 
-run(command(lean4_template(clean)), RetVal) :-
-    run(command(nix(run(['.#clean']))), RetVal).
+cast(conjure(lean4_template(clean)), RetVal) :-
+    cast(conjure(nix(run(['.#clean']))), RetVal).
 
-run(command(lean4_template(doc)), RetVal) :-
-    run(command(nix(run(['.#doc']))), RetVal).
+cast(conjure(lean4_template(doc)), RetVal) :-
+    cast(conjure(nix(run(['.#doc']))), RetVal).
 
 % Filesystem pattern matching for Lean4 projects
 component(lean4_template, file_pattern, glob("*.lean")).

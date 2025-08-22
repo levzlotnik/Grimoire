@@ -145,11 +145,11 @@ test(template_instantiation_existing_project, [cleanup(cleanup_test_project)]) :
     make_directory_path(ProjectPath),
 
     % Load required domains
-    load_entity(semantic(folder('src/nix'))),
-    load_entity(semantic(folder('src/project'))),
+    load_entity(semantic(folder('src/nix'))), !,
+    load_entity(semantic(folder('src/project'))), !,
 
     % Try to create project that already exists
-    cast(conjure(mkproject(rust, TestProjectName)), Result),
+    cast(conjure(mkproject(rust, TestProjectName)), Result), !,
 
     % Should fail with appropriate error
     assertion(Result = error(project_already_exists(ProjectPath))),
