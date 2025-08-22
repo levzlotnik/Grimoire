@@ -19,8 +19,8 @@ test(project_contexts, [true]) :-
 
 % Test project docstrings exist
 test(project_docstrings_exist, [true]) :-
-    docstring(project, _), !.
-    % Note: mkproject docstring might depend on other modules
+    docstring(project, _), !,
+    docstring(mkproject, _), !.
 
 % Test application types
 test(application_types, [true]) :-
@@ -35,5 +35,16 @@ test(config_deps_relationships, [true]) :-
     % Test that contexts require config and deps
     component(context(build), requires, config(build)), !,
     component(context(build), requires, deps(build)), !.
+
+% Test mkproject implementation exists
+test(mkproject_implementation, [true]) :-
+    % Test that mkproject conjure exists
+    component(conjure, ctor, mkproject), !.
+
+% Test project discovery utilities exist
+test(project_discovery_utilities, [true]) :-
+    component(project, utility, discover_project_artifacts), !,
+    component(project, utility, discover_core_artifacts), !,
+    component(project, utility, discover_nix_targets), !.
 
 :- end_tests(project_semantics).

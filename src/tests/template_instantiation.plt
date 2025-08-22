@@ -1,7 +1,7 @@
 %! Template instantiation test suite
 %
 % Tests for the project domain's template instantiation functionality,
-% including conjure(mkproject(TemplateId, ProjectName)) and entity renaming.
+% including conjure(mkproject(FolderPath, ProjectName, Options)) and entity renaming.
 
 :- use_module(library(plunit)).
 :- use_module(library(filesex)).
@@ -34,25 +34,6 @@ test(discover_available_templates) :-
 
     % Should at least return a list (may be empty in test env)
     is_list(Templates).
-
-% Test projects directory resolution
-test(get_projects_directory_with_env) :-
-    % Test with environment variable set
-    setenv('GRIMOIRE_PROJECTS_DIR', '/tmp/test-projects'),
-    get_projects_directory(Dir),
-    assertion(Dir == '/tmp/test-projects'),
-
-    % Clean up
-    unsetenv('GRIMOIRE_PROJECTS_DIR').
-
-test(get_projects_directory_default) :-
-    % Test with no environment variable
-    unsetenv('GRIMOIRE_PROJECTS_DIR'),
-    get_projects_directory(Dir),
-
-    % Should expand to home directory
-    expand_file_name('~/.grimoire/Projects', [Expected]),
-    assertion(Dir == Expected).
 
 % Test entity discovery from semantics file
 test(discover_template_entity_name) :-
@@ -87,6 +68,38 @@ test(rename_all_entity_occurrences) :-
     sub_string(NewContent, _, _, _, 'docstring(new_entity,'), !,
     sub_string(NewContent, _, _, _, 'entity(new_entity)'), !.
 
+% Test basic project creation without template
+test(mkproject_basic_creation, [cleanup(cleanup_test_project)]) :-
+    % Create a unique temporary directory
+    get_time(Time),
+    format(atom(TmpDir), '/tmp/grimoire_test_~w', [Time]),
+    make_directory(TmpDir),
+
+    % Load required domains
+    load_entity(semantic(folder('src/project'))),
+
+    % Test project creation
+    TestProjectName = 'test_basic_project',
+    cast(conjure(mkproject(TmpDir, TestProjectName, [git(false)])), Result), !,
+
+    % Should succeed
+    assertion(Result = ok(project_created(_, TestProjectName))),
+    
+    % Verify project directory exists
+    directory_file_path(TmpDir, TestProjectName, ProjectPath),
+    assertion(exists_directory(ProjectPath)),
+
+    % Verify semantics.pl was created
+    directory_file_path(ProjectPath, 'semantics.pl', SemanticsFile),
+    assertion(exists_file(SemanticsFile)),
+
+    % Check that entity was created correctly
+    read_file_to_string(SemanticsFile, Content, []),
+    sub_string(Content, _, _, _, ':- self_entity(test_basic_project).'), !,
+
+    % Store temp dir for cleanup
+    nb_setval(test_project_path, TmpDir).
+
 % Test template instantiation (integration test - requires nix templates)
 test(template_instantiation_rust, [cleanup(cleanup_test_project)]) :-
     % Set up test environment
@@ -94,22 +107,21 @@ test(template_instantiation_rust, [cleanup(cleanup_test_project)]) :-
     close(Stream),
     file_directory_name(TmpFile, TmpDir),
     delete_file(TmpFile),
-    setenv('GRIMOIRE_PROJECTS_DIR', TmpDir),
 
     % Load required domains
     load_entity(semantic(folder('src/nix'))),
     load_entity(semantic(folder('src/project'))),
 
-    % Test project creation
+    % Test project creation with template
     TestProjectName = 'test_rust_project',
     catch(
-        cast(conjure(mkproject(rust, TestProjectName)), Result),
+        cast(conjure(mkproject(TmpDir, TestProjectName, [template(rust), git(false)])), Result),
         Error,
         Result = error(caught_exception(Error))
     ), !,
 
     % The result should be either success or a proper error
-    (Result = ok(project_created(_, rust, TestProjectName)) ->
+    (Result = ok(project_created(_, TestProjectName)) ->
         (
             % Verify project directory exists
             directory_file_path(TmpDir, TestProjectName, ProjectPath),
@@ -132,24 +144,22 @@ test(template_instantiation_rust, [cleanup(cleanup_test_project)]) :-
     ), !.
 
 % Test error handling for existing project
-test(template_instantiation_existing_project, [cleanup(cleanup_test_project)]) :-
+test(mkproject_existing_project, [cleanup(cleanup_test_project)]) :-
     % Set up test environment
     tmp_file_stream(text, TmpFile, Stream),
     close(Stream),
     file_directory_name(TmpFile, TmpDir),
     delete_file(TmpFile),
-    setenv('GRIMOIRE_PROJECTS_DIR', TmpDir),
 
     TestProjectName = 'existing_project',
     directory_file_path(TmpDir, TestProjectName, ProjectPath),
     make_directory_path(ProjectPath),
 
     % Load required domains
-    load_entity(semantic(folder('src/nix'))), !,
     load_entity(semantic(folder('src/project'))), !,
 
     % Try to create project that already exists
-    cast(conjure(mkproject(rust, TestProjectName)), Result), !,
+    cast(conjure(mkproject(TmpDir, TestProjectName, [git(false)])), Result), !,
 
     % Should fail with appropriate error
     assertion(Result = error(project_already_exists(ProjectPath))),
@@ -158,13 +168,12 @@ test(template_instantiation_existing_project, [cleanup(cleanup_test_project)]) :
     nb_setval(test_project_path, ProjectPath).
 
 % Test invalid template handling
-test(template_instantiation_invalid_template) :-
+test(mkproject_invalid_template) :-
     % Set up test environment
     tmp_file_stream(text, TmpFile, Stream),
     close(Stream),
     file_directory_name(TmpFile, TmpDir),
     delete_file(TmpFile),
-    setenv('GRIMOIRE_PROJECTS_DIR', TmpDir),
 
     % Load required domains
     load_entity(semantic(folder('src/nix'))),
@@ -172,7 +181,7 @@ test(template_instantiation_invalid_template) :-
 
     % Try to create project with invalid template
     catch(
-        cast(conjure(mkproject(nonexistent_template, 'test_project')), Result),
+        cast(conjure(mkproject(TmpDir, 'test_project', [template(nonexistent_template), git(false)])), Result),
         _Error,
         Result = error(template_instantiation_failed)
     ), !,
@@ -180,14 +189,50 @@ test(template_instantiation_invalid_template) :-
     % Should fail (exact error depends on nix behavior)
     assertion(Result = error(_)).
 
+% Test git initialization option
+test(mkproject_with_git, [cleanup(cleanup_test_project)]) :-
+    % Create a unique temporary directory
+    get_time(Time),
+    format(atom(TmpDir), '/tmp/grimoire_test_git_~w', [Time]),
+    make_directory(TmpDir),
+
+    % Load required domains
+    load_entity(semantic(folder('src/project'))),
+
+    % Test project creation with git
+    TestProjectName = 'test_git_project',
+    cast(conjure(mkproject(TmpDir, TestProjectName, [git(true)])), Result), !,
+
+    % Check result - should succeed if git is available
+    (Result = ok(project_created(_, TestProjectName)) ->
+        (
+            % Verify project directory exists
+            directory_file_path(TmpDir, TestProjectName, ProjectPath),
+            assertion(exists_directory(ProjectPath)),
+
+            % Verify git repo was initialized
+            directory_file_path(ProjectPath, '.git', GitDir),
+            assertion(exists_directory(GitDir)),
+
+            % Store project path for cleanup
+            nb_setval(test_project_path, TmpDir)
+        )
+    ; Result = ok(_) ->
+        % Git command succeeded but returned different format - store temp dir for cleanup
+        nb_setval(test_project_path, TmpDir)
+    ;
+        % If git not available, should get an error (which is acceptable)
+        assertion(Result = error(_)),
+        nb_setval(test_project_path, TmpDir)
+    ), !.
+
 % Cleanup helper
 cleanup_test_project :-
-    (nb_current(test_project_path, ProjectPath) ->
-        (exists_directory(ProjectPath) ->
-            delete_directory_and_contents(ProjectPath)
+    (nb_current(test_project_path, Path) ->
+        (exists_directory(Path) ->
+            delete_directory_and_contents(Path)
         ; true),
         nb_delete(test_project_path)
-    ; true),
-    unsetenv('GRIMOIRE_PROJECTS_DIR').
+    ; true).
 
 :- end_tests(template_instantiation).

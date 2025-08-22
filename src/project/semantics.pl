@@ -109,7 +109,7 @@ docstring(environment,
     Environment entity representing a complete set of resources for all the project's contexts.
     - Build environment (compilers, tools)
     - Runtime environment (libraries, data)
-    - Testing environment ()
+    - Testing environment (test frameworks, mock data)
     - Development environment (editors, debuggers)
     |}).
 
@@ -154,7 +154,6 @@ docstring(test,
 
 % Template discovery and conjure integration
 component(conjure, ctor, mkproject).
-% Removed legacy command ctor - using conjure above
 
 % Template discovery - query nix domain for available templates
 discover_available_templates(Templates) :-
@@ -162,68 +161,83 @@ discover_available_templates(Templates) :-
             component(nix(flake(template)), instance, nix(flake(template(TemplateId)))),
             Templates).
 
-% Helper to get project directory from environment or default
-get_projects_directory(ProjectsDir) :-
-    (getenv('GRIMOIRE_PROJECTS_DIR', EnvDir) ->
-        ProjectsDir = EnvDir
-    ;
-        expand_file_name('~/.grimoire/Projects', [ProjectsDir])
-    ).
-
 docstring(mkproject,
     {|string(_)||
     Creates a new project directory with full initialization.
-    Format: command(mkproject(+Path, +Options)) or cast(conjure(mkproject(TemplateId, ProjectName))).
-    Options:
-    - git(bool)          : Initialize git repo (default: true)
-    - template(Template) : Flake template to use (default: none)
-    - lang(Language)     : Programming language (affects template)
+    Format: cast(conjure(mkproject(FolderPath, ProjectName, Options))).
+    Parameters:
+    - FolderPath: Base path where to create the project
+    - ProjectName: Name of the project and entity ID for semantics.pl
+    - Options: List of options:
+      - git(bool): Initialize git repo (default: true)
+      - template(Template): Flake template to use (default: none)
+    |}).
 
-    Conjure variant uses GRIMOIRE_PROJECTS_DIR environment variable or defaults to ~/.grimoire/Projects/
-    |}
-).
-
-% Conjure implementation for mkproject
-cast(conjure(mkproject(TemplateId, ProjectName)), RetVal) :-
+% Unified mkproject implementation
+cast(conjure(mkproject(FolderPath, ProjectName, Options)), RetVal) :-
     catch(
         (
-            % Get projects directory
-            get_projects_directory(ProjectsDir),
-            directory_file_path(ProjectsDir, ProjectName, DestPath),
-
-            % Ensure projects directory exists
-            (exists_directory(ProjectsDir) ->
+            % Create full project path
+            directory_file_path(FolderPath, ProjectName, ProjectPath),
+            
+            % Ensure base folder exists
+            (exists_directory(FolderPath) ->
                 true
             ;
-                make_directory_path(ProjectsDir)
+                make_directory_path(FolderPath)
             ),
-
+            
             % Check if project already exists
-            (exists_directory(DestPath) ->
-                RetVal = error(project_already_exists(DestPath))
+            (exists_directory(ProjectPath) ->
+                RetVal = error(project_already_exists(ProjectPath))
             ;
-                % Use nix flake new to instantiate template
-                catch(
-                    cast(conjure(nix(flake(new(TemplateId, DestPath)))), NixResult),
-                    NixError,
-                    NixResult = error(nix_command_failed(NixError))
-                ),
-                (NixResult = ok(_) ->
-                    % Post-process: rename entities in semantics files
-                    rename_project_entities(DestPath, TemplateId, ProjectName, RenameResult),
-                    (RenameResult = ok ->
-                        RetVal = ok(project_created(DestPath, TemplateId, ProjectName))
+                % Create project directory
+                make_directory(ProjectPath),
+                
+                % Apply template if specified
+                (member(template(Template), Options) ->
+                    cast(conjure(nix(flake(new(Template, ProjectPath)))), TemplateResult),
+                    (TemplateResult = ok(_) ->
+                        % Rename entities in generated files
+                        rename_project_entities(ProjectPath, Template, ProjectName, RenameResult)
                     ;
-                        RetVal = error(entity_renaming_failed(RenameResult))
+                        RenameResult = TemplateResult
                     )
                 ;
-                    RetVal = NixResult
+                    % Create basic semantics.pl if no template
+                    create_basic_semantics_file(ProjectPath, ProjectName),
+                    RenameResult = ok
+                ),
+                
+                (RenameResult = ok ->
+                    % Initialize git if requested
+                    (member(git(false), Options) ->
+                        GitResult = ok
+                    ;
+                        cast(conjure(git(init(ProjectPath))), GitResult)
+                    ),
+                    
+                    (GitResult = ok ->
+                        RetVal = ok(project_created(ProjectPath, ProjectName))
+                    ;
+                        RetVal = GitResult
+                    )
+                ;
+                    RetVal = error(entity_renaming_failed(RenameResult))
                 )
             )
         ),
         Error,
         RetVal = error(conjure_failed(Error))
     ).
+
+% Create basic semantics.pl file when no template is used
+create_basic_semantics_file(ProjectPath, ProjectName) :-
+    directory_file_path(ProjectPath, 'semantics.pl', SemanticsFile),
+    open(SemanticsFile, write, Stream),
+    format(Stream, ':- self_entity(~w).~n~n', [ProjectName]),
+    format(Stream, 'docstring(~w,~n    {|string(_)||~n    ~w project entity.~n    |}).~n', [ProjectName, ProjectName]),
+    close(Stream).
 
 % Entity renaming in generated project files
 rename_project_entities(ProjectPath, TemplateId, ProjectName, Result) :-
@@ -232,7 +246,7 @@ rename_project_entities(ProjectPath, TemplateId, ProjectName, Result) :-
     (exists_file(SemanticsFile) ->
         discover_template_entity_name(SemanticsFile, TemplateEntityName)
     ;
-        % Fallback: assume template_id naming pattern, but this will evolve
+        % Fallback: assume template_id naming pattern
         format(atom(TemplateEntityName), '~w_template', [TemplateId])
     ),
 
@@ -315,51 +329,6 @@ discover_template_entity_name(FilePath, EntityName) :-
         ),
         _Error,
         fail
-    ).
-
-% Helper predicate for string replacement
-string_replace_all(String, Old, New, Result) :-
-    re_replace(Old, New, String, Result, [global]).
-
-% DB entity for project database
-entity(db).
-component(db, source, source(semantic(folder("db")))).
-
-cast(conjure(mkproject(Path, Options)), RetVal) :-
-    % Create project directory with semantics
-    cast(conjure(mkdir(Path)), RetVal0),
-    (RetVal0 = error(_) -> RetVal = RetVal0
-    ;
-        % Create .mypaos and initialize agent DB
-        directory_file_path(Path, ".mypaos", MypaosDir),
-        cast(conjure(mkdir(MypaosDir)), RetVal1),
-        (RetVal1 = error(_) -> RetVal = RetVal1
-        ;
-            % Initialize git if requested (before DB so we can track .mypaos)
-            (option(git(false), Options) -> RetVal2 = ok("")
-            ;
-                cast(conjure(git(init(Path))), RetVal2)
-            ),
-            (RetVal2 = error(_) -> RetVal = RetVal2
-            ;
-                % Initialize DB using db_semantics module
-                directory_file_path(MypaosDir, "agent.db", DbPath),
-                catch(
-                    init_agent_db(DbPath),
-                    db_error(E),
-                    (RetVal = error(E), !, fail)
-                ),
-                % Apply template if specified
-                (option(template(Template), Options, none) ->
-                    cast(conjure(nix(flake(init(Template)))), RetVal4)
-                ; RetVal4 = ok("")),
-                (RetVal4 = error(_) -> RetVal = RetVal4
-                ;
-                    % Language setup stub for now
-                    RetVal = ok("Project created successfully")
-                )
-            )
-        )
     ).
 
 % Project artifact discovery utilities
@@ -584,4 +553,3 @@ discover_custom_artifacts(Entity, [IncludePatterns, ExcludePatterns]) :-
 % Assert discovered component
 assert_component(Component) :-
     assertz(Component).
-

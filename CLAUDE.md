@@ -39,3 +39,5 @@
 - Mount semantics via `mount_semantic(file/folder(...))`
 - Passive loading: `passive_load(Entity, semantic(Source))`
 - Core domains auto-load: git, nix, fs, project, session, db
+
+- Don't forget to add newlines to the end of new files

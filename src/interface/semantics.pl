@@ -1,9 +1,8 @@
 % Interface layer for ECS exploration and system interaction
 % Returns structured data - frontends (CLI/API/MCP) handle formatting
 
-% Interface entity
-entity(interface).
-component(interface, source, source(semantic(file("src/interface.pl")))).
+% Interface entity - now a folder entity
+:- self_entity(interface).
 
 % Interface subcommands (following git pattern)
 component(interface, subcommand, compt).
