@@ -42,3 +42,4 @@
 
 - Don't forget to add newlines to the end of new files
 - NEVER EVER DISABLE TESTS WITHOUT MY PERMISSION
+- If you're `mv`ing a file in tree, use `git mv` instead of just `mv`

@@ -9,66 +9,169 @@ import os
 import sys
 from pathlib import Path
 from typing import Dict, List, Any, Optional
+from pydantic import BaseModel
+import janus_swi
+
+
+# Response models for type-safe interface responses
+class ComponentTypesResponse(BaseModel):
+    """Response model for component types queries"""
+
+    success: bool
+    entity: str
+    types: List[str]
+    error: Optional[str] = None
+
+
+class ComponentEntry(BaseModel):
+    """Individual component entry with metadata"""
+
+    component: Any
+    flag: str  # 'entity' or 'value'
+
+
+class ComponentsResponse(BaseModel):
+    """Response model for component queries"""
+
+    success: bool
+    entity: str
+    component_type: str
+    components: List[ComponentEntry]
+    error: Optional[str] = None
+
+
+class DocumentationResponse(BaseModel):
+    """Response model for documentation queries"""
+
+    success: bool
+    entity: str
+    documentation: str
+    error: Optional[str] = None
+
+
+class StatusInfo(BaseModel):
+    """Session status information"""
+
+    current_branch: str
+    working_status: str  # 'clean' or 'dirty'
+    sessions: List[str]
+
+
+class StatusResponse(BaseModel):
+    """Response model for status queries"""
+
+    success: bool
+    status: StatusInfo
+    error: Optional[str] = None
+
+
+class PerceiveResponse(BaseModel):
+    """Response model for perceive queries with variable bindings"""
+
+    success: bool
+    solutions: List[Dict[str, Any]]  # Variable bindings per solution
+    count: int
+    query: str
+    error: Optional[str] = None
+
+
+class ConjureResponse(BaseModel):
+    """Response model for conjure spells"""
+
+    success: bool
+    result: Any
+    spell: str
+    error: Optional[str] = None
+
+
+class InterfaceEndpoint(BaseModel):
+    """Metadata for an interface endpoint"""
+
+    method: str
+    path: str
+    description: str
+
+
+class SystemInfo(BaseModel):
+    """System information"""
+
+    grimoire_root: str
+    janus_available: bool
+    prolog_initialized: bool
+    interface_version: str
+
+
+class RootResponse(BaseModel):
+    """Response model for root endpoint"""
+
+    success: bool
+    api: str
+    version: str
+    description: str
+    system_info: SystemInfo
+    endpoints: List[InterfaceEndpoint]
 
 
 class GrimoireInterface:
     """Interface to Grimoire Prolog system via janus-swi"""
-    
+
     def __init__(self):
-        self.prolog_initialized = False
-        
-        # Get Grimoire root directory
+        self.janus = janus_swi
+
+        # Get Grimoire root directory - handle both dev and nix store paths
         api_dir = Path(__file__).parent
-        self.grimoire_root = api_dir.parent.parent.parent
-        
-        # Try to import janus
+        potential_root = api_dir.parent.parent.parent
+
+        # Check if we're in nix store and need to find actual grimoire root
+        if "/nix/store" in str(potential_root):
+            # In nix environment, the grimoire root should be the current working directory
+            # when the server is properly launched
+            self.grimoire_root = Path.cwd()
+        else:
+            # In development, use the calculated path
+            self.grimoire_root = potential_root
+
+        self.initialize_prolog()
+
+    def query_interface_docstrings(self) -> Dict[str, str]:
+        """Query all interface command docstrings from Prolog"""
         try:
-            import janus_swi as janus
-            self.janus = janus
-            self.janus_available = True
-        except ImportError:
-            self.janus = None
-            self.janus_available = False
-        
-        if self.janus_available:
-            self.initialize_prolog()
-    
-    def initialize_prolog(self) -> bool:
+            # Query all interface subcommands and their docstrings
+            query = "findall([SubCmd, Doc], (component(interface, subcommand, SubCmd), docstring(interface(SubCmd), Doc)), Results)"
+            result = self._execute_in_grimoire_context(query)
+
+            docstrings = {}
+            if result and "Results" in result:
+                for pair in result["Results"]:
+                    if len(pair) == 2:
+                        subcmd, doc = pair
+                        docstrings[subcmd] = doc
+
+            return docstrings
+        except Exception as e:
+            # Return empty dict on error - don't crash the whole system
+            return {}
+
+    def initialize_prolog(self) -> None:
         """Initialize Prolog and load Grimoire system"""
-        if not self.janus_available:
-            print("janus-swi not available")
-            return False
-            
+        # Set working directory to Grimoire root
+        original_cwd = os.getcwd()
         try:
-            # Set working directory to Grimoire root
-            original_cwd = os.getcwd()
             os.chdir(str(self.grimoire_root))
-            
+
             # Load the Grimoire system
             self.janus.query_once("ensure_loaded('src/grimoire.pl')")
             self.janus.query_once("ensure_loaded('src/interface/semantics.pl')")
-            
-            # Restore working directory
-            os.chdir(original_cwd)
-            
-            self.prolog_initialized = True
-            return True
-            
+
         except Exception as e:
-            print(f"Failed to initialize Prolog: {e}")
-            if 'original_cwd' in locals():
-                os.chdir(original_cwd)
-            return False
-    
-    def is_available(self) -> bool:
-        """Check if Prolog system is available and initialized"""
-        return self.janus_available and self.prolog_initialized
-    
+            raise RuntimeError(f"Failed to initialize Prolog: {e}") from e
+        finally:
+            # Always restore working directory
+            os.chdir(original_cwd)
+
     def _execute_in_grimoire_context(self, query: str) -> Optional[Dict[str, Any]]:
         """Execute a Prolog query in Grimoire context"""
-        if not self.is_available():
-            raise RuntimeError("Prolog system not available")
-        
+
         original_cwd = os.getcwd()
         try:
             os.chdir(str(self.grimoire_root))
@@ -76,12 +179,10 @@ class GrimoireInterface:
             return result
         finally:
             os.chdir(original_cwd)
-    
+
     def _execute_query_all_solutions(self, query: str) -> List[Dict[str, Any]]:
         """Execute a Prolog query and return all solutions"""
-        if not self.is_available():
-            raise RuntimeError("Prolog system not available")
-        
+
         original_cwd = os.getcwd()
         try:
             os.chdir(str(self.grimoire_root))
@@ -89,15 +190,12 @@ class GrimoireInterface:
             return solutions
         finally:
             os.chdir(original_cwd)
-    
-    def call_interface_predicate(self, predicate: str, args: Optional[List[Any]] = None) -> Dict[str, Any]:
+
+    def _call_interface_predicate(
+        self, predicate: str, args: Optional[List[Any]] = None
+    ) -> Dict[str, Any]:
         """Call an interface predicate and return result"""
-        if not self.is_available():
-            return {
-                "success": False,
-                "error": "Prolog system not initialized or janus-swi not available"
-            }
-        
+
         try:
             # Build the conjure query
             if args:
@@ -112,119 +210,183 @@ class GrimoireInterface:
                         formatted_args.append(f"'{escaped}'")
                     else:
                         formatted_args.append(str(arg))
-                
-                args_str = ', '.join(formatted_args)
+
+                args_str = ", ".join(formatted_args)
                 query = f"cast(conjure(interface({predicate}({args_str}))), Result)"
             else:
                 query = f"cast(conjure(interface({predicate})), Result)"
-            
+
             # Execute the query
             result = self._execute_in_grimoire_context(query)
-            
+
             if result:
                 return {
                     "success": True,
                     "result": result.get("Result", result),
-                    "prolog_result": result
+                    "prolog_result": result,
                 }
             else:
                 return {
                     "success": False,
-                    "error": "Query failed or returned no results"
+                    "error": "Query failed or returned no results",
                 }
-                
+
         except Exception as e:
-            return {
-                "success": False,
-                "error": str(e)
-            }
-    
-    def call_perceive_query(self, query_str: str) -> Dict[str, Any]:
-        """Call a perceive query and return all solutions"""
-        if not self.is_available():
-            return {
-                "success": False,
-                "error": "Prolog system not initialized or janus-swi not available"
-            }
-        
+            return {"success": False, "error": str(e)}
+
+    def call_perceive_query(self, query_str: str) -> PerceiveResponse:
+        """Call a perceive query and return all solutions with variable bindings"""
         try:
             # Execute perceive query and collect all solutions
             query = f"perceive({query_str})"
             solutions = self._execute_query_all_solutions(query)
-            
-            return {
-                "success": True,
-                "solutions": solutions,
-                "count": len(solutions)
-            }
-                
+
+            return PerceiveResponse(
+                success=True, solutions=solutions, count=len(solutions), query=query_str
+            )
+
         except Exception as e:
-            return {
-                "success": False,
-                "error": str(e)
-            }
-    
-    def call_conjure_spell(self, spell_str: str) -> Dict[str, Any]:
+            return PerceiveResponse(
+                success=False, solutions=[], count=0, query=query_str, error=str(e)
+            )
+
+    def call_conjure_spell(self, spell_str: str) -> ConjureResponse:
         """Call a conjure spell and return result"""
-        if not self.is_available():
-            return {
-                "success": False,
-                "error": "Prolog system not initialized or janus-swi not available"
-            }
-        
         try:
             # Execute conjure spell
             query = f"cast(conjure({spell_str}), Result)"
             result = self._execute_in_grimoire_context(query)
-            
+
             if result:
-                return {
-                    "success": True,
-                    "result": result.get("Result", result),
-                    "prolog_result": result
-                }
+                return ConjureResponse(
+                    success=True, result=result.get("Result", result), spell=spell_str
+                )
             else:
-                return {
-                    "success": False,
-                    "error": "Conjure spell failed or returned no results"
-                }
-                
+                return ConjureResponse(
+                    success=False,
+                    result=None,
+                    spell=spell_str,
+                    error="Conjure spell failed or returned no results",
+                )
+
         except Exception as e:
-            return {
-                "success": False,
-                "error": str(e)
-            }
-    
+            return ConjureResponse(
+                success=False, result=None, spell=spell_str, error=str(e)
+            )
+
     def test_prolog_connection(self) -> Dict[str, Any]:
         """Test basic Prolog functionality"""
-        try:
-            if not self.janus_available:
-                return {
-                    "janus_available": False,
-                    "error": "janus-swi not installed"
-                }
-            
-            # Test basic Prolog functionality
-            test_result = self._execute_in_grimoire_context("X = test")
-            
-            return {
-                "janus_available": True,
-                "prolog_initialized": self.prolog_initialized,
-                "prolog_test": test_result is not None,
-                "test_result": test_result
-            }
-        except Exception as e:
-            return {
-                "janus_available": self.janus_available,
-                "prolog_initialized": self.prolog_initialized,
-                "error": str(e)
-            }
-    
-    def get_system_info(self) -> Dict[str, Any]:
-        """Get information about the Grimoire interface system"""
+        # Test basic Prolog functionality
+        test_result = self._execute_in_grimoire_context("X = test")
+
         return {
-            "grimoire_root": str(self.grimoire_root),
-            "janus_available": self.janus_available,
-            "prolog_initialized": self.prolog_initialized,
-            "interface_version": "0.1.0"
+            "janus_available": True,
+            "prolog_initialized": True,
+            "prolog_test": test_result is not None,
+            "test_result": test_result,
         }
+
+    def get_system_info(self) -> SystemInfo:
+        """Get information about the Grimoire interface system"""
+        return SystemInfo(
+            grimoire_root=str(self.grimoire_root),
+            janus_available=True,
+            prolog_initialized=True,
+            interface_version="0.1.0",
+        )
+
+    # Type-safe interface methods that mirror semantics.pl
+    
+    def compt(self, entity: str = "system") -> ComponentTypesResponse:
+        """List component types for entity"""
+        query = f"interface_compt('{entity}', Types)"
+        result = self._execute_in_grimoire_context(query)
+        
+        if result and 'Types' in result:
+            return ComponentTypesResponse(
+                success=True,
+                entity=entity,
+                types=result['Types']
+            )
+        else:
+            return ComponentTypesResponse(
+                success=False,
+                entity=entity,
+                types=[],
+                error="Failed to query component types"
+            )
+    
+    def comp(self, entity: str, component_type: str) -> ComponentsResponse:
+        """List components of specific type for entity"""
+        # Query for each component individually to avoid complex terms
+        query = f"component('{entity}', '{component_type}', Comp)"
+        solutions = self._execute_query_all_solutions(query)
+        
+        components = []
+        for solution in solutions:
+            if 'Comp' in solution:
+                components.append(ComponentEntry(
+                    component=str(solution['Comp']),
+                    flag="value"  # Default flag since we're querying directly
+                ))
+        
+        return ComponentsResponse(
+            success=True,
+            entity=entity,
+            component_type=component_type,
+            components=components
+        )
+    
+    def doc(self, entity: str = "system") -> DocumentationResponse:
+        """Get documentation for entity"""
+        query = f"interface_doc('{entity}', Doc)"
+        result = self._execute_in_grimoire_context(query)
+        
+        if result and 'Doc' in result:
+            return DocumentationResponse(
+                success=True,
+                entity=entity,
+                documentation=result['Doc']
+            )
+        else:
+            return DocumentationResponse(
+                success=False,
+                entity=entity,
+                documentation="",
+                error="Failed to query documentation"
+            )
+    
+    def status(self) -> StatusResponse:
+        """Get session status"""
+        query = "get_session_status(status_info(Branch, Working, Sessions))"
+        result = self._execute_in_grimoire_context(query)
+        
+        if result and 'Branch' in result:
+            branch = str(result['Branch'])
+            working = str(result['Working'])
+            sessions = result['Sessions']
+            
+            # Convert sessions to list if it's a Prolog list
+            if hasattr(sessions, '__iter__') and not isinstance(sessions, str):
+                sessions_list = [str(s) for s in sessions]
+            else:
+                sessions_list = [str(sessions)]
+            
+            return StatusResponse(
+                success=True,
+                status=StatusInfo(
+                    current_branch=branch,
+                    working_status=working,
+                    sessions=sessions_list
+                )
+            )
+        else:
+            return StatusResponse(
+                success=False,
+                status=StatusInfo(
+                    current_branch="main",
+                    working_status="unknown", 
+                    sessions=["main"]
+                ),
+                error="Failed to query session status"
+            )

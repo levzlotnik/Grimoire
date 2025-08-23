@@ -31,6 +31,7 @@ let
       fastapi
       uvicorn
       pydantic
+      mcp  # Model Context Protocol SDK
       # Testing packages
       httpx
       pytest

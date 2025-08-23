@@ -36,12 +36,23 @@
         '';
       };
 
-      # Grimoire API server executable
+      # Grimoire REST API server executable
       grimoire-server = grimoireEnv.mkGrimoireExecutable {
         name = "grimoire-server";
         script = ''
-          cd ${./.}/src/interface/api
-          exec ${grimoireEnv.python}/bin/uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+          cd ${./.}
+          export PYTHONPATH="${./.}/src/interface/api:$PYTHONPATH"
+          exec ${grimoireEnv.python}/bin/python ${./.}/src/interface/api/rest_api.py "$@"
+        '';
+      };
+
+      # Grimoire MCP server executable
+      grimoire-mcp-server = grimoireEnv.mkGrimoireExecutable {
+        name = "grimoire-mcp-server";
+        script = ''
+          cd ${./.}
+          export PYTHONPATH="${./.}/src/interface/api:$PYTHONPATH"
+          exec ${grimoireEnv.python}/bin/python ${./.}/src/interface/api/mcp_server.py "$@"
         '';
       };
     });
@@ -55,7 +66,7 @@
     {
       default = pkgs.mkShell (grimoireEnv.env // {
         buildInputs = grimoireEnv.buildInputs;
-        packages = with self.packages.${system}; [ grimoire grimoire-server ];
+        packages = with self.packages.${system}; [ grimoire grimoire-server grimoire-mcp-server ];
       });
     });
 
@@ -77,10 +88,16 @@
         program = "${self.packages.${system}.grimoire}/bin/grimoire test";
       };
 
-      # Interface API server
+      # REST API server
       grimoire-server = {
         type = "app";
         program = "${self.packages.${system}.grimoire-server}/bin/grimoire-server";
+      };
+
+      # MCP server
+      grimoire-mcp-server = {
+        type = "app";
+        program = "${self.packages.${system}.grimoire-mcp-server}/bin/grimoire-mcp-server";
       };
     });
 

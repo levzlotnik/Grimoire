@@ -11,7 +11,7 @@
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
-        
+
         # Get grimoireEnv from parent flake
         grimoireEnv = grimoire-flake.lib.mkGrimoireEnv pkgs;
 
@@ -31,6 +31,7 @@
             fastapi
             uvicorn
             pydantic
+            mcp
             # Include janus-swi from grimoireEnv
             grimoireEnv.janus-swi
           ];
@@ -44,8 +45,19 @@
         grimoireServer = grimoireEnv.mkGrimoireExecutable {
           name = "grimoire-server";
           script = ''
-            cd ${./.}
-            exec ${grimoireEnv.python}/bin/uvicorn main:app --host 0.0.0.0 --port 8000
+            cd ${./.}/../..
+            export PYTHONPATH="${./.}:$PYTHONPATH"
+            exec ${grimoireEnv.python}/bin/python ${./.}/rest_api.py "$@"
+          '';
+        };
+
+        # Create grimoire-mcp-server executable
+        grimoireMcpServer = grimoireEnv.mkGrimoireExecutable {
+          name = "grimoire-mcp-server";
+          script = ''
+            cd ${./.}/../..
+            export PYTHONPATH="${./.}:$PYTHONPATH"
+            exec ${grimoireEnv.python}/bin/python ${./.}/mcp_server.py "$@"
           '';
         };
 
@@ -54,6 +66,7 @@
         packages = {
           default = grimoireServer;
           grimoire-server = grimoireServer;
+          grimoire-mcp-server = grimoireMcpServer;
           python-package = grimoireApiPackage;
         };
 
@@ -75,6 +88,10 @@
           grimoire-server = {
             type = "app";
             program = "${grimoireServer}/bin/grimoire-server";
+          };
+          grimoire-mcp-server = {
+            type = "app";
+            program = "${grimoireMcpServer}/bin/grimoire-mcp-server";
           };
           test = {
             type = "app";

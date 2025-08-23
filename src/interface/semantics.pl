@@ -132,7 +132,7 @@ entity_to_semantic_spec(Entity, EntitySpec) :-
         EntitySpec = semantic(system)
     ; Entity = '.' ->
         EntitySpec = semantic(folder(.))
-    ; atom_string(Entity, EntityStr), 
+    ; atom_string(Entity, EntityStr),
       (sub_string(EntityStr, _, _, _, '/') ->
           EntitySpec = semantic(folder(Entity))
       ;
@@ -214,12 +214,12 @@ cast(conjure(interface(test)), RetVal) :-
 % Test command with specific test arguments
 cast(conjure(interface(test(TestArgs))), RetVal) :-
     catch(
-        (ensure_loaded('src/tests/run_tests.pl'), 
+        (ensure_loaded('src/tests/run_tests.pl'),
          (member('--list', TestArgs) ->
-             (list_available_tests, 
+             (list_available_tests,
               RetVal = ok(tests_listed))
          ;
-             (run_specific_tests(TestArgs), 
+             (run_specific_tests(TestArgs),
               RetVal = ok(tests_passed))
          ))
     ,
