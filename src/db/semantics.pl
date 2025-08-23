@@ -94,8 +94,3 @@ docstring(conjure(db(create)),
     |}
 ).
 
-% === TEST REGISTRATION (for testing only) ===
-
-% Test database registration - will be created by tests
-registered_db(database(test_discovery), data(file('test_discovery.db')), schema(file('test_discovery.schema.sql'))) :-
-    exists_file('test_discovery.db').

@@ -3,10 +3,22 @@
 
 :- begin_tests(db_entity).
 
+:- dynamic(test_db_path/1).
+
+% Test database registration - static fact that depends on file existence
+registered_db(database(test_discovery), data(file(TestDbPath)), schema(file('test_schema.sql'))) :-
+    test_db_path(TestDbPath),
+    exists_file(TestDbPath).
+
 % Test setup: create database file
 setup_test_db :-
     cleanup_test_db,
-    sqlite3_exec('test_discovery.db', 'CREATE TABLE test_table (id INTEGER PRIMARY KEY, name TEXT);').
+    % Use temporary directory for tests
+    (getenv('TMPDIR', TmpDir) -> true ; TmpDir = '/tmp'),
+    atomic_list_concat([TmpDir, '/test_discovery.db'], TestDbPath),
+    retractall(test_db_path(_)),
+    assertz(test_db_path(TestDbPath)),
+    sqlite3_exec(TestDbPath, 'CREATE TABLE test_table (id INTEGER PRIMARY KEY, name TEXT);').
 
 % Test database entity exists
 test(db_entity_exists) :-
@@ -20,7 +32,8 @@ test(database_entity_creation) :-
 % Test database file component
 test(database_file_component) :-
     setup_test_db,
-    component(database(test_discovery), data, data(file('test_discovery.db'))).
+    test_db_path(TestDbPath),
+    component(database(test_discovery), data, data(file(TestDbPath))).
 
 % Test table discovery
 test(table_discovery) :-
@@ -50,7 +63,9 @@ test(db_docstring_exists) :-
 
 % Cleanup
 cleanup_test_db :-
-    (exists_file('test_discovery.db') -> delete_file('test_discovery.db') ; true),
-    retractall(registered_db(database(test_discovery), _)).
+    (test_db_path(TestDbPath) -> 
+        (exists_file(TestDbPath) -> delete_file(TestDbPath) ; true)
+    ; true),
+    retractall(test_db_path(_)).
 
 :- end_tests(db_entity).

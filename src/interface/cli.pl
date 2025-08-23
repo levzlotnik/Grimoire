@@ -10,6 +10,8 @@
 
 % Main entry point - parse command line arguments
 main(Args) :-
+    % Initialize session management
+    setup_session_management,
     (Args = [] ->
         show_usage,
         halt(1)
@@ -23,6 +25,22 @@ main(Args) :-
         show_usage,
         halt(1)
     ).
+
+% Setup session management - read GRIMOIRE_SESSION_ID from environment
+setup_session_management :-
+    (getenv('GRIMOIRE_SESSION_ID', SessionId) ->
+        assertz(current_session_id(SessionId))
+    ;
+        % No session ID set - CLI operates without session tracking
+        true
+    ).
+
+% Get current session ID if available
+get_session_id(SessionId) :-
+    current_session_id(SessionId).
+
+get_session_id(none) :-
+    \+ current_session_id(_).
 
 % Auto-generated usage from interface components
 show_usage :-

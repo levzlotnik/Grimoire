@@ -41,3 +41,4 @@
 - Core domains auto-load: git, nix, fs, project, session, db
 
 - Don't forget to add newlines to the end of new files
+- NEVER EVER DISABLE TESTS WITHOUT MY PERMISSION

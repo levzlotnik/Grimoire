@@ -55,6 +55,29 @@ rec {
             ln -s "$bin" "$out/bin/$(basename "$bin")"
           fi
         done
+        
+        # Expose SWI-Prolog libraries and headers for dependent packages
+        mkdir -p $out/lib
+        mkdir -p $out/include
+        
+        # Link the shared libraries
+        for lib in ${swi-prolog-base}/lib/libswipl.so*; do
+          ln -s "$lib" $out/lib/
+        done
+        
+        # Copy the entire swipl library directory structure (contains architecture-specific libs)
+        cp -r ${swi-prolog-base}/lib/swipl/* $out/lib/swipl/
+        
+        # Link headers
+        if [ -d ${swi-prolog-base}/include ]; then
+          cp -r ${swi-prolog-base}/include/* $out/include/
+        fi
+        
+        # Link pkg-config file if it exists
+        mkdir -p $out/share/pkgconfig
+        if [ -f ${swi-prolog-base}/share/pkgconfig/swipl.pc ]; then
+          ln -s ${swi-prolog-base}/share/pkgconfig/swipl.pc $out/share/pkgconfig/
+        fi
       '';
       
       meta = swi-prolog-base.meta // {

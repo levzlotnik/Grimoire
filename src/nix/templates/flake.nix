@@ -60,6 +60,18 @@
       '';
     };
 
+    python-rest-api = {
+      path = ./python-rest-api;
+      description = "A Python REST API template with FastAPI and Nix support";
+      welcomeText = ''
+        # Getting started
+        - Run `nix develop` to enter the development environment
+        - Run `nix run .#run` or `uvicorn main:app --reload` to start the API server
+        - Visit http://localhost:8000/docs for interactive API documentation
+        - Run `nix run .#test` or `pytest` to run tests
+      '';
+    };
+
     rust = {
       path = ./rust;
       description = "A Rust template with Nix and Docker support";
