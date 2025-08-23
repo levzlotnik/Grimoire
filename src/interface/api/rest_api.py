@@ -1,9 +1,12 @@
 from fastapi import FastAPI, HTTPException, Query, Path
 from pydantic import BaseModel
-from typing import Optional, Any
+from typing import Optional, Any, List
 
 # Import our Grimoire interface module
-from grimoire_interface import GrimoireInterface, SystemInfo, InterfaceEndpoint, RootResponse
+from grimoire_interface import (
+    GrimoireInterface, SystemInfo, InterfaceEndpoint, RootResponse,
+    EntitiesResponse, TestResponse, SessionCommandResponse, LoadResponse
+)
 
 # Create global instance of Grimoire interface
 grimoire = GrimoireInterface()
@@ -45,9 +48,13 @@ async def root():
         InterfaceEndpoint(method="GET", path="/comp/{entity}/{type}", description=docstrings.get("comp", "List components") + " of specific type"),
         InterfaceEndpoint(method="GET", path="/doc", description=docstrings.get("doc", "Show documentation")),
         InterfaceEndpoint(method="GET", path="/doc/{entity}", description=docstrings.get("doc", "Show documentation") + " for specific entity"),
+        InterfaceEndpoint(method="GET", path="/entities", description=docstrings.get("entities", "List all entities")),
         InterfaceEndpoint(method="POST", path="/perceive", description=docstrings.get("perceive", "Execute perception spells")),
         InterfaceEndpoint(method="POST", path="/conjure", description=docstrings.get("conjure", "Execute conjuration spells")),
         InterfaceEndpoint(method="GET", path="/status", description=docstrings.get("status", "Show session status")),
+        InterfaceEndpoint(method="GET", path="/test", description=docstrings.get("test", "Run test suite")),
+        InterfaceEndpoint(method="POST", path="/session", description=docstrings.get("session", "Session management")),
+        InterfaceEndpoint(method="POST", path="/load", description=docstrings.get("load", "Load entity")),
         InterfaceEndpoint(method="GET", path="/health", description="Health check")
     ]
     
@@ -126,6 +133,40 @@ async def get_status(session_id: Optional[str] = Query(None)):
     result = grimoire.status()
     return result
 
+# Entities endpoint
+@app.get("/entities")
+async def list_entities():
+    """List all entities in the system → interface(entities)"""
+    result = grimoire.entities()
+    return result
+
+# Test endpoint
+@app.get("/test")
+async def run_tests(test_names: Optional[List[str]] = Query(None)):
+    """Run test suite → interface(test)"""
+    result = grimoire.test(test_names)
+    return result
+
+# Session endpoint
+class SessionRequest(BaseModel):
+    args: List[str]
+
+@app.post("/session")
+async def session_command(request: SessionRequest):
+    """Execute session management command → interface(session(args))"""
+    result = grimoire.session(request.args)
+    return result
+
+# Load endpoint
+class LoadRequest(BaseModel):
+    entity_spec: str
+
+@app.post("/load")
+async def load_entity(request: LoadRequest):
+    """Load entity into current session → interface(load(entity_spec))"""
+    result = grimoire.load(request.entity_spec)
+    return result
+
 # Health check endpoint
 @app.get("/health")
 async def health_check():
@@ -143,7 +184,7 @@ async def health_check():
             "status": status,
             "api_version": "0.1.0",
             **test_result,
-            **system_info.dict()
+            **system_info.model_dump()
         }
     except Exception as e:
         return {

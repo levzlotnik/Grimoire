@@ -12,6 +12,7 @@
 :- ensure_loaded('session.plt').
 :- ensure_loaded('../db/semantics.plt').
 :- ensure_loaded('interface_session.plt').
+:- ensure_loaded('../interface/semantics.plt').
 :- ensure_loaded('template_instantiation.plt').
 
 % Load template test suites
@@ -34,6 +35,7 @@ run_all_tests :-
         session_cli,
         session_system,
         db_entity,
+        interface,
         interface_session_integration,
         template_instantiation,
         rust_project_semantics,

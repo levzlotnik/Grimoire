@@ -87,6 +87,65 @@ test(nix_perceive_ctors_exist) :-
     component(perceive, ctor, nix(flake(show))),
     component(perceive, ctor, nix(search)), !.
 
+% === NEW CORE PERCEIVE SPELLS TESTS ===
+
+test(perceive_entities_exists) :-
+    % Test entities perceive constructor exists
+    component(perceive, ctor, entities), !.
+
+test(perceive_entities_returns_list) :-
+    % Test that entities perceive returns a list
+    perceive(entities(Entities)),
+    is_list(Entities), !.
+
+test(perceive_entities_includes_system) :-
+    % Test that system entity is included
+    perceive(entities(Entities)),
+    member(system, Entities), !.
+
+test(perceive_read_file_exists) :-
+    % Test read_file perceive constructor exists
+    component(perceive, ctor, read_file), !.
+
+test(perceive_read_file_basic, [cleanup(delete_file('/tmp/test_read.txt'))]) :-
+    % Test basic file reading with line numbers
+    write_file('/tmp/test_read.txt', "Line 1\nLine 2\nLine 3"),
+    perceive(read_file('/tmp/test_read.txt', lines(1, 3), Content)),
+    Content = [line(1, "Line 1"), line(2, "Line 2"), line(3, "Line 3")], !.
+
+test(perceive_read_file_range, [cleanup(delete_file('/tmp/test_read.txt'))]) :-
+    % Test reading specific line range
+    write_file('/tmp/test_read.txt', "Line 1\nLine 2\nLine 3\nLine 4\nLine 5"),
+    perceive(read_file('/tmp/test_read.txt', lines(2, 4), Content)),
+    Content = [line(2, "Line 2"), line(3, "Line 3"), line(4, "Line 4")], !.
+
+test(perceive_read_file_start_end, [cleanup(delete_file('/tmp/test_read.txt'))]) :-
+    % Test using start/end atoms
+    write_file('/tmp/test_read.txt', "First\nMiddle\nLast"),
+    perceive(read_file('/tmp/test_read.txt', lines(start, end), Content)),
+    length(Content, 3),
+    Content = [line(1, "First")|_], !.
+
+test(perceive_search_regex_exists) :-
+    % Test search_regex perceive constructor exists
+    component(perceive, ctor, search_regex), !.
+
+test(perceive_search_regex_basic, [cleanup(delete_file('/tmp/test_search.txt'))]) :-
+    % Test basic regex search
+    write_file('/tmp/test_search.txt', "apple\nbanana\napricot\norange"),
+    perceive(read_file('/tmp/test_search.txt', lines(start, end), Content)),
+    perceive(search_regex(Content, "^a", Found)),
+    length(Found, 2),
+    Found = [line(1, "apple"), line(3, "apricot")], !.
+
+test(perceive_search_regex_pattern, [cleanup(delete_file('/tmp/test_search.txt'))]) :-
+    % Test more complex regex pattern
+    write_file('/tmp/test_search.txt', "test123\nhello\ntest456\nworld"),
+    perceive(read_file('/tmp/test_search.txt', lines(start, end), Content)),
+    perceive(search_regex(Content, "test[0-9]+", Found)),
+    length(Found, 2),
+    Found = [line(1, "test123"), line(3, "test456")], !.
+
 test(session_conjure_ctors_exist) :-
     % Test session conjure constructors
     component(conjure, ctor, session(start)),

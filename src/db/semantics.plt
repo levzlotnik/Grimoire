@@ -1,54 +1,63 @@
 % Database entity tests - reverse proxy predicating system
 :- ensure_loaded('semantics.pl').
 
-:- begin_tests(db_entity).
-
 :- dynamic(test_db_path/1).
+:- dynamic(registered_db/3).
 
-% Test database registration - static fact that depends on file existence
-registered_db(database(test_discovery), data(file(TestDbPath)), schema(file('test_schema.sql'))) :-
-    test_db_path(TestDbPath),
-    exists_file(TestDbPath).
-
-% Test setup: create database file
+% Test setup: create database file and register it
 setup_test_db :-
     cleanup_test_db,
-    % Use temporary directory for tests
-    (getenv('TMPDIR', TmpDir) -> true ; TmpDir = '/tmp'),
-    atomic_list_concat([TmpDir, '/test_discovery.db'], TestDbPath),
+    % Use current directory for tests to avoid permission issues
+    TestDbPath = 'test_discovery.db',
     retractall(test_db_path(_)),
     assertz(test_db_path(TestDbPath)),
-    sqlite3_exec(TestDbPath, 'CREATE TABLE test_table (id INTEGER PRIMARY KEY, name TEXT);').
+    % Create the database with a test table
+    sqlite3_exec(TestDbPath, 'CREATE TABLE IF NOT EXISTS test_table (id INTEGER PRIMARY KEY, name TEXT);'),
+    % Register the database for testing
+    retractall(registered_db(database(test_discovery), _, _)),
+    assertz(registered_db(database(test_discovery), data(file(TestDbPath)), schema(file('test_schema.sql')))).
+
+% Cleanup
+cleanup_test_db :-
+    (test_db_path(TestDbPath) ->
+        (exists_file(TestDbPath) -> delete_file(TestDbPath) ; true)
+    ; true),
+    retractall(test_db_path(_)),
+    retractall(registered_db(database(test_discovery), _, _)).
+
+:- begin_tests(db_entity).
 
 % Test database entity exists
 test(db_entity_exists) :-
     entity(db), !.
 
 % Test database entity creation
-test(database_entity_creation) :-
+test(database_entity_creation, [cleanup(cleanup_test_db)]) :-
     setup_test_db,
-    entity(database(test_discovery)).
+    % Verify the registration worked
+    registered_db(database(test_discovery), data(file(_)), schema(file(_))),
+    entity(database(test_discovery)), !.
 
 % Test database file component
-test(database_file_component) :-
+test(database_file_component, [cleanup(cleanup_test_db)]) :-
     setup_test_db,
     test_db_path(TestDbPath),
-    component(database(test_discovery), data, data(file(TestDbPath))).
+    component(database(test_discovery), data, data(file(TestDbPath))), !.
 
 % Test table discovery
-test(table_discovery) :-
+test(table_discovery, [cleanup(cleanup_test_db)]) :-
     setup_test_db,
-    component(database(test_discovery), table, table(test_table)).
+    component(database(test_discovery), table, table(test_table)), !.
 
 % Test column discovery
-test(column_discovery) :-
+test(column_discovery, [cleanup(cleanup_test_db)]) :-
     setup_test_db,
     component(database(test_discovery), column, column(test_table, id, _)), !.
 
 % Test column discovery - name column
-test(column_discovery_name) :-
+test(column_discovery_name, [cleanup(cleanup_test_db)]) :-
     setup_test_db,
-    component(database(test_discovery), column, column(test_table, name, _)).
+    component(database(test_discovery), column, column(test_table, name, _)), !.
 
 % Test SQLite3 functions exist
 test(sqlite3_functions_exist) :-
@@ -60,12 +69,5 @@ test(sqlite3_functions_exist) :-
 % Test docstring exists
 test(db_docstring_exists) :-
     docstring(db, _).
-
-% Cleanup
-cleanup_test_db :-
-    (test_db_path(TestDbPath) -> 
-        (exists_file(TestDbPath) -> delete_file(TestDbPath) ; true)
-    ; true),
-    retractall(test_db_path(_)).
 
 :- end_tests(db_entity).

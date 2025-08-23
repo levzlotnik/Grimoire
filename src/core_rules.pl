@@ -233,7 +233,13 @@ self_entity(Entity) :-
     file_base_name(FilePath, FileName),
     (FileName = 'semantics.pl' ->
         % It's a semantics.pl file, use the directory
-        assertz(component(Entity, self, semantic(folder(Dir))))
+        assertz(component(Entity, self, semantic(folder(Dir)))),
+        % Check for README.md and use as docstring if exists
+        directory_file_path(Dir, 'README.md', ReadmePath),
+        (exists_file(ReadmePath) ->
+            read_file_to_string(ReadmePath, ReadmeContent, []),
+            assertz(docstring(Entity, ReadmeContent))
+        ; true)
     ;
         % Regular semantic file
         assertz(component(Entity, self, semantic(file(FilePath))))

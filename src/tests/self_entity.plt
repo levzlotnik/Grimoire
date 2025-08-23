@@ -67,7 +67,7 @@ test(self_components_are_values) :-
 % Additional tests for other semantics files
 test(system_has_self_component) :-
     component(system, self, Self),
-    Self = semantic(folder(_)).
+    Self = semantic(file(_)).
 
 test(project_has_self_component) :-
     component(project, self, Self),
@@ -100,5 +100,59 @@ test(haskell_template_self) :-
 test(rust_template_self) :-
     component(rust_template, self, Self),
     ( Self = semantic(folder(_)) ; Self = semantic(file(_)) ).
+
+% === README.md DOCSTRING TESTS ===
+
+test(readme_docstring_for_folder_entity, [setup(setup_readme_test), cleanup(cleanup_readme_test)]) :-
+    % Create test directory with README.md
+    make_directory_path('test_readme_entity'),
+    write_file('test_readme_entity/README.md', '# Test Entity\n\nThis is a test README for the entity.\n\nIt has multiple lines.'),
+    write_file('test_readme_entity/semantics.pl', ':- self_entity(test_readme_entity).'),
+    
+    % Load the entity
+    load_entity(semantic(folder('test_readme_entity'))),
+    
+    % Check that docstring comes from README
+    docstring(test_readme_entity, Doc),
+    sub_string(Doc, _, _, _, "Test Entity"),
+    sub_string(Doc, _, _, _, "test README"),
+    sub_string(Doc, _, _, _, "multiple lines").
+
+test(no_readme_no_docstring_override, [setup(setup_no_readme_test), cleanup(cleanup_no_readme_test)]) :-
+    % Create test directory without README.md
+    make_directory_path('test_no_readme'),
+    write_file('test_no_readme/semantics.pl', ':- self_entity(test_no_readme).\ndocstring(test_no_readme, "Custom docstring").'),
+    
+    % Load the entity
+    load_entity(semantic(folder('test_no_readme'))),
+    
+    % Check that custom docstring is preserved when no README exists
+    docstring(test_no_readme, Doc),
+    Doc = "Custom docstring".
+
+% Helper predicates for test setup/cleanup
+setup_readme_test :-
+    % Ensure clean state
+    (exists_directory('test_readme_entity') -> delete_directory_and_contents('test_readme_entity') ; true).
+
+cleanup_readme_test :-
+    % Clean up test directory
+    (exists_directory('test_readme_entity') -> delete_directory_and_contents('test_readme_entity') ; true),
+    % Clean up entity assertions if they exist
+    (entity(test_readme_entity) -> retractall(entity(test_readme_entity)) ; true),
+    (component(test_readme_entity, _, _) -> retractall(component(test_readme_entity, _, _)) ; true),
+    (docstring(test_readme_entity, _) -> retractall(docstring(test_readme_entity, _)) ; true).
+
+setup_no_readme_test :-
+    % Ensure clean state
+    (exists_directory('test_no_readme') -> delete_directory_and_contents('test_no_readme') ; true).
+
+cleanup_no_readme_test :-
+    % Clean up test directory
+    (exists_directory('test_no_readme') -> delete_directory_and_contents('test_no_readme') ; true),
+    % Clean up entity assertions if they exist
+    (entity(test_no_readme) -> retractall(entity(test_no_readme)) ; true),
+    (component(test_no_readme, _, _) -> retractall(component(test_no_readme, _, _)) ; true),
+    (docstring(test_no_readme, _) -> retractall(docstring(test_no_readme, _)) ; true).
 
 :- end_tests(self_entity).

@@ -25,7 +25,7 @@ test(subcommands_exist) :-
 test(api_endpoints_exist) :-
     findall(Endpoint, component(interface_api, api_endpoint, Endpoint), Endpoints),
     length(Endpoints, Count),
-    Count >= 10.  % Should have at least 10 endpoints
+    Count >= 14.  % Should have at least 14 endpoints (added entities, test, session, load)
 
 % Test specific endpoints exist
 test(root_endpoint) :-
@@ -48,6 +48,19 @@ test(doc_endpoint) :-
 
 test(status_endpoint) :-
     component(interface_api, api_endpoint, endpoint(get, "/status", _)).
+
+% Test new endpoints
+test(entities_endpoint) :-
+    component(interface_api, api_endpoint, endpoint(get, "/entities", _)).
+
+test(test_endpoint) :-
+    component(interface_api, api_endpoint, endpoint(get, "/test", _)).
+
+test(session_endpoint) :-
+    component(interface_api, api_endpoint, endpoint(post, "/session", _)).
+
+test(load_endpoint) :-
+    component(interface_api, api_endpoint, endpoint(post, "/load", _)).
 
 test(health_endpoint) :-
     component(interface_api, api_endpoint, endpoint(get, "/health", _)).

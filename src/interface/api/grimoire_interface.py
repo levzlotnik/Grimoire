@@ -101,6 +101,38 @@ class SystemInfo(BaseModel):
     interface_version: str
 
 
+class EntitiesResponse(BaseModel):
+    """Response model for entities queries"""
+
+    success: bool
+    entities: List[str]
+    error: Optional[str] = None
+
+
+class TestResponse(BaseModel):
+    """Response model for test operations"""
+
+    success: bool
+    result: str
+    error: Optional[str] = None
+
+
+class SessionCommandResponse(BaseModel):
+    """Response model for session command operations"""
+
+    success: bool
+    result: Any
+    error: Optional[str] = None
+
+
+class LoadResponse(BaseModel):
+    """Response model for entity load operations"""
+
+    success: bool
+    entity: str
+    error: Optional[str] = None
+
+
 class RootResponse(BaseModel):
     """Response model for root endpoint"""
 
@@ -389,4 +421,88 @@ class GrimoireInterface:
                     sessions=["main"]
                 ),
                 error="Failed to query session status"
+            )
+    
+    def entities(self) -> EntitiesResponse:
+        """List all entities in the system"""
+        query = "interface_entities(Entities)"
+        result = self._execute_in_grimoire_context(query)
+        
+        if result and 'Entities' in result:
+            return EntitiesResponse(
+                success=True,
+                entities=result['Entities']
+            )
+        else:
+            return EntitiesResponse(
+                success=False,
+                entities=[],
+                error="Failed to query entities"
+            )
+    
+    def test(self, args: Optional[List[str]] = None) -> TestResponse:
+        """Run test suite"""
+        if args:
+            query = f"cast(conjure(interface(test({args}))), Result)"
+        else:
+            query = "cast(conjure(interface(test)), Result)"
+        
+        result = self._execute_in_grimoire_context(query)
+        
+        if result and 'Result' in result:
+            return TestResponse(
+                success=True,
+                result=str(result['Result'])
+            )
+        else:
+            return TestResponse(
+                success=False,
+                result="",
+                error="Failed to run tests"
+            )
+    
+    def session(self, args: List[str]) -> SessionCommandResponse:
+        """Execute session command"""
+        # Format args as Prolog list
+        formatted_args = [f"'{arg}'" for arg in args]
+        args_str = f"[{', '.join(formatted_args)}]"
+        query = f"cast(conjure(interface(session({args_str}))), Result)"
+        
+        result = self._execute_in_grimoire_context(query)
+        
+        if result and 'Result' in result:
+            return SessionCommandResponse(
+                success=True,
+                result=result['Result']
+            )
+        else:
+            return SessionCommandResponse(
+                success=False,
+                result=None,
+                error="Failed to execute session command"
+            )
+    
+    def load(self, entity_spec: str) -> LoadResponse:
+        """Load entity into current session"""
+        query = f"cast(conjure(interface(load('{entity_spec}'))), Result)"
+        
+        result = self._execute_in_grimoire_context(query)
+        
+        if result and 'Result' in result:
+            # Extract entity name from result
+            result_val = result['Result']
+            if isinstance(result_val, dict) and 'entity' in result_val:
+                entity = result_val['entity']
+            else:
+                entity = entity_spec
+            
+            return LoadResponse(
+                success=True,
+                entity=entity
+            )
+        else:
+            return LoadResponse(
+                success=False,
+                entity="",
+                error=f"Failed to load entity {entity_spec}"
             )

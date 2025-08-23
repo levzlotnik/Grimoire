@@ -139,7 +139,10 @@ component(conjure, ctor, session).
 
 % Perceive entity for query operations
 entity(perceive).
-% Perceive constructors will be added by domain files
+% Core perceive constructors
+component(perceive, ctor, entities).
+component(perceive, ctor, read_file).
+component(perceive, ctor, search_regex).
 
 % Spell system docstrings
 docstring(spell,
@@ -572,6 +575,43 @@ docstring(agent_log,
     - return_value: Final conclusion/answer
     |}
 ).
+
+% ========================================================================
+% CORE PERCEIVE SPELLS
+% ========================================================================
+
+% Perceive all entities in the system
+perceive(entities(Entities)) :-
+    findall(Entity, entity(Entity), Entities).
+
+% Read file with line numbers and range selection
+perceive(read_file(FilePath, lines(Start, End), ContentWithLineNumbers)) :-
+    read_file_to_lines(FilePath, AllLines),
+    % Handle start/end atoms
+    (Start = start -> StartLine = 1 ; StartLine = Start),
+    (End = end -> length(AllLines, EndLine) ; EndLine = End),
+    % Extract range and add line numbers
+    extract_lines_with_numbers(AllLines, StartLine, EndLine, 1, ContentWithLineNumbers).
+
+% Helper for extracting lines with numbers
+extract_lines_with_numbers([], _, _, _, []) :- !.
+extract_lines_with_numbers(_, EndLine, EndLine, Current, []) :- 
+    Current > EndLine, !.
+extract_lines_with_numbers([Line|Rest], StartLine, EndLine, Current, Result) :-
+    (Current >= StartLine, Current =< EndLine ->
+        Result = [line(Current, Line)|RestResult]
+    ;
+        Result = RestResult
+    ),
+    Next is Current + 1,
+    extract_lines_with_numbers(Rest, StartLine, EndLine, Next, RestResult).
+
+% Search for regex pattern in content with line numbers
+perceive(search_regex(ContentWithLineNumbers, Pattern, FoundContent)) :-
+    findall(line(Num, Line),
+        (member(line(Num, Line), ContentWithLineNumbers),
+         re_match(Pattern, Line)),
+        FoundContent).
 
 % ========================================================================
 % GRIMOIRE CORE SEMANTIC SYSTEM

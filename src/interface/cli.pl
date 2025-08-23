@@ -106,6 +106,12 @@ handle_command(doc, [EntityStr]) :-
     cast(conjure(interface(doc(EntityAtom))), Result),
     format_cli_result(Result).
 
+% Entities command
+handle_command(entities, []) :-
+    !,
+    cast(conjure(interface(entities)), Result),
+    format_cli_result(Result).
+
 % REPL command
 handle_command(repl, _) :-
     !,
@@ -246,6 +252,13 @@ format_cli_result(ok(documentation(Entity, no_docstring_available))) :-
 format_cli_result(ok(documentation(Entity, Doc))) :-
     !,
     format('~w:~n~w~n', [Entity, Doc]).
+
+% Format entities result
+format_cli_result(ok(entities(Entities))) :-
+    !,
+    length(Entities, Count),
+    format('System entities (~w total):~n', [Count]),
+    forall(member(Entity, Entities), format('  ~w~n', [Entity])).
 
 % Format session status result
 format_cli_result(ok(session_status(status_info(CurrentBranch, WorkingStatus, Sessions)))) :-

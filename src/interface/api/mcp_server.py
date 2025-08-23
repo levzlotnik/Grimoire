@@ -17,6 +17,10 @@ from grimoire_interface import (
     PerceiveResponse,
     ConjureResponse,
     SystemInfo,
+    EntitiesResponse,
+    TestResponse,
+    SessionCommandResponse,
+    LoadResponse,
 )
 
 # Create FastMCP server
@@ -69,6 +73,34 @@ def system_info() -> SystemInfo:
 def health_check() -> Dict[str, Any]:
     """Test Prolog connection and system health. Returns diagnostic information about janus-swi and Prolog initialization."""
     result = grimoire.test_prolog_connection()
+    return result
+
+
+@mcp.tool()
+def entities() -> EntitiesResponse:
+    """List all entities in the system. Returns a list of all entity names."""
+    result = grimoire.entities()
+    return result
+
+
+@mcp.tool()
+def test(args: Optional[List[str]] = None) -> TestResponse:
+    """Run the test suite. Optionally provide specific test names to run."""
+    result = grimoire.test(args)
+    return result
+
+
+@mcp.tool()
+def session(args: List[str]) -> SessionCommandResponse:
+    """Execute session management commands. Args should specify the subcommand and parameters."""
+    result = grimoire.session(args)
+    return result
+
+
+@mcp.tool()
+def load(entity_spec: str) -> LoadResponse:
+    """Load an entity into the current session for persistent access."""
+    result = grimoire.load(entity_spec)
     return result
 
 

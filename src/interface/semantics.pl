@@ -8,6 +8,7 @@
 component(interface, subcommand, compt).
 component(interface, subcommand, comp).
 component(interface, subcommand, doc).
+component(interface, subcommand, entities).
 component(interface, subcommand, repl).
 component(interface, subcommand, status).
 component(interface, subcommand, test).
@@ -25,6 +26,7 @@ component(interface, ctor, C) :- component(interface, subcommand, C).
 entity(interface(compt)).
 entity(interface(comp)).
 entity(interface(doc)).
+entity(interface(entities)).
 entity(interface(repl)).
 entity(interface(status)).
 entity(interface(test)).
@@ -37,6 +39,7 @@ entity(interface(load)).
 docstring(interface(compt), "List all component types of current entity").
 docstring(interface(comp), "List components of specific type for current entity").
 docstring(interface(doc), "Show docstring of current entity").
+docstring(interface(entities), "List all entities in the system").
 docstring(interface(repl), "Start interactive REPL with context awareness").
 docstring(interface(status), "Show session/transaction status").
 docstring(interface(test), "Run the test suite").
@@ -187,6 +190,12 @@ cast(conjure(interface(doc(Entity))), RetVal) :-
     interface_doc(Entity, Doc),
     RetVal = ok(documentation(Entity, Doc)).
 
+% Entities listing
+cast(conjure(interface(entities)), RetVal) :-
+    ensure_session_state_loaded,
+    interface_entities(Entities),
+    RetVal = ok(entities(Entities)).
+
 % REPL command - delegate to existing implementation
 cast(conjure(interface(repl)), RetVal) :-
     % Load and call existing REPL functionality
@@ -277,6 +286,10 @@ interface_doc(Entity, Doc) :-
     ;
         Doc = no_docstring_available
     ).
+
+% List all entities
+interface_entities(Entities) :-
+    perceive(entities(Entities)).
 
 % Get comprehensive session status
 get_session_status(Status) :-
