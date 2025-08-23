@@ -7,15 +7,15 @@
 % Test setup: create database file and register it
 setup_test_db :-
     cleanup_test_db,
-    % Use current directory for tests to avoid permission issues
-    TestDbPath = 'test_discovery.db',
+    % Use /tmp directory for test database files
+    TestDbPath = '/tmp/test_discovery.db',
     retractall(test_db_path(_)),
     assertz(test_db_path(TestDbPath)),
     % Create the database with a test table
     sqlite3_exec(TestDbPath, 'CREATE TABLE IF NOT EXISTS test_table (id INTEGER PRIMARY KEY, name TEXT);'),
     % Register the database for testing
     retractall(registered_db(database(test_discovery), _, _)),
-    assertz(registered_db(database(test_discovery), data(file(TestDbPath)), schema(file('test_schema.sql')))).
+    assertz(registered_db(database(test_discovery), data(file(TestDbPath)), schema(file('/tmp/test_schema.sql')))).
 
 % Cleanup
 cleanup_test_db :-
