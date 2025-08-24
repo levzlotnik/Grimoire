@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+# Set GRIMOIRE_ROOT to current directory if not already set
+export GRIMOIRE_ROOT="${GRIMOIRE_ROOT:-$(pwd)}"
+
 exec swipl \
   -g "ensure_loaded('src/grimoire.pl')" \
   -t "main" \

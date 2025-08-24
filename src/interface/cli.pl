@@ -226,7 +226,7 @@ handle_command(exec, [QueryStr]) :-
 handle_command(serve, Args) :-
     !,
     catch(
-        (append(["nix", "run", "--quiet", ".#grimoire-server", "--"], Args, CmdArgs),
+        (append(["python", "src/interface/api/rest_api.py"], Args, CmdArgs),
          cast(conjure(shell(CmdArgs, interactive)), Result),
          format_cli_result(Result)),
         Error,
@@ -237,7 +237,7 @@ handle_command(serve, Args) :-
 handle_command(mcp, Args) :-
     !,
     catch(
-        (append(["nix", "run", "--quiet", ".#grimoire-mcp-server", "--"], Args, CmdArgs),
+        (append(["python", "src/interface/api/mcp_server.py"], Args, CmdArgs),
          cast(conjure(shell(CmdArgs, interactive)), Result),
          format_cli_result(Result)),
         Error,

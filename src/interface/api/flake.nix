@@ -41,32 +41,11 @@
           LLM_DB_SCHEMA_PATH = grimoireEnv.env.LLM_DB_SCHEMA_PATH;
         };
 
-        # Create grimoire-server executable
-        grimoireServer = grimoireEnv.mkGrimoireExecutable {
-          name = "grimoire-server";
-          script = ''
-            cd ${./.}/../..
-            export PYTHONPATH="${./.}:$PYTHONPATH"
-            exec ${grimoireEnv.python}/bin/python ${./.}/rest_api.py "$@"
-          '';
-        };
-
-        # Create grimoire-mcp-server executable
-        grimoireMcpServer = grimoireEnv.mkGrimoireExecutable {
-          name = "grimoire-mcp-server";
-          script = ''
-            cd ${./.}/../..
-            export PYTHONPATH="${./.}:$PYTHONPATH"
-            exec ${grimoireEnv.python}/bin/python ${./.}/mcp_server.py "$@"
-          '';
-        };
 
       in
       {
         packages = {
-          default = grimoireServer;
-          grimoire-server = grimoireServer;
-          grimoire-mcp-server = grimoireMcpServer;
+          default = grimoireApiPackage;
           python-package = grimoireApiPackage;
         };
 
@@ -81,18 +60,6 @@
         };
 
         apps = {
-          default = {
-            type = "app";
-            program = "${grimoireServer}/bin/grimoire-server";
-          };
-          grimoire-server = {
-            type = "app";
-            program = "${grimoireServer}/bin/grimoire-server";
-          };
-          grimoire-mcp-server = {
-            type = "app";
-            program = "${grimoireMcpServer}/bin/grimoire-mcp-server";
-          };
           test = {
             type = "app";
             program = "${grimoireEnv.mkGrimoireExecutable {

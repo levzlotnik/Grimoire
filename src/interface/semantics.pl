@@ -35,18 +35,18 @@ entity(interface(conjure)).
 entity(interface(perceive)).
 entity(interface(load)).
 
-% Docstrings follow namespacing pattern
-docstring(interface(compt), "List all component types of current entity").
-docstring(interface(comp), "List components of specific type for current entity").
-docstring(interface(doc), "Show docstring of current entity").
-docstring(interface(entities), "List all entities in the system").
-docstring(interface(repl), "Start interactive REPL with context awareness").
-docstring(interface(status), "Show session/transaction status").
-docstring(interface(test), "Run the test suite").
-docstring(interface(session), "File-based session management with SQLite command logging (start, history, commit_accumulated)").
-docstring(interface(conjure), "Execute conjuration spells (mutable operations)").
-docstring(interface(perceive), "Execute perception spells (query operations)").
-docstring(interface(load), "Load entity into current session for persistent access").
+% Docstrings follow namespacing pattern with detailed format information
+docstring(interface(compt), "List all component types of current entity. Format: interface(compt) or interface(compt(Entity)). Returns component_types(Entity, [Type1, Type2, ...]).").
+docstring(interface(comp), "List components of specific type for current entity. Format: interface(comp(Entity, ComponentType)). Returns components(Entity, ComponentType, [Component1, Component2, ...]).").
+docstring(interface(doc), "Show docstring of current entity. Format: interface(doc) or interface(doc(Entity)). Returns documentation(Entity, DocString).").
+docstring(interface(entities), "List all entities in the system. Format: interface(entities). Returns entities([Entity1, Entity2, ...]).").
+docstring(interface(repl), "Start interactive REPL with context awareness. Format: interface(repl). Interactive command that starts a Prolog REPL.").
+docstring(interface(status), "Show session/transaction status. Format: interface(status). Returns session_status(status_info(Branch, WorkingStatus, Sessions)).").
+docstring(interface(test), "Run the test suite. Format: interface(test) or interface(test([TestName1, TestName2, ...])). Returns test results.").
+docstring(interface(session), "File-based session management with SQLite command logging. Format: interface(session([SubCommand, ...])). SubCommands: start, delete, close, switch, commit, rollback, current, list, status, history, commit_accumulated.").
+docstring(interface(conjure), "Execute conjuration spells (mutable operations). Format: interface(conjure(SpellTerm)). SpellTerm can be any valid conjure operation like git(status), nix(build), etc.").
+docstring(interface(perceive), "Execute perception spells (query operations). Format: interface(perceive(QueryTerm)). QueryTerm can be any valid perception query.").
+docstring(interface(load), "Load entity into current session for persistent access. Format: interface(load(EntitySpec)). EntitySpec examples: semantic(folder/file), system, etc.").
 
 % Main interface docstring
 docstring(interface, S) :-

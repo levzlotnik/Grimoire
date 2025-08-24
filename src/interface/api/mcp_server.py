@@ -26,39 +26,39 @@ from grimoire_interface import (
 # Create global instance of Grimoire interface
 grimoire = GrimoireInterface()
 
-# Get interface docstrings from Prolog
-interface_docs = grimoire.query_interface_docstrings()
-
 # Create FastMCP server with proper instructions
 mcp = FastMCP("Grimoire Interface", instructions=grimoire.system_instructions())
 
+# Get interface docstrings from Prolog (defer until after initialization)
+interface_docs = grimoire.query_interface_docstrings()
 
-@mcp.tool(description=interface_docs['compt'])
+
+@mcp.tool(description=interface_docs["compt"])
 def compt(entity: str = "system") -> ComponentTypesResponse:
     return grimoire.compt(entity)
 
 
-@mcp.tool(description=interface_docs['comp'])
+@mcp.tool(description=interface_docs["comp"])
 def comp(entity: str, component_type: str) -> ComponentsResponse:
     return grimoire.comp(entity, component_type)
 
 
-@mcp.tool(description=interface_docs['doc'])
+@mcp.tool(description=interface_docs["doc"])
 def doc(entity: str = "system") -> DocumentationResponse:
     return grimoire.doc(entity)
 
 
-@mcp.tool(description=interface_docs['status'])
+@mcp.tool(description=interface_docs["status"])
 def status() -> StatusResponse:
     return grimoire.status()
 
 
-@mcp.tool(description=interface_docs['perceive'])
+@mcp.tool(description=interface_docs["perceive"])
 def perceive(query: str) -> PerceiveResponse:
     return grimoire.call_perceive_query(query)
 
 
-@mcp.tool(description=interface_docs['conjure'])
+@mcp.tool(description=interface_docs["conjure"])
 def conjure(spell: str) -> ConjureResponse:
     return grimoire.call_conjure_spell(spell)
 
@@ -77,22 +77,22 @@ def health_check() -> Dict[str, Any]:
     return result
 
 
-@mcp.tool(description=interface_docs['entities'])
+@mcp.tool(description=interface_docs["entities"])
 def entities() -> EntitiesResponse:
     return grimoire.entities()
 
 
-@mcp.tool(description=interface_docs['test'])
+@mcp.tool(description=interface_docs["test"])
 def test(args: Optional[List[str]] = None) -> TestResponse:
     return grimoire.test(args)
 
 
-@mcp.tool(description=interface_docs['session'])
+@mcp.tool(description=interface_docs["session"])
 def session(args: List[str]) -> SessionCommandResponse:
     return grimoire.session(args)
 
 
-@mcp.tool(description=interface_docs['load'])
+@mcp.tool(description=interface_docs["load"])
 def load(entity_spec: str) -> LoadResponse:
     return grimoire.load(entity_spec)
 

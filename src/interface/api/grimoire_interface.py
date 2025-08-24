@@ -135,36 +135,28 @@ class GrimoireInterface:
     def __init__(self):
         self.janus = janus_swi
 
-        # Get Grimoire root directory - handle both dev and nix store paths
-        api_dir = Path(__file__).parent
-        potential_root = api_dir.parent.parent.parent
+        # Get Grimoire root directory from environment variable
+        grimoire_root_env = os.getenv("GRIMOIRE_ROOT")
+        if not grimoire_root_env:
+            raise GrimoireError(
+                "GRIMOIRE_ROOT environment variable is not set. "
+                "This should be set to the root directory of the Grimoire project."
+            )
 
-        # Check if we're in nix store and need to find actual grimoire root
-        if "/nix/store" in str(potential_root):
-            # In nix environment, the grimoire root should be the current working directory
-            # when the server is properly launched
-            self.grimoire_root = Path.cwd()
-        else:
-            # In development, use the calculated path
-            self.grimoire_root = potential_root
+        self.grimoire_root = Path(grimoire_root_env)
 
         self.initialize_prolog()
 
     def query_interface_docstrings(self) -> Dict[str, str]:
         """Query all interface command docstrings from Prolog"""
-        # Query all interface subcommands and their docstrings
-        query = "findall([SubCmd, Doc], (component(interface, subcommand, SubCmd), docstring(interface(SubCmd), Doc)), Results)"
-        result = self._execute_in_grimoire_context(query)
-
-        if not result or "Results" not in result:
-            raise RuntimeError("Failed to query interface docstrings from Prolog")
-
+        # Get interface subcommands using the working comp method
+        comp_response = self.comp("interface", "subcommand")
+        
         docstrings = {}
-        for pair in result["Results"]:
-            if len(pair) != 2:
-                raise RuntimeError(f"Invalid docstring pair from Prolog: {pair}")
-            subcmd, doc = pair
-            docstrings[subcmd] = doc
+        for comp_entry in comp_response.components:
+            subcmd = comp_entry.component
+            doc_response = self.doc(f"interface({subcmd})")
+            docstrings[subcmd] = doc_response.documentation
 
         return docstrings
 
@@ -244,75 +236,10 @@ class GrimoireInterface:
             self.janus.query_once("ensure_loaded('src/interface/semantics.pl')")
 
         except Exception as e:
-            raise RuntimeError(f"Failed to initialize Prolog: {e}") from e
+            raise GrimoireError(f"Failed to initialize Prolog: {e}") from e
         finally:
             # Always restore working directory
             os.chdir(original_cwd)
-
-    def _execute_in_grimoire_context(self, query: str) -> Optional[Dict[str, Any]]:
-        """Execute a Prolog query in Grimoire context"""
-
-        original_cwd = os.getcwd()
-        try:
-            os.chdir(str(self.grimoire_root))
-            result = self.janus.query_once(query)
-            return result
-        finally:
-            os.chdir(original_cwd)
-
-    def _execute_query_all_solutions(self, query: str) -> List[Dict[str, Any]]:
-        """Execute a Prolog query and return all solutions"""
-
-        original_cwd = os.getcwd()
-        try:
-            os.chdir(str(self.grimoire_root))
-            solutions = list(self.janus.query(query))
-            return solutions
-        finally:
-            os.chdir(original_cwd)
-
-    def _call_interface_predicate(
-        self, predicate: str, args: Optional[List[Any]] = None
-    ) -> Dict[str, Any]:
-        """Call an interface predicate and return result"""
-
-        try:
-            # Build the conjure query
-            if args:
-                # Format arguments as Prolog terms
-                formatted_args = []
-                for arg in args:
-                    if isinstance(arg, (int, float)):
-                        formatted_args.append(str(arg))
-                    elif isinstance(arg, str):
-                        # Escape quotes and wrap in quotes
-                        escaped = arg.replace("'", "\\'")
-                        formatted_args.append(f"'{escaped}'")
-                    else:
-                        formatted_args.append(str(arg))
-
-                args_str = ", ".join(formatted_args)
-                query = f"cast(conjure(interface({predicate}({args_str}))), Result)"
-            else:
-                query = f"cast(conjure(interface({predicate})), Result)"
-
-            # Execute the query
-            result = self._execute_in_grimoire_context(query)
-
-            if result:
-                return {
-                    "success": True,
-                    "result": result.get("Result", result),
-                    "prolog_result": result,
-                }
-            else:
-                return {
-                    "success": False,
-                    "error": "Query failed or returned no results",
-                }
-
-        except Exception as e:
-            raise GrimoireError(str(e))
 
     def call_perceive_query(self, query_str: str) -> PerceiveResponse:
         """Call a perceive query and return all solutions with variable bindings"""
@@ -338,16 +265,14 @@ class GrimoireInterface:
 
         if result and "Result" in result:
             parsed = self._parse_interface_result(result["Result"])
-            return ConjureResponse(
-                result=str(parsed), spell=spell_str
-            )
+            return ConjureResponse(result=str(parsed), spell=spell_str)
         else:
             raise GrimoireError("Failed to execute spell")
 
     def test_prolog_connection(self) -> Dict[str, Any]:
         """Test basic Prolog functionality"""
         # Test basic Prolog functionality
-        test_result = self._execute_in_grimoire_context("X = test")
+        test_result = janus_swi.query_once("entity(system)")
 
         return {
             "janus_available": True,
@@ -389,9 +314,7 @@ NOTE: This system operates on Prolog terms. Tools accept Prolog syntax as string
                 args = parsed.get("args", [])
                 entity_name = args[0] if len(args) > 0 else entity
                 types = args[1] if len(args) > 1 else []
-                return ComponentTypesResponse(
-                    entity=entity_name, types=types
-                )
+                return ComponentTypesResponse(entity=entity_name, types=types)
 
         raise GrimoireError("Failed to retrieve component types")
 
@@ -469,10 +392,7 @@ NOTE: This system operates on Prolog terms. Tools accept Prolog syntax as string
         result = janus_swi.query_once(query)
         if result and "Result" in result:
             parsed = self._parse_interface_result(result["Result"])
-            if (
-                isinstance(parsed, dict)
-                and parsed.get("functor") == "session_status"
-            ):
+            if isinstance(parsed, dict) and parsed.get("functor") == "session_status":
                 args = parsed.get("args", [])
                 status_info = args[0] if args else {}
 
@@ -480,17 +400,11 @@ NOTE: This system operates on Prolog terms. Tools accept Prolog syntax as string
                 if isinstance(status_info, dict):
                     if status_info.get("functor") == "status_info":
                         status_args = status_info.get("args", [])
-                        branch = (
-                            str(status_args[0]) if len(status_args) > 0 else "main"
-                        )
+                        branch = str(status_args[0]) if len(status_args) > 0 else "main"
                         working = (
-                            str(status_args[1])
-                            if len(status_args) > 1
-                            else "unknown"
+                            str(status_args[1]) if len(status_args) > 1 else "unknown"
                         )
-                        sessions = (
-                            status_args[2] if len(status_args) > 2 else ["main"]
-                        )
+                        sessions = status_args[2] if len(status_args) > 2 else ["main"]
 
                         # Convert sessions to list if needed
                         if isinstance(sessions, list):
