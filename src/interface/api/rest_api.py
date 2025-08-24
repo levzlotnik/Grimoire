@@ -4,7 +4,7 @@ from typing import Optional, Any, List
 
 # Import our Grimoire interface module
 from grimoire_interface import (
-    GrimoireInterface, SystemInfo, InterfaceEndpoint, RootResponse,
+    GrimoireInterface, GrimoireError, SystemInfo, InterfaceEndpoint, RootResponse,
     EntitiesResponse, TestResponse, SessionCommandResponse, LoadResponse
 )
 
@@ -61,7 +61,6 @@ async def root():
     system_info = grimoire.get_system_info()
     
     return RootResponse(
-        success=True,
         api="Grimoire Interface API", 
         version="0.1.0",
         description="HTTP access to Grimoire interface functionality via janus-swi",
@@ -73,8 +72,10 @@ async def root():
 @app.get("/compt")
 async def list_component_types(session_id: Optional[str] = Query(None)):
     """List all component types → interface(compt)"""
-    result = grimoire.compt()
-    return result
+    try:
+        return grimoire.compt()
+    except GrimoireError as e:
+        raise HTTPException(status_code=500, detail=f"Grimoire error: {e}")
 
 @app.get("/compt/{entity}")
 async def list_entity_component_types(
@@ -82,8 +83,10 @@ async def list_entity_component_types(
     session_id: Optional[str] = Query(None)
 ):
     """List component types for specific entity → interface(compt(Entity))"""
-    result = grimoire.compt(entity)
-    return result
+    try:
+        return grimoire.compt(entity)
+    except GrimoireError as e:
+        raise HTTPException(status_code=500, detail=f"Grimoire error: {e}")
 
 # Components endpoint
 @app.get("/comp/{entity}/{comp_type}")
@@ -93,15 +96,19 @@ async def list_components(
     session_id: Optional[str] = Query(None)
 ):
     """List components of specific type for entity → interface(comp(Entity, Type))"""
-    result = grimoire.comp(entity, comp_type)
-    return result
+    try:
+        return grimoire.comp(entity, comp_type)
+    except GrimoireError as e:
+        raise HTTPException(status_code=500, detail=f"Grimoire error: {e}")
 
 # Documentation endpoints
 @app.get("/doc")
 async def show_documentation(session_id: Optional[str] = Query(None)):
     """Show system documentation → interface(doc)"""
-    result = grimoire.doc()
-    return result
+    try:
+        return grimoire.doc()
+    except GrimoireError as e:
+        raise HTTPException(status_code=500, detail=f"Grimoire error: {e}")
 
 @app.get("/doc/{entity}")
 async def show_entity_documentation(
@@ -109,43 +116,55 @@ async def show_entity_documentation(
     session_id: Optional[str] = Query(None)
 ):
     """Show documentation for specific entity → interface(doc(Entity))"""
-    result = grimoire.doc(entity)
-    return result
+    try:
+        return grimoire.doc(entity)
+    except GrimoireError as e:
+        raise HTTPException(status_code=500, detail=f"Grimoire error: {e}")
 
 # Perception endpoint
 @app.post("/perceive")
 async def perceive(request: PerceiveRequest):
     """Execute perception query → perceive(Query)"""
-    result = grimoire.call_perceive_query(request.query)
-    return result
+    try:
+        return grimoire.call_perceive_query(request.query)
+    except GrimoireError as e:
+        raise HTTPException(status_code=500, detail=f"Grimoire error: {e}")
 
 # Conjuration endpoint
 @app.post("/conjure")
 async def conjure(request: ConjureRequest):
     """Execute conjuration spell → cast(conjure(Spell), Result)"""
-    result = grimoire.call_conjure_spell(request.spell)
-    return result
+    try:
+        return grimoire.call_conjure_spell(request.spell)
+    except GrimoireError as e:
+        raise HTTPException(status_code=500, detail=f"Grimoire error: {e}")
 
 # Status endpoint
 @app.get("/status")
 async def get_status(session_id: Optional[str] = Query(None)):
     """Get session and system status → interface(status)"""
-    result = grimoire.status()
-    return result
+    try:
+        return grimoire.status()
+    except GrimoireError as e:
+        raise HTTPException(status_code=500, detail=f"Grimoire error: {e}")
 
 # Entities endpoint
 @app.get("/entities")
 async def list_entities():
     """List all entities in the system → interface(entities)"""
-    result = grimoire.entities()
-    return result
+    try:
+        return grimoire.entities()
+    except GrimoireError as e:
+        raise HTTPException(status_code=500, detail=f"Grimoire error: {e}")
 
 # Test endpoint
 @app.get("/test")
 async def run_tests(test_names: Optional[List[str]] = Query(None)):
     """Run test suite → interface(test)"""
-    result = grimoire.test(test_names)
-    return result
+    try:
+        return grimoire.test(test_names)
+    except GrimoireError as e:
+        raise HTTPException(status_code=500, detail=f"Grimoire error: {e}")
 
 # Session endpoint
 class SessionRequest(BaseModel):
@@ -154,8 +173,10 @@ class SessionRequest(BaseModel):
 @app.post("/session")
 async def session_command(request: SessionRequest):
     """Execute session management command → interface(session(args))"""
-    result = grimoire.session(request.args)
-    return result
+    try:
+        return grimoire.session(request.args)
+    except GrimoireError as e:
+        raise HTTPException(status_code=500, detail=f"Grimoire error: {e}")
 
 # Load endpoint
 class LoadRequest(BaseModel):
@@ -164,8 +185,10 @@ class LoadRequest(BaseModel):
 @app.post("/load")
 async def load_entity(request: LoadRequest):
     """Load entity into current session → interface(load(entity_spec))"""
-    result = grimoire.load(request.entity_spec)
-    return result
+    try:
+        return grimoire.load(request.entity_spec)
+    except GrimoireError as e:
+        raise HTTPException(status_code=500, detail=f"Grimoire error: {e}")
 
 # Health check endpoint
 @app.get("/health")

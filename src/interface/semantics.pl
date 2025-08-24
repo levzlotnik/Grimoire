@@ -337,3 +337,47 @@ include_session_branches([Line|Rest], Sessions) :-
     ;
         Sessions = RestSessions
     ).
+
+% === PYTHON INTERFACE SUPPORT ===
+
+% Python-specific cast that converts Prolog terms to Python-friendly dictionaries
+python_cast(conjure(ConjureStruct), PyResult) :-
+    % Convert atom to term only if it looks like a compound term
+    (   atom(ConjureStruct), 
+        atom_string(ConjureStruct, Str),
+        sub_string(Str, _, _, _, "("),  % Contains parentheses
+        atom_to_term(ConjureStruct, Term, []) ->
+        true
+    ;   
+        Term = ConjureStruct  % Keep as-is (simple atom or already a term)
+    ),
+    cast(conjure(Term), Result),
+    term_struct_to_python_dict(Result, PyResult).
+
+% Convert Prolog term structures to Python dictionaries recursively
+term_struct_to_python_dict(Term, Dict) :-
+    % Handle primitive types that pass through directly
+    (   atomic(Term) ->
+        (   atom(Term) ->
+            Dict = _{type: "atom", value: Term}
+        ;   string(Term) ->
+            Dict = _{type: "string", value: Term}
+        ;   number(Term) ->
+            (   integer(Term) ->
+                Dict = _{type: "int", value: Term}
+            ;   Dict = _{type: "float", value: Term}
+            )
+        )
+    ;   is_list(Term) ->
+        % Convert list elements recursively
+        maplist(term_struct_to_python_dict, Term, Elements),
+        Dict = _{type: "list", elements: Elements}
+    ;   compound(Term) ->
+        % Handle compound terms by decomposing with functor and args
+        compound_name_arity(Term, Functor, Arity),
+        Term =.. [Functor|Args],
+        maplist(term_struct_to_python_dict, Args, ConvertedArgs),
+        Dict = _{type: "term_struct", functor: Functor, arity: Arity, args: ConvertedArgs}
+    ;   % Fallback for any other types
+        Dict = _{type: "unknown", value: Term}
+    ).

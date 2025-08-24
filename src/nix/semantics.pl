@@ -76,6 +76,46 @@ entity(nix(target(devShell))).
 entity(nix(target(check))).
 entity(nix(target(formatter))).
 
+docstring(nix(target(package)),
+    {|string(_)||
+    Nix package build target specification.
+    Represents a buildable package output from a flake.
+    Can be parameterized: nix(target(package(FlakeRef, AttrPath)))
+    Used in nix build operations to specify package outputs.
+    |}).
+
+docstring(nix(target(app)),
+    {|string(_)||
+    Nix application target specification.
+    Represents an executable application from a flake.
+    Can be parameterized: nix(target(app(FlakeRef, AttrPath)))
+    Used with nix run to execute applications directly.
+    |}).
+
+docstring(nix(target(devShell)),
+    {|string(_)||
+    Nix development shell target specification.
+    Provides development environment with tools and dependencies.
+    Can be parameterized: nix(target(devShell(FlakeRef, AttrPath)))
+    Used with nix develop to enter development environments.
+    |}).
+
+docstring(nix(target(check)),
+    {|string(_)||
+    Nix check/test target specification.
+    Represents test suites and checks defined in flakes.
+    Can be parameterized: nix(target(check(FlakeRef, AttrPath)))
+    Used to run tests and validation checks.
+    |}).
+
+docstring(nix(target(formatter)),
+    {|string(_)||
+    Nix code formatter target specification.
+    Provides code formatting tools from flake outputs.
+    Can be parameterized: nix(target(formatter(FlakeRef, AttrPath)))
+    Used to format code according to project standards.
+    |}).
+
 % Dynamic target discovery - flakes define themselves, we discover their targets
 % Usage: entity(nix(flake(FlakeName, FlakeRef))) in individual semantics.pl files
 

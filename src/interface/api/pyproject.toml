@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "grimoire-api"
 version = "0.1.0"
-description = "Grimoire API Server - FastAPI HTTP interface for Grimoire knowledge-based OS"
+description = "Grimoire API - Python package with MCP server and REST API for Grimoire knowledge-based OS"
 authors = [
     {name = "Grimoire", email = "grimoire@example.com"},
 ]
@@ -14,6 +14,7 @@ dependencies = [
     "uvicorn[standard]>=0.24.0",
     "pydantic>=2.5.0",
     "janus-swi @ git+https://github.com/SWI-Prolog/packages-swipy.git",
+    "mcp>=1.0.0",
 ]
 
 [project.optional-dependencies]
@@ -24,7 +25,8 @@ dev = [
 ]
 
 [project.scripts]
-grimoire-server = "main:main"
+grimoire-mcp-server = "mcp_server:main"
+grimoire-rest-api = "rest_api:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

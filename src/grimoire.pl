@@ -12,9 +12,15 @@
 % The most fundamental entity
 :- self_entity(system).
 
-docstring(system, {|string(_)||
-    The root entity of the entire system - the system itself.
-|}).
+docstring(system, S) :-
+    read_file_to_string('src/GRIMOIRE.md', GrimoireDoc, []),
+    findall(Line, (
+        component(system, concept, Concept),
+        docstring(Concept, ConceptDoc),
+        format(atom(Line), '  - ~w: ~w', [Concept, ConceptDoc])
+    ), Lines),
+    atomic_list_concat(Lines, '\n', ConceptsDocs),
+    format(string(S), '~w~n~nCore Concepts:~n~w', [GrimoireDoc, ConceptsDocs]).
 
 
 component(system, root_dir, folder("/home/levz/Projects/Grimoire")).
@@ -39,6 +45,12 @@ component(system, concept, hardware).
 component(system, concept, execute).
 component(system, concept, source).
 component(system, concept, project).
+component(system, concept, conjure).
+component(system, concept, perceive).
+component(system, concept, interface).
+component(system, concept, git).
+component(system, concept, nix).
+component(system, concept, session).
 
 component(system, source, source(semantic(file("grimoire.pl")))).
 
@@ -47,6 +59,15 @@ component(source, ctor, semantic).
 entity(semantic).
 component(semantic, ctor, file).
 component(semantic, ctor, folder).
+
+docstring(semantic,
+    {|string(_)||
+    Semantic knowledge source specification.
+    Constructors: file(Path), folder(Path)
+    Used to load knowledge from semantics.pl files or folders containing them.
+    Example: load_entity(semantic(file("./semantics.pl")))
+    Forms the basis of Grimoire's distributed knowledge architecture.
+    |}).
 docstring(source,S) :-
     make_ctors_docstring(source, SourceTypes),
     S = {|string(SourceTypes)||
@@ -92,36 +113,6 @@ docstring(project,
 :- load_entity(semantic(file("src/fs.pl"))).
 :- load_entity(semantic(folder("src/project"))).
 :- load_entity(semantic(file("src/session.pl"))).
-
-docstring(execute,
-    {|string(_)||
-    Executes a transaction (list of commands) sequentially.
-    If any command fails, returns its error.
-    Format: execute(transaction([command(...),...]), RetVal).
-    RetVal will be either ok([Results]) or error(Error)
-    |}
-).
-
-docstring(transaction,
-    {|string(_)||
-    Term structure for atomic operations.
-    Format: transaction(CommandList).
-    Not a predicate, but a wrapper for a list of commands
-    |}
-).
-
-docstring(command, S) :-
-    % make_ctors_docstring(command, CmdsDocs),
-    S = {|string(_)||
-    Term structure for system operations.
-    Usage: command(cmd_ctor(...))
-
-    You may view which commands are available by inspecting the `ctor` components of
-    `command` entity - it is an extensible sum type of many entities that represent
-    system operations. Also note that different subsystems and projects may extend
-    the ctors, so after loading a new entity source it's worth it to re-query the
-    command's `ctor`s.
-    |}.
 
 % Spell system - fantasy-themed query/mutation separation
 entity(spell).
@@ -177,29 +168,63 @@ docstring(perceive,
       - perceive(nix(flake(show(Apps, Packages, DevShells))))
     |}).
 
-% Conjure constructors (state-changing operations)
-component(conjure, ctor, shell).
-component(conjure, ctor, mkdir).
-component(conjure, ctor, mkfile).
-component(conjure, ctor, edit_file).
-component(conjure, ctor, executable_program).
+% Concept docstrings
+docstring(transaction,
+    {|string(_)||
+    Atomic units of change with rollback capability in the Grimoire system.
+    Transactions ensure consistency through git-backed session management,
+    allowing multiple operations to succeed or fail as a unit.
+    Provides the foundation for safe system mutation with undo capabilities.
+    |}).
 
-% Dynamic docstring for run based on command type
-% Legacy docstring support - remove after transition
-docstring(cast(conjure(Command)), Doc) :-
-    functor(Command, Type, _),
-    docstring(Type, CmdDoc),
-    indent_lines('  ', CmdDoc, CmdDocN),
-    Doc = {|string(Type, CmdDocN)||
-    Executes a '{Type}' command and returns its result.
+docstring(hardware,
+    {|string(_)||
+    Hardware abstraction layer and system resource management.
+    Represents physical and virtual hardware resources available to the system,
+    including CPU, memory, storage, and device interfaces.
+    Provides semantic representation of computing resources.
+    |}).
 
-    Command Details:
-    {CmdDocN}
+docstring(execute,
+    {|string(_)||
+    Execution contexts and runtime environments within Grimoire.
+    Manages the evaluation of operations, command execution, and process lifecycles.
+    Bridges the semantic knowledge layer with actual system operations,
+    ensuring proper context and environment for code execution.
+    |}).
 
-    Returns:
-      - ok(Output) on success
-      - error(Error) on failure
-    |}.
+docstring(interface,
+    {|string(_)||
+    Command interfaces for system interaction.
+    Provides structured access points to Grimoire functionality through
+    CLI, REST API, MCP protocols, and REPL interfaces.
+    Each interface maintains consistency while adapting to its medium's conventions.
+    |}).
+
+docstring(git,
+    {|string(_)||
+    Knowledge evolution tracking and version control subsystem.
+    Manages version history, branching, and transactional rollback through git.
+    Provides session management where each session is a git branch,
+    enabling atomic changes and experimental workflows with easy rollback.
+    Core to Grimoire's immutable knowledge architecture.
+    |}).
+
+docstring(nix,
+    {|string(_)||
+    Symbolic configuration, package management, and build subsystem.
+    Provides reproducible environments and declarative system configuration through Nix flakes.
+    Manages dependencies, build processes, and development shells with perfect reproducibility.
+    Enables functional package management where builds are pure functions of their inputs.
+    |}).
+
+docstring(session,
+    {|string(_)||
+    Transaction and workspace management subsystem.
+    Coordinates git branches with operational contexts for atomic system changes.
+    Each session maintains its own workspace with SQLite command logs and state files.
+    Provides commit, rollback, and history tracking for all operations within a session.
+    |}).
 
 
 docstring(conjure(executable_program),
@@ -217,7 +242,7 @@ cast(conjure(executable_program(Program, Args)), RetVal) :-
     % Non-interactive mode - capture output and exit code
     setup_call_cleanup(
         process_create(
-            Program,
+            path(Program),
             Args,
             [stdout(pipe(Out)), stderr(pipe(Err)), process(PID)]
         ),
@@ -239,7 +264,7 @@ cast(conjure(executable_program(Program, Args, interactive)), RetVal) :-
     % Interactive mode - pass through stdin/stdout
     setup_call_cleanup(
         process_create(
-            Program,
+            path(Program),
             Args,
             [stdin(std), stdout(std), stderr(std)]
         ),
@@ -263,14 +288,14 @@ docstring(conjure(shell),
 cast(conjure(shell(Args)), RetVal) :-
     join_args(Args, JoinedArgs),
     cast(
-        conjure(executable_program(path(sh), ["-c", JoinedArgs])),
+        conjure(executable_program(sh, ["-c", JoinedArgs])),
         RetVal
     ).
 
 cast(conjure(shell(Args, interactive)), RetVal) :-
     join_args(Args, JoinedArgs),
     cast(
-        conjure(executable_program(path(sh), ["-c", JoinedArgs], interactive)),
+        conjure(executable_program(sh, ["-c", JoinedArgs], interactive)),
         RetVal
     ).
 
@@ -549,12 +574,28 @@ entity(edit_file).
 component(edit_file, ctor, insert).
 component(edit_file, ctor, delete).
 component(edit_file, ctor, replace).
+
+docstring(edit_file,
+    {|string(_)||
+    File editing operations constructor for conjure spells.
+    Used within conjure(edit_file(...)) spells to modify files.
+    Constructors: insert(File, Line, Text), delete(File, StartLine, EndLine), replace(File, StartLine, EndLine, NewText)
+    Example: cast(conjure(edit_file(insert("test.pl", 5, "new line"))), Result)
+    |}).
 component(edit_file, ctor, append).
 
 % Agent subsystem
 entity(agent).
 component(agent, source, source(semantic(file("agent.pl")))).
 component(system, subsystem, agent).
+
+docstring(agent,
+    {|string(_)||
+    Agent subsystem for autonomous task execution.
+    Manages agent operations and logging through agent_log constructors.
+    Provides infrastructure for LLM-based agents to interact with the system.
+    Components: source points to agent.pl implementation.
+    |}).
 
 % Define agent logging schema constructors
 entity(agent_log).
@@ -595,7 +636,7 @@ perceive(read_file(FilePath, lines(Start, End), ContentWithLineNumbers)) :-
 
 % Helper for extracting lines with numbers
 extract_lines_with_numbers([], _, _, _, []) :- !.
-extract_lines_with_numbers(_, EndLine, EndLine, Current, []) :- 
+extract_lines_with_numbers(_, EndLine, EndLine, Current, []) :-
     Current > EndLine, !.
 extract_lines_with_numbers([Line|Rest], StartLine, EndLine, Current, Result) :-
     (Current >= StartLine, Current =< EndLine ->

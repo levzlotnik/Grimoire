@@ -104,6 +104,78 @@ docstring(project,
     tools. They materialize applications into concrete implementations.
     |}).
 
+docstring(context(build),
+    {|string(_)||
+    Build context configuration for project compilation.
+    Defines build-time environment, tools, and settings.
+    Part of the project's three-phase context system.
+    Requires config(build) and deps(build) for complete specification.
+    |}).
+
+docstring(context(runtime),
+    {|string(_)||
+    Runtime context configuration for project execution.
+    Defines runtime environment, dependencies, and settings.
+    Part of the project's three-phase context system.
+    Requires config(runtime) and deps(runtime) for complete specification.
+    |}).
+
+docstring(context(test),
+    {|string(_)||
+    Test context configuration for project testing.
+    Defines test environment, frameworks, and test-specific settings.
+    Part of the project's three-phase context system.
+    Requires config(test) and deps(test) for complete specification.
+    |}).
+
+docstring(config(build),
+    {|string(_)||
+    Build configuration settings and parameters.
+    Stores build-specific configuration like compiler flags, optimization levels.
+    Associated with context(build) for complete build specification.
+    Provides declarative build configuration management.
+    |}).
+
+docstring(config(runtime),
+    {|string(_)||
+    Runtime configuration settings and parameters.
+    Stores runtime-specific configuration like environment variables, resource limits.
+    Associated with context(runtime) for complete runtime specification.
+    Provides declarative runtime configuration management.
+    |}).
+
+docstring(config(test),
+    {|string(_)||
+    Test configuration settings and parameters.
+    Stores test-specific configuration like test runners, coverage settings.
+    Associated with context(test) for complete test specification.
+    Provides declarative test configuration management.
+    |}).
+
+docstring(deps(build),
+    {|string(_)||
+    Build-time dependencies specification.
+    Lists packages and tools required during compilation/build phase.
+    Managed through package manager integrations like Nix.
+    Provides declarative build dependency management.
+    |}).
+
+docstring(deps(runtime),
+    {|string(_)||
+    Runtime dependencies specification.
+    Lists packages and libraries required during program execution.
+    Managed through package manager integrations like Nix.
+    Provides declarative runtime dependency management.
+    |}).
+
+docstring(deps(test),
+    {|string(_)||
+    Test dependencies specification.
+    Lists test frameworks and tools required for testing.
+    Managed through package manager integrations like Nix.
+    Provides declarative test dependency management.
+    |}).
+
 docstring(environment,
     {|string(_)||
     Environment entity representing a complete set of resources for all the project's contexts.

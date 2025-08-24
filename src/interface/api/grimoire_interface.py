@@ -13,14 +13,18 @@ from pydantic import BaseModel
 import janus_swi
 
 
+class GrimoireError(RuntimeError):
+    """Exception raised when Grimoire operations fail"""
+
+    pass
+
+
 # Response models for type-safe interface responses
 class ComponentTypesResponse(BaseModel):
     """Response model for component types queries"""
 
-    success: bool
     entity: str
     types: List[str]
-    error: Optional[str] = None
 
 
 class ComponentEntry(BaseModel):
@@ -33,20 +37,16 @@ class ComponentEntry(BaseModel):
 class ComponentsResponse(BaseModel):
     """Response model for component queries"""
 
-    success: bool
     entity: str
     component_type: str
     components: List[ComponentEntry]
-    error: Optional[str] = None
 
 
 class DocumentationResponse(BaseModel):
     """Response model for documentation queries"""
 
-    success: bool
     entity: str
     documentation: str
-    error: Optional[str] = None
 
 
 class StatusInfo(BaseModel):
@@ -60,28 +60,22 @@ class StatusInfo(BaseModel):
 class StatusResponse(BaseModel):
     """Response model for status queries"""
 
-    success: bool
     status: StatusInfo
-    error: Optional[str] = None
 
 
 class PerceiveResponse(BaseModel):
     """Response model for perceive queries with variable bindings"""
 
-    success: bool
     solutions: List[Dict[str, Any]]  # Variable bindings per solution
     count: int
     query: str
-    error: Optional[str] = None
 
 
 class ConjureResponse(BaseModel):
     """Response model for conjure spells"""
 
-    success: bool
     result: Any
     spell: str
-    error: Optional[str] = None
 
 
 class InterfaceEndpoint(BaseModel):
@@ -104,39 +98,30 @@ class SystemInfo(BaseModel):
 class EntitiesResponse(BaseModel):
     """Response model for entities queries"""
 
-    success: bool
     entities: List[str]
-    error: Optional[str] = None
 
 
 class TestResponse(BaseModel):
     """Response model for test operations"""
 
-    success: bool
     result: str
-    error: Optional[str] = None
 
 
 class SessionCommandResponse(BaseModel):
     """Response model for session command operations"""
 
-    success: bool
     result: Any
-    error: Optional[str] = None
 
 
 class LoadResponse(BaseModel):
     """Response model for entity load operations"""
 
-    success: bool
     entity: str
-    error: Optional[str] = None
 
 
 class RootResponse(BaseModel):
     """Response model for root endpoint"""
 
-    success: bool
     api: str
     version: str
     description: str
@@ -167,22 +152,85 @@ class GrimoireInterface:
 
     def query_interface_docstrings(self) -> Dict[str, str]:
         """Query all interface command docstrings from Prolog"""
-        try:
-            # Query all interface subcommands and their docstrings
-            query = "findall([SubCmd, Doc], (component(interface, subcommand, SubCmd), docstring(interface(SubCmd), Doc)), Results)"
-            result = self._execute_in_grimoire_context(query)
+        # Query all interface subcommands and their docstrings
+        query = "findall([SubCmd, Doc], (component(interface, subcommand, SubCmd), docstring(interface(SubCmd), Doc)), Results)"
+        result = self._execute_in_grimoire_context(query)
 
-            docstrings = {}
-            if result and "Results" in result:
-                for pair in result["Results"]:
-                    if len(pair) == 2:
-                        subcmd, doc = pair
-                        docstrings[subcmd] = doc
+        if not result or "Results" not in result:
+            raise RuntimeError("Failed to query interface docstrings from Prolog")
 
-            return docstrings
-        except Exception as e:
-            # Return empty dict on error - don't crash the whole system
-            return {}
+        docstrings = {}
+        for pair in result["Results"]:
+            if len(pair) != 2:
+                raise RuntimeError(f"Invalid docstring pair from Prolog: {pair}")
+            subcmd, doc = pair
+            docstrings[subcmd] = doc
+
+        return docstrings
+
+    def _parse_python_dict_result(self, result_dict: Dict[str, Any]) -> Any:
+        """Parse a Python dictionary result from Prolog into native types"""
+        if not isinstance(result_dict, dict) or "type" not in result_dict:
+            return result_dict
+
+        result_type = result_dict["type"]
+
+        if result_type == "atom":
+            return result_dict["value"]
+        elif result_type == "string":
+            return result_dict["value"]
+        elif result_type in ["int", "float"]:
+            return result_dict["value"]
+        elif result_type == "list":
+            return [
+                self._parse_python_dict_result(elem)
+                for elem in result_dict.get("elements", [])
+            ]
+        elif result_type == "term_struct":
+            functor = result_dict["functor"]
+            args = [
+                self._parse_python_dict_result(arg)
+                for arg in result_dict.get("args", [])
+            ]
+            return {
+                "functor": functor,
+                "args": args,
+                "arity": result_dict.get("arity", len(args)),
+            }
+        else:
+            return result_dict.get("value", result_dict)
+
+    def _term_to_string(self, term: Any) -> str:
+        """Convert a parsed term structure to string representation"""
+        if isinstance(term, dict) and term.get("functor"):
+            functor = term["functor"]
+            args = term.get("args", [])
+            if not args:
+                return functor
+            else:
+                arg_strs = [self._term_to_string(arg) for arg in args]
+                return f"{functor}({', '.join(arg_strs)})"
+        elif isinstance(term, str):
+            return term
+        else:
+            return str(term)
+
+    def _parse_interface_result(self, result_dict: Dict[str, Any]) -> Any:
+        """Parse interface result and handle ok/error patterns"""
+        parsed = self._parse_python_dict_result(result_dict)
+
+        if isinstance(parsed, dict) and parsed.get("functor") == "ok":
+            # Extract the success payload - ok/1 always has exactly one argument
+            return parsed["args"][0]
+        elif isinstance(parsed, dict) and parsed.get("functor") == "error":
+            # Raise exception with error details - error/1 always has exactly one argument
+            error_details = parsed["args"][0]
+            raise GrimoireError(
+                f"Grimoire operation failed: {error_details}", error_details
+            )
+        else:
+            # Return as-is if not ok/error pattern
+            return parsed
 
     def initialize_prolog(self) -> None:
         """Initialize Prolog and load Grimoire system"""
@@ -264,47 +312,37 @@ class GrimoireInterface:
                 }
 
         except Exception as e:
-            return {"success": False, "error": str(e)}
+            raise GrimoireError(str(e))
 
     def call_perceive_query(self, query_str: str) -> PerceiveResponse:
         """Call a perceive query and return all solutions with variable bindings"""
-        try:
-            # Execute perceive query and collect all solutions
-            query = f"perceive({query_str})"
-            solutions = self._execute_query_all_solutions(query)
+        # Use the interface layer with proper perceive validation
+        query = "python_cast(conjure(interface(perceive(QueryTerm))), Result)"
+        result = janus_swi.query_once(query, {"QueryTerm": query_str})
 
+        if result and "Result" in result:
+            parsed = self._parse_interface_result(result["Result"])
+            # For perceive queries, we expect query results to be returned directly
             return PerceiveResponse(
-                success=True, solutions=solutions, count=len(solutions), query=query_str
+                solutions=[parsed] if parsed is not None else [],
+                count=1 if parsed is not None else 0,
+                query=query_str,
             )
 
-        except Exception as e:
-            return PerceiveResponse(
-                success=False, solutions=[], count=0, query=query_str, error=str(e)
-            )
+        raise GrimoireError("No results returned")
 
     def call_conjure_spell(self, spell_str: str) -> ConjureResponse:
         """Call a conjure spell and return result"""
-        try:
-            # Execute conjure spell
-            query = f"cast(conjure({spell_str}), Result)"
-            result = self._execute_in_grimoire_context(query)
+        query = "python_cast(conjure(SpellStr), Result)"
+        result = janus_swi.query_once(query, {"SpellStr": spell_str})
 
-            if result:
-                return ConjureResponse(
-                    success=True, result=result.get("Result", result), spell=spell_str
-                )
-            else:
-                return ConjureResponse(
-                    success=False,
-                    result=None,
-                    spell=spell_str,
-                    error="Conjure spell failed or returned no results",
-                )
-
-        except Exception as e:
+        if result and "Result" in result:
+            parsed = self._parse_interface_result(result["Result"])
             return ConjureResponse(
-                success=False, result=None, spell=spell_str, error=str(e)
+                result=str(parsed), spell=spell_str
             )
+        else:
+            raise GrimoireError("Failed to execute spell")
 
     def test_prolog_connection(self) -> Dict[str, Any]:
         """Test basic Prolog functionality"""
@@ -327,182 +365,210 @@ class GrimoireInterface:
             interface_version="0.1.0",
         )
 
+    def system_instructions(self) -> str:
+        """Get system instructions for MCP server initialization"""
+        system_doc = self.doc("system").documentation
+        return f"""{system_doc}
+
+NOTE: This system operates on Prolog terms. Tools accept Prolog syntax as strings which are automatically converted to Prolog terms internally. Entity names can be atoms like 'system' or compound terms like 'nix(flake(template(python)))'."""
+
     # Type-safe interface methods that mirror semantics.pl
-    
+
     def compt(self, entity: str = "system") -> ComponentTypesResponse:
         """List component types for entity"""
-        query = f"interface_compt('{entity}', Types)"
-        result = self._execute_in_grimoire_context(query)
-        
-        if result and 'Types' in result:
-            return ComponentTypesResponse(
-                success=True,
-                entity=entity,
-                types=result['Types']
-            )
+        if entity == "system":
+            query = "python_cast(conjure(interface(compt)), Result)"
+            result = janus_swi.query_once(query)
         else:
-            return ComponentTypesResponse(
-                success=False,
-                entity=entity,
-                types=[],
-                error="Failed to query component types"
-            )
-    
+            query = "python_cast(conjure(interface(compt(Entity))), Result)"
+            result = janus_swi.query_once(query, {"Entity": entity})
+
+        if result and "Result" in result:
+            parsed = self._parse_interface_result(result["Result"])
+            if isinstance(parsed, dict) and parsed.get("functor") == "component_types":
+                args = parsed.get("args", [])
+                entity_name = args[0] if len(args) > 0 else entity
+                types = args[1] if len(args) > 1 else []
+                return ComponentTypesResponse(
+                    entity=entity_name, types=types
+                )
+
+        raise GrimoireError("Failed to retrieve component types")
+
     def comp(self, entity: str, component_type: str) -> ComponentsResponse:
         """List components of specific type for entity"""
-        # Query for each component individually to avoid complex terms
-        query = f"component('{entity}', '{component_type}', Comp)"
-        solutions = self._execute_query_all_solutions(query)
-        
-        components = []
-        for solution in solutions:
-            if 'Comp' in solution:
-                components.append(ComponentEntry(
-                    component=str(solution['Comp']),
-                    flag="value"  # Default flag since we're querying directly
-                ))
-        
-        return ComponentsResponse(
-            success=True,
-            entity=entity,
-            component_type=component_type,
-            components=components
+        query = "python_cast(conjure(interface(comp(Entity, ComponentType))), Result)"
+        result = janus_swi.query_once(
+            query, {"Entity": entity, "ComponentType": component_type}
         )
-    
+
+        if result and "Result" in result:
+            parsed = self._parse_interface_result(result["Result"])
+            if isinstance(parsed, dict) and parsed.get("functor") == "components":
+                args = parsed.get("args", [])
+                entity_name = args[0] if len(args) > 0 else entity
+                comp_type = args[1] if len(args) > 1 else component_type
+                components_list = args[2] if len(args) > 2 else []
+
+                components = []
+                if isinstance(components_list, list):
+                    for comp_entry in components_list:
+                        if (
+                            isinstance(comp_entry, dict)
+                            and comp_entry.get("functor") == "comp_entry"
+                        ):
+                            args = comp_entry.get("args", [])
+                            component = (
+                                self._term_to_string(args[0])
+                                if len(args) > 0
+                                else str(comp_entry)
+                            )
+                            flag = str(args[1]) if len(args) > 1 else "value"
+                            components.append(
+                                ComponentEntry(component=component, flag=flag)
+                            )
+                        else:
+                            # Fallback for non-comp_entry structure
+                            components.append(
+                                ComponentEntry(component=str(comp_entry), flag="value")
+                            )
+
+                return ComponentsResponse(
+                    entity=entity_name,
+                    component_type=comp_type,
+                    components=components,
+                )
+
+        raise GrimoireError("Failed to retrieve components")
+
     def doc(self, entity: str = "system") -> DocumentationResponse:
         """Get documentation for entity"""
-        query = f"interface_doc('{entity}', Doc)"
-        result = self._execute_in_grimoire_context(query)
-        
-        if result and 'Doc' in result:
-            return DocumentationResponse(
-                success=True,
-                entity=entity,
-                documentation=result['Doc']
-            )
+        if entity == "system":
+            query = "python_cast(conjure(interface(doc)), Result)"
+            result = janus_swi.query_once(query)
         else:
-            return DocumentationResponse(
-                success=False,
-                entity=entity,
-                documentation="",
-                error="Failed to query documentation"
-            )
-    
+            query = "python_cast(conjure(interface(doc(Entity))), Result)"
+            result = janus_swi.query_once(query, {"Entity": entity})
+
+        if result and "Result" in result:
+            parsed = self._parse_interface_result(result["Result"])
+            if isinstance(parsed, dict) and parsed.get("functor") == "documentation":
+                args = parsed.get("args", [])
+                entity_name = args[0] if len(args) > 0 else entity
+                doc_content = args[1] if len(args) > 1 else ""
+                return DocumentationResponse(
+                    entity=entity_name, documentation=str(doc_content)
+                )
+
+        raise GrimoireError("Failed to retrieve documentation")
+
     def status(self) -> StatusResponse:
         """Get session status"""
-        query = "get_session_status(status_info(Branch, Working, Sessions))"
-        result = self._execute_in_grimoire_context(query)
-        
-        if result and 'Branch' in result:
-            branch = str(result['Branch'])
-            working = str(result['Working'])
-            sessions = result['Sessions']
-            
-            # Convert sessions to list if it's a Prolog list
-            if hasattr(sessions, '__iter__') and not isinstance(sessions, str):
-                sessions_list = [str(s) for s in sessions]
-            else:
-                sessions_list = [str(sessions)]
-            
-            return StatusResponse(
-                success=True,
-                status=StatusInfo(
-                    current_branch=branch,
-                    working_status=working,
-                    sessions=sessions_list
-                )
-            )
-        else:
-            return StatusResponse(
-                success=False,
-                status=StatusInfo(
-                    current_branch="main",
-                    working_status="unknown", 
-                    sessions=["main"]
-                ),
-                error="Failed to query session status"
-            )
-    
+        query = "python_cast(conjure(interface(status)), Result)"
+
+        result = janus_swi.query_once(query)
+        if result and "Result" in result:
+            parsed = self._parse_interface_result(result["Result"])
+            if (
+                isinstance(parsed, dict)
+                and parsed.get("functor") == "session_status"
+            ):
+                args = parsed.get("args", [])
+                status_info = args[0] if args else {}
+
+                # Extract status information from the nested structure
+                if isinstance(status_info, dict):
+                    if status_info.get("functor") == "status_info":
+                        status_args = status_info.get("args", [])
+                        branch = (
+                            str(status_args[0]) if len(status_args) > 0 else "main"
+                        )
+                        working = (
+                            str(status_args[1])
+                            if len(status_args) > 1
+                            else "unknown"
+                        )
+                        sessions = (
+                            status_args[2] if len(status_args) > 2 else ["main"]
+                        )
+
+                        # Convert sessions to list if needed
+                        if isinstance(sessions, list):
+                            sessions_list = [str(s) for s in sessions]
+                        else:
+                            sessions_list = [str(sessions)]
+
+                        return StatusResponse(
+                            status=StatusInfo(
+                                current_branch=branch,
+                                working_status=working,
+                                sessions=sessions_list,
+                            ),
+                        )
+
+        raise GrimoireError("Failed to retrieve session status")
+
     def entities(self) -> EntitiesResponse:
         """List all entities in the system"""
-        query = "interface_entities(Entities)"
-        result = self._execute_in_grimoire_context(query)
-        
-        if result and 'Entities' in result:
-            return EntitiesResponse(
-                success=True,
-                entities=result['Entities']
-            )
-        else:
-            return EntitiesResponse(
-                success=False,
-                entities=[],
-                error="Failed to query entities"
-            )
-    
+        query = "python_cast(conjure(interface(entities)), Result)"
+
+        result = janus_swi.query_once(query)
+        if result and "Result" in result:
+            parsed = self._parse_interface_result(result["Result"])
+            if isinstance(parsed, dict) and parsed.get("functor") == "entities":
+                args = parsed.get("args", [])
+                entities_list = args[0] if args else []
+                # Convert each entity to string representation
+                if isinstance(entities_list, list):
+                    entity_strings = [
+                        self._term_to_string(entity) for entity in entities_list
+                    ]
+                else:
+                    entity_strings = []
+                return EntitiesResponse(entities=entity_strings)
+
+        raise GrimoireError("Failed to retrieve entities")
+
     def test(self, args: Optional[List[str]] = None) -> TestResponse:
         """Run test suite"""
         if args:
-            query = f"cast(conjure(interface(test({args}))), Result)"
+            query = "python_cast(conjure(interface(test(Args))), Result)"
+            result = janus_swi.query_once(query, {"Args": args})
         else:
-            query = "cast(conjure(interface(test)), Result)"
-        
-        result = self._execute_in_grimoire_context(query)
-        
-        if result and 'Result' in result:
-            return TestResponse(
-                success=True,
-                result=str(result['Result'])
-            )
+            query = "python_cast(conjure(interface(test)), Result)"
+            result = janus_swi.query_once(query)
+
+        if result and "Result" in result:
+            parsed = self._parse_interface_result(result["Result"])
+            return TestResponse(result=str(parsed))
         else:
-            return TestResponse(
-                success=False,
-                result="",
-                error="Failed to run tests"
-            )
-    
+            raise GrimoireError("Failed to run tests")
+
     def session(self, args: List[str]) -> SessionCommandResponse:
         """Execute session command"""
-        # Format args as Prolog list
-        formatted_args = [f"'{arg}'" for arg in args]
-        args_str = f"[{', '.join(formatted_args)}]"
-        query = f"cast(conjure(interface(session({args_str}))), Result)"
-        
-        result = self._execute_in_grimoire_context(query)
-        
-        if result and 'Result' in result:
-            return SessionCommandResponse(
-                success=True,
-                result=result['Result']
-            )
+        query = "python_cast(conjure(interface(session(Args))), Result)"
+        result = janus_swi.query_once(query, {"Args": args})
+
+        if result and "Result" in result:
+            parsed = self._parse_interface_result(result["Result"])
+            return SessionCommandResponse(result=parsed)
         else:
-            return SessionCommandResponse(
-                success=False,
-                result=None,
-                error="Failed to execute session command"
-            )
-    
+            raise GrimoireError("Failed to execute session command")
+
     def load(self, entity_spec: str) -> LoadResponse:
         """Load entity into current session"""
-        query = f"cast(conjure(interface(load('{entity_spec}'))), Result)"
-        
-        result = self._execute_in_grimoire_context(query)
-        
-        if result and 'Result' in result:
-            # Extract entity name from result
-            result_val = result['Result']
-            if isinstance(result_val, dict) and 'entity' in result_val:
-                entity = result_val['entity']
+        query = "python_cast(conjure(interface(load(EntitySpec))), Result)"
+        result = janus_swi.query_once(query, {"EntitySpec": entity_spec})
+
+        if result and "Result" in result:
+            parsed = self._parse_interface_result(result["Result"])
+            # Extract entity name from parsed result
+            if isinstance(parsed, dict) and parsed.get("functor") == "entity_loaded":
+                args = parsed.get("args", [])
+                entity = str(args[0]) if args else entity_spec
             else:
                 entity = entity_spec
-            
-            return LoadResponse(
-                success=True,
-                entity=entity
-            )
+
+            return LoadResponse(entity=entity)
         else:
-            return LoadResponse(
-                success=False,
-                entity="",
-                error=f"Failed to load entity {entity_spec}"
-            )
+            raise GrimoireError(f"Failed to load entity {entity_spec}")

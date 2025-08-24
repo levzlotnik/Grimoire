@@ -30,6 +30,15 @@ component(fs(pattern), ctor, exclude).
 % Glob pattern entity
 entity(fs(glob)).
 
+docstring(fs(glob),
+    {|string(_)||
+    Filesystem glob pattern matching for file discovery.
+    Expands glob patterns to match files and directories.
+    Supports standard glob syntax: *, ?, [abc], {a,b,c}, **
+    Example: fs(glob("src/**/*.pl", Files))
+    Used for pattern-based file system operations.
+    |}).
+
 docstring(fs,
     {|string(_)||
     Filesystem discovery utilities for project introspection.

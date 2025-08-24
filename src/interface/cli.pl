@@ -73,6 +73,10 @@ show_usage :-
     writeln('Spell-based commands:'),
     writeln('  grimoire conjure "operation"    # Cast conjuration spells'),
     writeln('  grimoire perceive "query(...)"  # Execute perception queries'),
+    writeln(''),
+    writeln('Server commands:'),
+    writeln('  grimoire serve [args]           # Start REST API server'),
+    writeln('  grimoire mcp [args]             # Start MCP server'),
     writeln('').
 
 % === COMMAND DISPATCH ===
@@ -216,6 +220,28 @@ handle_command(exec, [QueryStr]) :-
          emit_variable_bindings(VarNames)),
         Error,
         format_cli_result(error(query_execution_failed(Error)))
+    ).
+
+% Serve command - start REST API server
+handle_command(serve, Args) :-
+    !,
+    catch(
+        (append(["nix", "run", "--quiet", ".#grimoire-server", "--"], Args, CmdArgs),
+         cast(conjure(shell(CmdArgs, interactive)), Result),
+         format_cli_result(Result)),
+        Error,
+        format_cli_result(error(server_failed(Error)))
+    ).
+
+% MCP command - start MCP server
+handle_command(mcp, Args) :-
+    !,
+    catch(
+        (append(["nix", "run", "--quiet", ".#grimoire-mcp-server", "--"], Args, CmdArgs),
+         cast(conjure(shell(CmdArgs, interactive)), Result),
+         format_cli_result(Result)),
+        Error,
+        format_cli_result(error(server_failed(Error)))
     ).
 
 % Unknown command

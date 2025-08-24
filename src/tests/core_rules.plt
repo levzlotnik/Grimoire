@@ -33,4 +33,13 @@ test(passive_loading) :-
     entity(test_entity),
     component(test_entity, to_be_loaded, semantic(file('src/nix/templates/rust/semantics.pl'))).
 
+test(all_entities_have_docstrings) :-
+    findall(E, (entity(E), \+ docstring(E, _)), Missing),
+    ( Missing = [] ->
+        true
+    ;
+        format('~nEntities missing docstrings: ~w~n', [Missing]),
+        fail
+    ).
+
 :- end_tests(core_ecs).

@@ -23,43 +23,44 @@ from grimoire_interface import (
     LoadResponse,
 )
 
-# Create FastMCP server
-mcp = FastMCP("Grimoire Interface")
-
 # Create global instance of Grimoire interface
 grimoire = GrimoireInterface()
 
+# Get interface docstrings from Prolog
+interface_docs = grimoire.query_interface_docstrings()
 
-@mcp.tool()
+# Create FastMCP server with proper instructions
+mcp = FastMCP("Grimoire Interface", instructions=grimoire.system_instructions())
+
+
+@mcp.tool(description=interface_docs['compt'])
 def compt(entity: str = "system") -> ComponentTypesResponse:
     return grimoire.compt(entity)
 
 
-@mcp.tool()
+@mcp.tool(description=interface_docs['comp'])
 def comp(entity: str, component_type: str) -> ComponentsResponse:
     return grimoire.comp(entity, component_type)
 
 
-@mcp.tool()
+@mcp.tool(description=interface_docs['doc'])
 def doc(entity: str = "system") -> DocumentationResponse:
     return grimoire.doc(entity)
 
 
-@mcp.tool()
+@mcp.tool(description=interface_docs['status'])
 def status() -> StatusResponse:
     return grimoire.status()
 
 
-@mcp.tool()
+@mcp.tool(description=interface_docs['perceive'])
 def perceive(query: str) -> PerceiveResponse:
-    result = grimoire.call_perceive_query(query)
-    return result
+    return grimoire.call_perceive_query(query)
 
 
-@mcp.tool()
+@mcp.tool(description=interface_docs['conjure'])
 def conjure(spell: str) -> ConjureResponse:
-    result = grimoire.call_conjure_spell(spell)
-    return result
+    return grimoire.call_conjure_spell(spell)
 
 
 @mcp.tool()
@@ -76,32 +77,24 @@ def health_check() -> Dict[str, Any]:
     return result
 
 
-@mcp.tool()
+@mcp.tool(description=interface_docs['entities'])
 def entities() -> EntitiesResponse:
-    """List all entities in the system. Returns a list of all entity names."""
-    result = grimoire.entities()
-    return result
+    return grimoire.entities()
 
 
-@mcp.tool()
+@mcp.tool(description=interface_docs['test'])
 def test(args: Optional[List[str]] = None) -> TestResponse:
-    """Run the test suite. Optionally provide specific test names to run."""
-    result = grimoire.test(args)
-    return result
+    return grimoire.test(args)
 
 
-@mcp.tool()
+@mcp.tool(description=interface_docs['session'])
 def session(args: List[str]) -> SessionCommandResponse:
-    """Execute session management commands. Args should specify the subcommand and parameters."""
-    result = grimoire.session(args)
-    return result
+    return grimoire.session(args)
 
 
-@mcp.tool()
+@mcp.tool(description=interface_docs['load'])
 def load(entity_spec: str) -> LoadResponse:
-    """Load an entity into the current session for persistent access."""
-    result = grimoire.load(entity_spec)
-    return result
+    return grimoire.load(entity_spec)
 
 
 # Initialize dynamic docstrings with Prolog data
