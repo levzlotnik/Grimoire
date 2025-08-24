@@ -124,9 +124,9 @@ Sessions create isolated workspaces with SQLite command logging and ECS discover
 % Start a session (creates workspace directory with commands.db and state.pl)
 ?- cast(conjure(session(start('my-work'))), Result).
 % Result = ok(session_started('my-work'))
-% Creates: ${GRIMOIRE_ROOT}/sessions/my-work/commands.db
-% Creates: ${GRIMOIRE_ROOT}/sessions/my-work/state.pl
-% Creates: ${GRIMOIRE_ROOT}/sessions/my-work/commands.schema.sql
+% Creates: ${GRIMOIRE_DATA}/sessions/my-work/commands.db
+% Creates: ${GRIMOIRE_DATA}/sessions/my-work/state.pl
+% Creates: ${GRIMOIRE_DATA}/sessions/my-work/commands.schema.sql
 
 % Record thoughts and commands (logged to session database)
 ?- cast(conjure(think("Working on database integration")), Result).
@@ -152,7 +152,7 @@ Sessions create isolated workspaces with SQLite command logging and ECS discover
   - Command-based database creation: `command(db(create(DbId, DbPath, schema(file|sql))))`
   - Automatic schema file generation and ECS component discovery
 - **Session System Complete** - File-based workspaces with SQLite command logging (.db extension)
-  - Session workspaces under `${GRIMOIRE_ROOT}/sessions/` with commands.db and state.pl files
+  - Session workspaces under `${GRIMOIRE_DATA}/sessions/` with commands.db and state.pl files
   - ECS database integration with automatic table/column component discovery
   - Session state persistence for entity loads across operations
 - **Spell System Complete** - Fantasy-themed command/query separation with `conjure`/`perceive`

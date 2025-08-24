@@ -146,8 +146,8 @@ test(session_history_retrieval, [cleanup(cleanup_session('test-history'))]) :-
 
 test(workspace_path_resolution) :-
     session_workspace_path('test-session', WorkspacePath),
-    grimoire_root_directory(GrimoireRoot),
-    format(atom(ExpectedPath), '~w/sessions/test-session', [GrimoireRoot]),
+    grimoire_data_directory(DataDir),
+    format(atom(ExpectedPath), '~w/sessions/test-session', [DataDir]),
     assertion(WorkspacePath = ExpectedPath).
 
 test(database_path_resolution) :-

@@ -23,10 +23,14 @@
 - Use `./grimoire exec` instead of `swipl` - loads system components
 - Spell system: `./grimoire cast "conjure(...)"` for mutations, `./grimoire perceive "..."` for queries
 
+## Environment Variables
+- `GRIMOIRE_ROOT`: Directory from which `./grimoire` script is executed (project directory)
+- `GRIMOIRE_DATA`: Data storage directory for sessions, databases, etc. (defaults to `$HOME/.grimoire`)
+
 ## Git Practices
 - Never use `git add .` or `git add -A` - use `git add -u` or add files individually
 - Session-based workflows with SQLite command logging
-- File-based workspaces under `${GRIMOIRE_ROOT}/sessions/`
+- File-based workspaces under `${GRIMOIRE_DATA}/sessions/`
 
 ## Nix Command Patterns
 - Building: `nix(build(Installable))` or fallback `nix(build("."))`

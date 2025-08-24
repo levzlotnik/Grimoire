@@ -199,7 +199,7 @@ cast(conjure(git(Term)), RetVal) :-
     % Convert to shell args
     phrase(git_args(Term), Args),
     % Execute
-    cast(conjure(executable_program(path(git), Args)), RetVal).
+    cast(conjure(executable_program(git, Args)), RetVal).
 
 % === PERCEIVE PREDICATES - Structured Git Queries ===
 

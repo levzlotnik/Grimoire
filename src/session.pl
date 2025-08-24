@@ -40,19 +40,28 @@ component(conjure, ctor, think).
 
 % === CORE WORKSPACE PATHS ===
 
-% Get Grimoire root directory: ${GRIMOIRE_ROOT:-$HOME/.grimoire}
+% Get Grimoire root directory: directory from which './grimoire' script is run
 grimoire_root_directory(RootDir) :-
     (getenv('GRIMOIRE_ROOT', CustomRoot) ->
         RootDir = CustomRoot
     ;
+        working_directory(CurrentDir, CurrentDir),
+        RootDir = CurrentDir
+    ).
+
+% Get Grimoire data directory: ${GRIMOIRE_DATA:-$HOME/.grimoire}
+grimoire_data_directory(DataDir) :-
+    (getenv('GRIMOIRE_DATA', CustomDataDir) ->
+        DataDir = CustomDataDir
+    ;
         getenv('HOME', HomeDir),
-        format(atom(RootDir), '~w/.grimoire', [HomeDir])
+        format(atom(DataDir), '~w/.grimoire', [HomeDir])
     ).
 
 % Session workspace directory
 session_workspace_path(SessionId, WorkspacePath) :-
-    grimoire_root_directory(RootDir),
-    format(atom(WorkspacePath), '~w/sessions/~w', [RootDir, SessionId]).
+    grimoire_data_directory(DataDir),
+    format(atom(WorkspacePath), '~w/sessions/~w', [DataDir, SessionId]).
 
 % Session commands database path
 session_commands_db_path(SessionId, DbPath) :-
@@ -271,8 +280,8 @@ perceive(session(current(SessionId))) :-
 
 % Perceive session list
 perceive(session(list(Sessions))) :-
-    grimoire_root_directory(RootDir),
-    format(atom(SessionsDir), '~w/sessions', [RootDir]),
+    grimoire_data_directory(DataDir),
+    format(atom(SessionsDir), '~w/sessions', [DataDir]),
     (exists_directory(SessionsDir) ->
         directory_files(SessionsDir, AllFiles),
         exclude(=(.), AllFiles, Files1),
@@ -301,8 +310,8 @@ perceive(session(history(Commands))) :-
 
 % List all sessions
 list_all_sessions(Result) :-
-    grimoire_root_directory(RootDir),
-    format(atom(SessionsDir), '~w/sessions', [RootDir]),
+    grimoire_data_directory(DataDir),
+    format(atom(SessionsDir), '~w/sessions', [DataDir]),
     (exists_directory(SessionsDir) ->
         directory_files(SessionsDir, AllFiles),
         exclude(=(.), AllFiles, Files1),

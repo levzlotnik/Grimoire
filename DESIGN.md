@@ -39,7 +39,7 @@ Grimoire is a knowledge-based operating system built on Entity-Component-System 
 - **Purpose**: Logical work contexts with file-based command logging and ECS database discovery
 - **Paradigm**: Session → Workspace directory with commands.db (.db extension) and state.pl files
 - **Key Features**:
-  - File-based session workspaces under `${GRIMOIRE_ROOT}/sessions/`
+  - File-based session workspaces under `${GRIMOIRE_DATA}/sessions/`
   - SQLite command logging (.db extension) with automatic ECS discovery and schema tracking
   - Session database registration: `registered_db(database(session_SessionId), data(file(DbPath)), schema(file(SchemaPath)))`
   - Session state management via state.pl files for persistent entity loads
@@ -584,7 +584,7 @@ The stateful interface session system provides persistent entity state across op
 
 ### Architecture
 
-**Session-Owned Prolog Files**: Each session creates a persistent state file at `${GRIMOIRE_ROOT:-$HOME/.grimoire}/session-{uuid}.pl` containing entity load directives.
+**Session-Owned Prolog Files**: Each session creates a persistent state file at `${GRIMOIRE_DATA:-$HOME/.grimoire}/session-{uuid}.pl` containing entity load directives.
 
 **Automatic State Loading**: Interface operations automatically load session state when operating within a session context.
 
@@ -600,7 +600,7 @@ session_state_file_path(SessionId, FilePath) :-
     session_storage_strategy(Strategy),
     session_state_file_path(SessionId, Strategy, FilePath).
 
-% Global storage: ${GRIMOIRE_ROOT:-$HOME/.grimoire}/session-{uuid}.pl
+% Global storage: ${GRIMOIRE_DATA:-$HOME/.grimoire}/session-{uuid}.pl
 session_state_file_path(SessionId, global, FilePath) :-
     grimoire_root_directory(GrimoireRoot),
     format(atom(FileName), 'session-~w.pl', [SessionId]),

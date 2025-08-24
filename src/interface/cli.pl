@@ -516,7 +516,7 @@ show_session_help :-
     writeln('  grimoire session commit_accumulated "msg" # Commit commands'),
     writeln(''),
     writeln('Note: Sessions store commands in SQLite databases within'),
-    writeln('      workspace directories under $GRIMOIRE_ROOT/sessions/'),
+    writeln('      workspace directories under $GRIMOIRE_DATA/sessions/'),
     writeln('').
 
 % === PERCEIVE QUERY EXECUTION ===

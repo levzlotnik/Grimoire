@@ -280,7 +280,7 @@ docstring(conjure(shell),
       conjure(shell(Args))           % Capture output mode
       conjure(shell(Args, interactive)) % Interactive mode
     Args is a list of strings that will be properly escaped.
-    Equivalent to: executable_program(path(sh), ["-c", JoinedArgs])
+    Equivalent to: executable_program(sh, ["-c", JoinedArgs])
     where JoinedArgs is the properly escaped and joined argument list.
     |}
 ).
