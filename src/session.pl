@@ -9,7 +9,6 @@
 :- self_entity(session).
 entity(think).
 
-% Session commands - removed legacy command ctor, using perceive/conjure below
 component(session, subcommand, start).
 component(session, subcommand, delete).
 component(session, subcommand, close).
@@ -137,15 +136,15 @@ initialize_session_database(SessionId) :-
     session_commands_db_path(SessionId, DbPath),
     session_workspace_path(SessionId, WorkspacePath),
     format(atom(SchemaFile), '~w/commands.schema.sql', [WorkspacePath]),
-    
+
     % Create schema file
-    SessionSchema = 
+    SessionSchema =
         "CREATE TABLE IF NOT EXISTS commands (\n    id INTEGER PRIMARY KEY AUTOINCREMENT,\n    timestamp TEXT NOT NULL,\n    command_type TEXT NOT NULL,\n    command_term TEXT NOT NULL,\n    result TEXT,\n    source TEXT DEFAULT 'user'\n);\nCREATE INDEX IF NOT EXISTS idx_timestamp ON commands(timestamp);\nCREATE INDEX IF NOT EXISTS idx_command_type ON commands(command_type);\nCREATE INDEX IF NOT EXISTS idx_source ON commands(source);",
-    
+
     open(SchemaFile, write, Stream),
     write(Stream, SessionSchema),
     close(Stream),
-    
+
     % Create database using db creation command
     format(atom(SessionDbId), 'session_~w', [SessionId]),
     cast(conjure(db(create(SessionDbId, DbPath, schema(file(SchemaFile))))), _).
@@ -217,15 +216,15 @@ log_command_to_session_db(SessionId, CommandType, CommandTerm, Result) :-
             (% Get current timestamp
              get_time(TimeStamp),
              format_time(atom(FormattedTime), '%Y-%m-%d %H:%M:%S', TimeStamp),
-             
+
              % Escape command term for SQL
              term_string(CommandTerm, CommandTermStr),
              escape_sql_string(CommandTermStr, EscapedCommandTerm),
              term_string(Result, ResultStr),
              escape_sql_string(ResultStr, EscapedResult),
-             
+
              % Insert command into database
-             format(atom(InsertSQL), 
+             format(atom(InsertSQL),
                 'INSERT INTO commands (timestamp, command_type, command_term, result) VALUES (\'~w\', \'~w\', \'~w\', \'~w\')',
                 [FormattedTime, CommandType, EscapedCommandTerm, EscapedResult]),
              sqlite3_exec(DbPath, InsertSQL)),

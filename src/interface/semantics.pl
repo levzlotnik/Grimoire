@@ -42,10 +42,10 @@ docstring(interface(doc), "Show docstring of current entity. Format: interface(d
 docstring(interface(entities), "List all entities in the system. Format: interface(entities). Returns entities([Entity1, Entity2, ...]).").
 docstring(interface(repl), "Start interactive REPL with context awareness. Format: interface(repl). Interactive command that starts a Prolog REPL.").
 docstring(interface(status), "Show session/transaction status. Format: interface(status). Returns session_status(status_info(Branch, WorkingStatus, Sessions)).").
-docstring(interface(test), "Run the test suite. Format: interface(test) or interface(test([TestName1, TestName2, ...])). Returns test results.").
-docstring(interface(session), "File-based session management with SQLite command logging. Format: interface(session([SubCommand, ...])). SubCommands: start, delete, close, switch, commit, rollback, current, list, status, history, commit_accumulated.").
-docstring(interface(conjure), "Execute conjuration spells (mutable operations). Format: interface(conjure(SpellTerm)). SpellTerm can be any valid conjure operation like git(status), nix(build), etc.").
-docstring(interface(perceive), "Execute perception spells (query operations). Format: interface(perceive(QueryTerm)). QueryTerm can be any valid perception query.").
+docstring(interface(test), "Run the test suite. Format: interface(test) or interface(test([TestName1, TestName2, ...]). Returns test results.").
+docstring(interface(session), "File-based session management with SQLite command logging. Format: interface(session([SubCommand, ...])) - use 'grimoire comp session subcommand' to see available subcommands.").
+docstring(interface(conjure), "Execute conjuration spells (mutable operations). Format: interface(conjure(SpellTerm)) - use 'grimoire comp conjure ctor' to see available spells.").
+docstring(interface(perceive), "Execute perception spells (query operations). Format: interface(perceive(QueryTerm)) - use 'grimoire comp perceive ctor' to see available queries.").
 docstring(interface(load), "Load entity into current session for persistent access. Format: interface(load(EntitySpec)). EntitySpec examples: semantic(folder/file), system, etc.").
 
 % Main interface docstring

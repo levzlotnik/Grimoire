@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "Grimoire": {
+      "type": "stdio",
+      "command": "./grimoire mcp",
+      "args": [],
+      "env": {}
+    }
+  }
+}
