@@ -281,11 +281,7 @@ interface_comp(Entity, Type, ComponentsWithFlags) :-
 
 % Get entity documentation
 interface_doc(Entity, Doc) :-
-    (docstring(Entity, Doc) ->
-        true
-    ;
-        Doc = no_docstring_available
-    ).
+    docstring(Entity, Doc).
 
 % List all entities
 interface_entities(Entities) :-
@@ -342,14 +338,13 @@ include_session_branches([Line|Rest], Sessions) :-
 
 % Python-specific cast that converts Prolog terms to Python-friendly dictionaries
 python_cast(conjure(ConjureStruct), PyResult) :-
-    % Convert atom to term only if it looks like a compound term
-    (   atom(ConjureStruct), 
-        atom_string(ConjureStruct, Str),
-        sub_string(Str, _, _, _, "("),  % Contains parentheses
-        atom_to_term(ConjureStruct, Term, []) ->
-        true
-    ;   
-        Term = ConjureStruct  % Keep as-is (simple atom or already a term)
+    % If it's an atom, try to convert it to a term
+    % This will preserve quoted atoms as atoms (e.g., 'interface(doc)' stays as atom)
+    % and convert unquoted compound terms (e.g., interface(doc)) to terms
+    (   atom(ConjureStruct) ->
+        atom_to_term(ConjureStruct, Term, [])
+    ;
+        Term = ConjureStruct  % Already a term
     ),
     cast(conjure(Term), Result),
     term_struct_to_python_dict(Result, PyResult).

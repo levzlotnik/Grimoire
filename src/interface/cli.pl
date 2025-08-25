@@ -21,7 +21,7 @@ main(Args) :-
         ;
             halt(1)
         )
-    ; 
+    ;
         show_usage,
         halt(1)
     ).
@@ -122,7 +122,7 @@ handle_command(repl, _) :-
     cast(conjure(interface(repl)), Result),
     format_cli_result(Result).
 
-% Status command  
+% Status command
 handle_command(status, _) :-
     !,
     cast(conjure(interface(status)), Result),
@@ -226,8 +226,8 @@ handle_command(exec, [QueryStr]) :-
 handle_command(serve, Args) :-
     !,
     catch(
-        (append(["python", "src/interface/api/rest_api.py"], Args, CmdArgs),
-         cast(conjure(shell(CmdArgs, interactive)), Result),
+        (append(["src/interface/api/rest_api.py"], Args, CmdArgs),
+         cast(conjure(executable_program(python, CmdArgs)), Result),
          format_cli_result(Result)),
         Error,
         format_cli_result(error(server_failed(Error)))
@@ -237,8 +237,8 @@ handle_command(serve, Args) :-
 handle_command(mcp, Args) :-
     !,
     catch(
-        (append(["python", "src/interface/api/mcp_server.py"], Args, CmdArgs),
-         cast(conjure(shell(CmdArgs, interactive)), Result),
+        (append(["src/interface/api/mcp_server.py"], Args, CmdArgs),
+         cast(conjure(executable_program(python, CmdArgs, interactive)), Result),
          format_cli_result(Result)),
         Error,
         format_cli_result(error(server_failed(Error)))
@@ -268,11 +268,6 @@ format_cli_result(ok(components(Entity, Type, Components))) :-
         (Flag = entity -> DisplayFlag = 'e' ; DisplayFlag = 'v'),
         format('~w~t~28| | ~w~n', [Comp, DisplayFlag])
     )).
-
-% Format documentation result - no docstring available
-format_cli_result(ok(documentation(Entity, no_docstring_available))) :-
-    !,
-    format('No docstring available for ~w~n', [Entity]).
 
 % Format documentation result - has docstring
 format_cli_result(ok(documentation(Entity, Doc))) :-
@@ -406,7 +401,7 @@ format_cli_result(Result) :-
 
 format_sessions([]) :-
     writeln('  (no sessions found)').
-    
+
 format_sessions(Sessions) :-
     Sessions \= [],
     format_all_sessions(Sessions).
@@ -448,16 +443,16 @@ format_single_session_list(session(SessionId, inactive)) :-
 format_single_session(active(main)) :-
     !,
     writeln('  * main (active, main session)').
-    
+
 format_single_session(main) :-
     !,
     writeln('    main (main session)').
-    
+
 format_single_session(active(SessionId)) :-
     !,
     extract_session_display_name(SessionId, DisplayName),
     format('  * ~w (active)~n', [DisplayName]).
-    
+
 format_single_session(SessionId) :-
     extract_session_display_name(SessionId, DisplayName),
     format('    ~w~n', [DisplayName]).

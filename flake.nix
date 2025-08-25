@@ -36,6 +36,20 @@
             -- "$@"
         '';
       };
+
+      # Grimoire MCP server
+      grimoire-mcp = grimoireEnv.mkGrimoireExecutable {
+        name = "grimoire-mcp";
+        script = ''
+          cd ${./.}
+          export GRIMOIRE_ROOT=''${GRIMOIRE_ROOT:-${./.}}
+          exec ${grimoireEnv.swipl}/bin/swipl \
+            -g "ensure_loaded('src/grimoire.pl')" \
+            -t "main" \
+            "src/interface/cli.pl" \
+            -- mcp
+        '';
+      };
     });
 
     # Development shells
@@ -47,7 +61,7 @@
     {
       default = pkgs.mkShell (grimoireEnv.env // {
         buildInputs = grimoireEnv.buildInputs;
-        packages = with self.packages.${system}; [ grimoire ];
+        packages = with self.packages.${system}; [ grimoire grimoire-mcp ];
       });
     });
 

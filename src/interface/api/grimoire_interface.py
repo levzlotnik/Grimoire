@@ -151,7 +151,7 @@ class GrimoireInterface:
         """Query all interface command docstrings from Prolog"""
         # Get interface subcommands using the working comp method
         comp_response = self.comp("interface", "subcommand")
-        
+
         docstrings = {}
         for comp_entry in comp_response.components:
             subcmd = comp_entry.component
@@ -229,7 +229,7 @@ class GrimoireInterface:
         # Set working directory to Grimoire root
         original_cwd = os.getcwd()
         try:
-            os.chdir(str(self.grimoire_root))
+            os.chdir(self.grimoire_root)
 
             # Load the Grimoire system
             self.janus.query_once("ensure_loaded('src/grimoire.pl')")
@@ -265,7 +265,7 @@ class GrimoireInterface:
 
         if result and "Result" in result:
             parsed = self._parse_interface_result(result["Result"])
-            return ConjureResponse(result=str(parsed), spell=spell_str)
+            return ConjureResponse(result=parsed, spell=spell_str)
         else:
             raise GrimoireError("Failed to execute spell")
 
@@ -364,26 +364,22 @@ NOTE: This system operates on Prolog terms. Tools accept Prolog syntax as string
 
         raise GrimoireError("Failed to retrieve components")
 
-    def doc(self, entity: str = "system") -> DocumentationResponse:
+    def doc(self, entity: Any = "system") -> DocumentationResponse:
         """Get documentation for entity"""
-        if entity == "system":
-            query = "python_cast(conjure(interface(doc)), Result)"
-            result = janus_swi.query_once(query)
+        conjure_str = f"interface(doc({entity}))"
+        result = self.call_conjure_spell(conjure_str)
+        doc = result.result
+        # doc = documentation(Entity, Doc)
+        if isinstance(doc, dict) and doc.get("functor") == "documentation":
+            args = doc["args"]
+            if len(args) != 2:
+                raise GrimoireError(f"Malformed documentation result: {doc}")
+            doc_string = args[1]
+            return DocumentationResponse(entity=entity, documentation=doc_string)
         else:
-            query = "python_cast(conjure(interface(doc(Entity))), Result)"
-            result = janus_swi.query_once(query, {"Entity": entity})
-
-        if result and "Result" in result:
-            parsed = self._parse_interface_result(result["Result"])
-            if isinstance(parsed, dict) and parsed.get("functor") == "documentation":
-                args = parsed.get("args", [])
-                entity_name = args[0] if len(args) > 0 else entity
-                doc_content = args[1] if len(args) > 1 else ""
-                return DocumentationResponse(
-                    entity=entity_name, documentation=str(doc_content)
-                )
-
-        raise GrimoireError("Failed to retrieve documentation")
+            raise GrimoireError(
+                f"Failed to retrieve documentation for entity: {entity}"
+            )
 
     def status(self) -> StatusResponse:
         """Get session status"""
