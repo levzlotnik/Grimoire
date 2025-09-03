@@ -8,7 +8,7 @@ Handles all Prolog integration, query execution, and result formatting.
 import os
 import sys
 from pathlib import Path
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Union
 from pydantic import BaseModel
 import janus_swi
 
@@ -16,7 +16,51 @@ import janus_swi
 class GrimoireError(RuntimeError):
     """Exception raised when Grimoire operations fail"""
 
-    pass
+
+class PrologTerm:
+    """Type-safe representation of a Prolog compound term"""
+    
+    def __init__(self, functor: str, args: Optional[List[Any]] = None):
+        self.functor = functor
+        self.args = args or []
+        self.arity = len(self.args)
+    
+    def __str__(self) -> str:
+        """Convert to Prolog string representation"""
+        if not self.args:
+            return self.functor
+        else:
+            arg_strs = []
+            for arg in self.args:
+                if isinstance(arg, PrologTerm):
+                    arg_strs.append(str(arg))
+                elif isinstance(arg, str):
+                    # Check if it needs quoting (contains spaces, special chars, or starts with uppercase)
+                    if ' ' in arg or '(' in arg or ')' in arg or (arg and arg[0].isupper()):
+                        arg_strs.append(f"'{arg}'")
+                    else:
+                        arg_strs.append(arg)
+                else:
+                    arg_strs.append(str(arg))
+            return f"{self.functor}({', '.join(arg_strs)})"
+    
+    def __repr__(self) -> str:
+        return f"PrologTerm(functor={self.functor!r}, args={self.args!r})"
+    
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> 'PrologTerm':
+        """Create PrologTerm from parsed dictionary structure"""
+        if not isinstance(d, dict) or not d.get("functor"):
+            raise ValueError(f"Invalid term dictionary: {d}")
+        
+        args = []
+        for arg in d.get("args", []):
+            if isinstance(arg, dict) and arg.get("functor"):
+                args.append(cls.from_dict(arg))
+            else:
+                args.append(arg)
+        
+        return cls(d["functor"], args)
 
 
 # Response models for type-safe interface responses
@@ -74,7 +118,7 @@ class PerceiveResponse(BaseModel):
 class ConjureResponse(BaseModel):
     """Response model for conjure spells"""
 
-    result: Any
+    result: str  # String representation of result
     spell: str
 
 
@@ -110,13 +154,66 @@ class TestResponse(BaseModel):
 class SessionCommandResponse(BaseModel):
     """Response model for session command operations"""
 
-    result: Any
+    result: str  # String representation of result
 
 
 class LoadResponse(BaseModel):
     """Response model for entity load operations"""
 
     entity: str
+
+
+class LineContent(BaseModel):
+    """Individual line with line number"""
+    
+    line_number: int
+    content: str
+
+
+class ReadFileResponse(BaseModel):
+    """Response model for read_file operations"""
+
+    file_path: str
+    lines: List[LineContent]
+
+
+class EditInsert(BaseModel):
+    """Insert text at a specific line"""
+    operation: str = "insert"
+    line: int
+    content: str
+
+
+class EditDelete(BaseModel):
+    """Delete lines from a file"""
+    operation: str = "delete"
+    start_line: int
+    end_line: int
+
+
+class EditReplace(BaseModel):
+    """Replace a range of lines with new text"""
+    operation: str = "replace"
+    start_line: int
+    end_line: int
+    content: str
+
+
+class EditAppend(BaseModel):
+    """Append text to the end of file"""
+    operation: str = "append"
+    content: str
+
+
+# Sum type for edit operations
+EditOperation = Union[EditInsert, EditDelete, EditReplace, EditAppend]
+
+
+class EditFileResponse(BaseModel):
+    """Response model for edit_file operations"""
+
+    file_path: str
+    result: str  # Success message or result
 
 
 class RootResponse(BaseModel):
@@ -158,10 +255,11 @@ class GrimoireInterface:
             doc_response = self.doc(f"interface({subcmd})")
             docstrings[subcmd] = doc_response.documentation
 
+
         return docstrings
 
     def _parse_python_dict_result(self, result_dict: Dict[str, Any]) -> Any:
-        """Parse a Python dictionary result from Prolog into native types"""
+        """Parse a Python dictionary result from Prolog into native types or PrologTerm"""
         if not isinstance(result_dict, dict) or "type" not in result_dict:
             return result_dict
 
@@ -184,17 +282,16 @@ class GrimoireInterface:
                 self._parse_python_dict_result(arg)
                 for arg in result_dict.get("args", [])
             ]
-            return {
-                "functor": functor,
-                "args": args,
-                "arity": result_dict.get("arity", len(args)),
-            }
+            return PrologTerm(functor, args)
         else:
             return result_dict.get("value", result_dict)
 
     def _term_to_string(self, term: Any) -> str:
-        """Convert a parsed term structure to string representation"""
-        if isinstance(term, dict) and term.get("functor"):
+        """Convert a parsed term or PrologTerm to string representation"""
+        if isinstance(term, PrologTerm):
+            return str(term)
+        elif isinstance(term, dict) and term.get("functor"):
+            # Legacy support for dict representation
             functor = term["functor"]
             args = term.get("args", [])
             if not args:
@@ -211,12 +308,13 @@ class GrimoireInterface:
         """Parse interface result and handle ok/error patterns"""
         parsed = self._parse_python_dict_result(result_dict)
 
-        if isinstance(parsed, dict) and parsed.get("functor") == "ok":
+        if isinstance(parsed, PrologTerm) and parsed.functor == "ok":
             # Extract the success payload - ok/1 always has exactly one argument
-            return parsed["args"][0]
-        elif isinstance(parsed, dict) and parsed.get("functor") == "error":
+            return parsed.args[0] if parsed.args else None
+        elif isinstance(parsed, PrologTerm) and parsed.functor == "error":
             # Raise exception with error details - error/1 always has exactly one argument
-            error_details = parsed["args"][0]
+            error_struct = parsed.args[0] if parsed.args else parsed
+            error_details = self._term_to_string(error_struct)
             raise GrimoireError(
                 f"Grimoire operation failed: {error_details}", error_details
             )
@@ -249,10 +347,23 @@ class GrimoireInterface:
 
         if result and "Result" in result:
             parsed = self._parse_interface_result(result["Result"])
-            # For perceive queries, we expect query results to be returned directly
+            # Convert any compound terms in the solution to string representation
+            if parsed is not None:
+                if isinstance(parsed, dict) and not isinstance(parsed, PrologTerm):
+                    # If it's a dict with variable bindings, convert compound terms to strings
+                    solution = {}
+                    for key, value in parsed.items():
+                        solution[key] = self._term_to_string(value)
+                    solutions = [solution]
+                else:
+                    # Single value result (could be a PrologTerm or primitive)
+                    solutions = [{"result": self._term_to_string(parsed)}]
+            else:
+                solutions = []
+            
             return PerceiveResponse(
-                solutions=[parsed] if parsed is not None else [],
-                count=1 if parsed is not None else 0,
+                solutions=solutions,
+                count=len(solutions),
                 query=query_str,
             )
 
@@ -265,7 +376,9 @@ class GrimoireInterface:
 
         if result and "Result" in result:
             parsed = self._parse_interface_result(result["Result"])
-            return ConjureResponse(result=parsed, spell=spell_str)
+            # Convert to string representation
+            result_str = self._term_to_string(parsed)
+            return ConjureResponse(result=result_str, spell=spell_str)
         else:
             raise GrimoireError("Failed to execute spell")
 
@@ -310,9 +423,9 @@ NOTE: This system operates on Prolog terms. Tools accept Prolog syntax as string
 
         if result and "Result" in result:
             parsed = self._parse_interface_result(result["Result"])
-            if isinstance(parsed, dict) and parsed.get("functor") == "component_types":
-                args = parsed.get("args", [])
-                entity_name = args[0] if len(args) > 0 else entity
+            if isinstance(parsed, PrologTerm) and parsed.functor == "component_types":
+                args = parsed.args
+                entity_name = str(args[0]) if len(args) > 0 else entity
                 types = args[1] if len(args) > 1 else []
                 return ComponentTypesResponse(entity=entity_name, types=types)
 
@@ -327,33 +440,30 @@ NOTE: This system operates on Prolog terms. Tools accept Prolog syntax as string
 
         if result and "Result" in result:
             parsed = self._parse_interface_result(result["Result"])
-            if isinstance(parsed, dict) and parsed.get("functor") == "components":
-                args = parsed.get("args", [])
-                entity_name = args[0] if len(args) > 0 else entity
-                comp_type = args[1] if len(args) > 1 else component_type
+            if isinstance(parsed, PrologTerm) and parsed.functor == "components":
+                args = parsed.args
+                entity_name = str(args[0]) if len(args) > 0 else entity
+                comp_type = str(args[1]) if len(args) > 1 else component_type
                 components_list = args[2] if len(args) > 2 else []
 
                 components = []
                 if isinstance(components_list, list):
                     for comp_entry in components_list:
-                        if (
-                            isinstance(comp_entry, dict)
-                            and comp_entry.get("functor") == "comp_entry"
-                        ):
-                            args = comp_entry.get("args", [])
+                        if isinstance(comp_entry, PrologTerm) and comp_entry.functor == "comp_entry":
+                            entry_args = comp_entry.args
                             component = (
-                                self._term_to_string(args[0])
-                                if len(args) > 0
+                                self._term_to_string(entry_args[0])
+                                if len(entry_args) > 0
                                 else str(comp_entry)
                             )
-                            flag = str(args[1]) if len(args) > 1 else "value"
+                            flag = str(entry_args[1]) if len(entry_args) > 1 else "value"
                             components.append(
                                 ComponentEntry(component=component, flag=flag)
                             )
                         else:
                             # Fallback for non-comp_entry structure
                             components.append(
-                                ComponentEntry(component=str(comp_entry), flag="value")
+                                ComponentEntry(component=self._term_to_string(comp_entry), flag="value")
                             )
 
                 return ComponentsResponse(
@@ -366,20 +476,22 @@ NOTE: This system operates on Prolog terms. Tools accept Prolog syntax as string
 
     def doc(self, entity: Any = "system") -> DocumentationResponse:
         """Get documentation for entity"""
-        conjure_str = f"interface(doc({entity}))"
-        result = self.call_conjure_spell(conjure_str)
-        doc = result.result
-        # doc = documentation(Entity, Doc)
-        if isinstance(doc, dict) and doc.get("functor") == "documentation":
-            args = doc["args"]
-            if len(args) != 2:
-                raise GrimoireError(f"Malformed documentation result: {doc}")
-            doc_string = args[1]
-            return DocumentationResponse(entity=entity, documentation=doc_string)
-        else:
-            raise GrimoireError(
-                f"Failed to retrieve documentation for entity: {entity}"
-            )
+        # Build query with entity embedded in the query string
+        query = f"python_cast(conjure(interface(doc({entity}))), Result)"
+        result = janus_swi.query_once(query)
+        
+        if result and "Result" in result:
+            parsed = self._parse_interface_result(result["Result"])
+            if isinstance(parsed, PrologTerm) and parsed.functor == "documentation":
+                args = parsed.args
+                if len(args) != 2:
+                    raise GrimoireError(f"Malformed documentation result: {parsed}")
+                doc_string = str(args[1])
+                return DocumentationResponse(entity=str(entity), documentation=doc_string)
+        
+        raise GrimoireError(
+            f"Failed to retrieve documentation for entity: {entity}"
+        )
 
     def status(self) -> StatusResponse:
         """Get session status"""
@@ -388,33 +500,32 @@ NOTE: This system operates on Prolog terms. Tools accept Prolog syntax as string
         result = janus_swi.query_once(query)
         if result and "Result" in result:
             parsed = self._parse_interface_result(result["Result"])
-            if isinstance(parsed, dict) and parsed.get("functor") == "session_status":
-                args = parsed.get("args", [])
-                status_info = args[0] if args else {}
+            if isinstance(parsed, PrologTerm) and parsed.functor == "session_status":
+                args = parsed.args
+                status_info = args[0] if args else None
 
                 # Extract status information from the nested structure
-                if isinstance(status_info, dict):
-                    if status_info.get("functor") == "status_info":
-                        status_args = status_info.get("args", [])
-                        branch = str(status_args[0]) if len(status_args) > 0 else "main"
-                        working = (
-                            str(status_args[1]) if len(status_args) > 1 else "unknown"
-                        )
-                        sessions = status_args[2] if len(status_args) > 2 else ["main"]
+                if isinstance(status_info, PrologTerm) and status_info.functor == "status_info":
+                    status_args = status_info.args
+                    branch = str(status_args[0]) if len(status_args) > 0 else "main"
+                    working = (
+                        str(status_args[1]) if len(status_args) > 1 else "unknown"
+                    )
+                    sessions = status_args[2] if len(status_args) > 2 else ["main"]
 
-                        # Convert sessions to list if needed
-                        if isinstance(sessions, list):
-                            sessions_list = [str(s) for s in sessions]
-                        else:
-                            sessions_list = [str(sessions)]
+                    # Convert sessions to list if needed
+                    if isinstance(sessions, list):
+                        sessions_list = [str(s) for s in sessions]
+                    else:
+                        sessions_list = [str(sessions)]
 
-                        return StatusResponse(
-                            status=StatusInfo(
-                                current_branch=branch,
-                                working_status=working,
-                                sessions=sessions_list,
-                            ),
-                        )
+                    return StatusResponse(
+                        status=StatusInfo(
+                            current_branch=branch,
+                            working_status=working,
+                            sessions=sessions_list,
+                        ),
+                    )
 
         raise GrimoireError("Failed to retrieve session status")
 
@@ -425,8 +536,8 @@ NOTE: This system operates on Prolog terms. Tools accept Prolog syntax as string
         result = janus_swi.query_once(query)
         if result and "Result" in result:
             parsed = self._parse_interface_result(result["Result"])
-            if isinstance(parsed, dict) and parsed.get("functor") == "entities":
-                args = parsed.get("args", [])
+            if isinstance(parsed, PrologTerm) and parsed.functor == "entities":
+                args = parsed.args
                 entities_list = args[0] if args else []
                 # Convert each entity to string representation
                 if isinstance(entities_list, list):
@@ -461,7 +572,9 @@ NOTE: This system operates on Prolog terms. Tools accept Prolog syntax as string
 
         if result and "Result" in result:
             parsed = self._parse_interface_result(result["Result"])
-            return SessionCommandResponse(result=parsed)
+            # Convert to string representation
+            result_str = self._term_to_string(parsed)
+            return SessionCommandResponse(result=result_str)
         else:
             raise GrimoireError("Failed to execute session command")
 
@@ -473,12 +586,63 @@ NOTE: This system operates on Prolog terms. Tools accept Prolog syntax as string
         if result and "Result" in result:
             parsed = self._parse_interface_result(result["Result"])
             # Extract entity name from parsed result
-            if isinstance(parsed, dict) and parsed.get("functor") == "entity_loaded":
-                args = parsed.get("args", [])
+            if isinstance(parsed, PrologTerm) and parsed.functor == "entity_loaded":
+                args = parsed.args
                 entity = str(args[0]) if args else entity_spec
             else:
-                entity = entity_spec
+                entity = str(entity_spec)
 
             return LoadResponse(entity=entity)
         else:
             raise GrimoireError(f"Failed to load entity {entity_spec}")
+
+    def read_file(self, file_path: str, start: int, end: int) -> ReadFileResponse:
+        """Read lines from a file using 1-based indexing"""
+        # Use python_cast with interface(read_file(...))
+        query = f"python_cast(conjure(interface(read_file({file_path!r}, {start}, {end}))), Result)"
+        result = janus_swi.query_once(query)
+        
+        parsed_lines = []
+        
+        if result and "Result" in result:
+            parsed = self._parse_interface_result(result["Result"])
+            # parsed should be the ContentWithLineNumbers list
+            if isinstance(parsed, list):
+                for item in parsed:
+                    if isinstance(item, PrologTerm) and item.functor == "line":
+                        line_num = int(item.args[0])
+                        line_content = str(item.args[1])
+                        parsed_lines.append(LineContent(line_number=line_num, content=line_content))
+                
+        return ReadFileResponse(
+            file_path=file_path,
+            lines=parsed_lines
+        )
+
+    def edit_file(self, file_path: str, edits: List[EditOperation]) -> EditFileResponse:
+        """Edit file with specified edits"""
+        prolog_edits = []
+        for edit in edits:
+            if isinstance(edit, EditAppend):
+                prolog_edits.append(f"append({edit.content!r})")
+            elif isinstance(edit, EditInsert):
+                prolog_edits.append(f"insert({edit.line}, {edit.content!r})")
+            elif isinstance(edit, EditDelete):
+                prolog_edits.append(f"delete({edit.start_line}, {edit.end_line})")
+            elif isinstance(edit, EditReplace):
+                prolog_edits.append(f"replace({edit.start_line}, {edit.end_line}, {edit.content!r})")
+        
+        edits_str = f"[{', '.join(prolog_edits)}]"
+        
+        # Use python_cast with interface(edit_file(...))
+        query = f"python_cast(conjure(interface(edit_file({file_path!r}, {edits_str}))), Result)"
+        result = janus_swi.query_once(query)
+        
+        if result and "Result" in result:
+            parsed = self._parse_interface_result(result["Result"])
+            return EditFileResponse(
+                file_path=file_path,
+                result=self._term_to_string(parsed)
+            )
+        else:
+            raise GrimoireError("Failed to execute edit_file")

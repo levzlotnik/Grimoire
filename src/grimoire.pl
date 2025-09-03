@@ -135,6 +135,28 @@ component(perceive, ctor, entities).
 component(perceive, ctor, read_file).
 component(perceive, ctor, search_regex).
 
+% Read file entity and docstring
+entity(read_file).
+docstring(read_file,
+    {|string(_)||
+    Read specific lines from a file with line numbers.
+    Format: perceive(read_file(FilePath, LineNumbers, ContentWithLineNumbers))
+    Parameters:
+    - FilePath: Path to the file to read
+    - LineNumbers: List of 1-based line numbers to read (negative numbers count from end: -1 = last line)
+    - ContentWithLineNumbers: Unifies with list of line(Number, Content) terms
+    Examples:
+      read_file('file.txt', [1, 2, 3], Content)     % Read first 3 lines
+      read_file('file.txt', [1, -1], Content)      % Read first and last line
+      read_file('file.txt', [-3, -2, -1], Content) % Read last 3 lines
+    |}).
+
+% Generic entity and docstring rules for perceive and conjure constructors
+entity(perceive(Ctor)) :- component(perceive, ctor, Ctor), entity(Ctor).
+entity(conjure(Ctor)) :- component(conjure, ctor, Ctor), entity(Ctor).
+docstring(perceive(Ctor), S) :- entity(perceive(Ctor)), docstring(Ctor, S).
+docstring(conjure(Ctor), S) :- entity(conjure(Ctor)), docstring(Ctor, S).
+
 % Spell system docstrings
 docstring(spell,
     {|string(_)||
@@ -372,13 +394,13 @@ cast(conjure(mkfile(Path)), RetVal) :-
     RetVal = ok("").
 
 docstring(conjure(edit_file), S) :-
-    make_ctors_docstring(edit_file, SubCmdsDoc),
-    S = {|string(SubCmdsDoc)||
+    docstring(edit_file, EditFileDoc),
+    S = {|string(EditFileDoc)||
     Applies edits to a file.
-    Format: conjure(edit_file(file(Path), [Edit1, Edit2, ...])).
+    Format: cast(conjure(edit_file(file(Path), [Edit1, Edit2, ...])), Result).
 
-    Edit terms:
-    {SubCmdsDoc}
+    edit_file structure:
+    {EditFileDoc}
     |}.
 
 cast(conjure(edit_file(file(Path), Edits)), RetVal) :-
@@ -574,15 +596,60 @@ entity(edit_file).
 component(edit_file, ctor, insert).
 component(edit_file, ctor, delete).
 component(edit_file, ctor, replace).
-
-docstring(edit_file,
-    {|string(_)||
-    File editing operations constructor for conjure spells.
-    Used within conjure(edit_file(...)) spells to modify files.
-    Constructors: insert(File, Line, Text), delete(File, StartLine, EndLine), replace(File, StartLine, EndLine, NewText)
-    Example: cast(conjure(edit_file(insert("test.pl", 5, "new line"))), Result)
-    |}).
 component(edit_file, ctor, append).
+
+% Edit file constructor entities with docstrings
+entity(edit_file(insert)).
+docstring(edit_file(insert),
+    {|string(_)||
+    Insert text at a specific line number.
+    Format: insert(LineNumber, Text)
+    - LineNumber: Line number where text will be inserted (1-indexed)
+    - Text: String to insert as a new line
+    Example: insert(5, "new line content")
+    |}).
+
+entity(edit_file(delete)).
+docstring(edit_file(delete),
+    {|string(_)||
+    Delete lines from a file.
+    Format: delete(StartLine, EndLine)
+    - StartLine: First line to delete (1-indexed)
+    - EndLine: Last line to delete (inclusive)
+    Example: delete(3, 5)  % Deletes lines 3, 4, and 5
+    |}).
+
+entity(edit_file(replace)).
+docstring(edit_file(replace),
+    {|string(_)||
+    Replace a range of lines with new text.
+    Format: replace(StartLine, EndLine, NewText)
+    - StartLine: First line to replace (1-indexed)
+    - EndLine: Last line to replace (inclusive)
+    - NewText: Text to replace the lines with
+    Example: replace(2, 4, "replacement text")
+    |}).
+
+entity(edit_file(append)).
+docstring(edit_file(append),
+    {|string(_)||
+    Append text to the end of the file.
+    Format: append(Text)
+    - Text: String to append as a new line at the end of file
+    Example: append("new last line")
+    |}).
+
+docstring(edit_file, S) :-
+    make_ctors_docstring(edit_file, CtorsDoc),
+    S = {|string(CtorsDoc)||
+    File editing term structure for specifying file operations.
+    Format: edit_file(file(Path), [Edit1, Edit2, ...])
+    - Path: File path to edit
+    - Edits: List of edit operations
+    
+    Available edit operations:
+    {CtorsDoc}
+    |}.
 
 % Agent subsystem
 entity(agent).
@@ -625,14 +692,41 @@ docstring(agent_log,
 perceive(entities(Entities)) :-
     findall(Entity, entity(Entity), Entities).
 
-% Read file with line numbers and range selection
-perceive(read_file(FilePath, lines(Start, End), ContentWithLineNumbers)) :-
+% Read file with line numbers using 1-based indexing (-1 means from end)
+perceive(read_file(FilePath, Lines, ContentWithLineNumbers)) :-
     read_file_to_lines(FilePath, AllLines),
-    % Handle start/end atoms
-    (Start = start -> StartLine = 1 ; StartLine = Start),
-    (End = end -> length(AllLines, EndLine) ; EndLine = End),
-    % Extract range and add line numbers
-    extract_lines_with_numbers(AllLines, StartLine, EndLine, 1, ContentWithLineNumbers).
+    length(AllLines, TotalLines),
+    % Handle different line specification formats
+    resolve_lines_spec(Lines, TotalLines, ResolvedLines),
+    % Extract requested lines with numbers
+    findall(line(LineNum, Content),
+        (member(LineNum, ResolvedLines),
+         nth1(LineNum, AllLines, Content)),
+        ContentWithLineNumbers).
+
+% Resolve different line specification formats
+resolve_lines_spec(lines(Start, End), TotalLines, ResolvedLines) :-
+    % Handle lines(start, end) format from tests
+    resolve_line_bound(Start, TotalLines, StartNum),
+    resolve_line_bound(End, TotalLines, EndNum),
+    findall(LineNum, between(StartNum, EndNum, LineNum), ResolvedLines).
+resolve_lines_spec(Lines, TotalLines, ResolvedLines) :-
+    % Handle direct list of line numbers
+    is_list(Lines),
+    maplist(resolve_line_index(TotalLines), Lines, ResolvedLines).
+
+% Resolve line bounds (start/end atoms or numbers)
+resolve_line_bound(start, _, 1) :- !.
+resolve_line_bound(end, TotalLines, TotalLines) :- !.
+resolve_line_bound(Num, _, Num) :- number(Num).
+
+% Helper to resolve line indices (1-based, -1 from end)
+resolve_line_index(Total, Index, Resolved) :-
+    (Index < 0 ->
+        Resolved is Total + Index + 1  % -1 becomes Total, -2 becomes Total-1, etc.
+    ;
+        Resolved = Index
+    ).
 
 % Helper for extracting lines with numbers
 extract_lines_with_numbers([], _, _, _, []) :- !.

@@ -1,11 +1,12 @@
 from fastapi import FastAPI, HTTPException, Query, Path
 from pydantic import BaseModel
-from typing import Optional, Any, List
+from typing import Optional, Any, List, Dict, Union
 
 # Import our Grimoire interface module
 from grimoire_interface import (
     GrimoireInterface, GrimoireError, SystemInfo, InterfaceEndpoint, RootResponse,
-    EntitiesResponse, TestResponse, SessionCommandResponse, LoadResponse
+    EntitiesResponse, TestResponse, SessionCommandResponse, LoadResponse,
+    ReadFileResponse, EditFileResponse
 )
 
 # Create global instance of Grimoire interface
@@ -55,6 +56,8 @@ async def root():
         InterfaceEndpoint(method="GET", path="/test", description=docstrings.get("test", "Run test suite")),
         InterfaceEndpoint(method="POST", path="/session", description=docstrings.get("session", "Session management")),
         InterfaceEndpoint(method="POST", path="/load", description=docstrings.get("load", "Load entity")),
+        InterfaceEndpoint(method="GET", path="/read_file/{file_path}", description="Read file with line numbers"),
+        InterfaceEndpoint(method="POST", path="/edit_file", description="Edit file with specified operations"),
         InterfaceEndpoint(method="GET", path="/health", description="Health check")
     ]
     
@@ -189,6 +192,47 @@ async def load_entity(request: LoadRequest):
         return grimoire.load(request.entity_spec)
     except GrimoireError as e:
         raise HTTPException(status_code=500, detail=f"Grimoire error: {e}")
+
+# Read file endpoint  
+@app.get("/read_file/{file_path:path}", response_model=ReadFileResponse)
+async def read_file_endpoint(
+    file_path: str = Path(...),
+    start: int = Query(1, description="Starting line number (1-based indexing)"),
+    end: int = Query(10, description="Ending line number (1-based indexing)"),
+    session_id: Optional[str] = Query(None)
+):
+    """Read lines from a file using 1-based indexing → interface(read_file(FilePath, Start, End))"""
+    try:
+        return grimoire.read_file(file_path, start, end)
+    except GrimoireError as e:
+        raise HTTPException(status_code=500, detail=f"Grimoire error: {e}")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid parameters: {e}")
+
+# Edit file endpoint
+from grimoire_interface import EditInsert, EditDelete, EditReplace, EditAppend
+
+class EditFileRequest(BaseModel):
+    file_path: str
+    edits: List[Dict[str, Any]]  # Accept dicts for backward compatibility
+
+@app.post("/edit_file", response_model=EditFileResponse)
+async def edit_file_endpoint(request: EditFileRequest):
+    """Edit file with specified operations → conjure(edit_file(file(Path), Edits))"""
+    # Convert dicts to typed models
+    typed_edits = []
+    for edit in request.edits:
+        op = edit.get("operation", "")
+        if op == "insert":
+            typed_edits.append(EditInsert(**edit))
+        elif op == "delete":
+            typed_edits.append(EditDelete(**edit))
+        elif op == "replace":
+            typed_edits.append(EditReplace(**edit))
+        elif op == "append":
+            typed_edits.append(EditAppend(**edit))
+    
+    return grimoire.edit_file(request.file_path, typed_edits)
 
 # Health check endpoint
 @app.get("/health")

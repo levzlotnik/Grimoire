@@ -16,6 +16,8 @@ component(interface, subcommand, session).
 component(interface, subcommand, conjure).
 component(interface, subcommand, perceive).
 component(interface, subcommand, load).
+component(interface, subcommand, read_file).
+component(interface, subcommand, edit_file).
 
 % Removed legacy command constructor - interface functions called directly by CLI
 
@@ -34,6 +36,8 @@ entity(interface(session)).
 entity(interface(conjure)).
 entity(interface(perceive)).
 entity(interface(load)).
+entity(interface(read_file)).
+entity(interface(edit_file)).
 
 % Docstrings follow namespacing pattern with detailed format information
 docstring(interface(compt), "List all component types of current entity. Format: interface(compt) or interface(compt(Entity)). Returns component_types(Entity, [Type1, Type2, ...]).").
@@ -47,6 +51,8 @@ docstring(interface(session), "File-based session management with SQLite command
 docstring(interface(conjure), "Execute conjuration spells (mutable operations). Format: interface(conjure(SpellTerm)) - use 'grimoire comp conjure ctor' to see available spells.").
 docstring(interface(perceive), "Execute perception spells (query operations). Format: interface(perceive(QueryTerm)) - use 'grimoire comp perceive ctor' to see available queries.").
 docstring(interface(load), "Load entity into current session for persistent access. Format: interface(load(EntitySpec)). EntitySpec examples: semantic(folder/file), system, etc.").
+docstring(interface(read_file), "Read lines from a file using 1-based indexing. Format: interface(read_file(FilePath, Start, End)). Returns file content with line numbers.").
+docstring(interface(edit_file), "Edit file with specified operations. Format: interface(edit_file(FilePath, Edits)). Edits is a list of edit operations.").
 
 % Main interface docstring
 docstring(interface, S) :-
@@ -263,6 +269,22 @@ cast(conjure(interface(load(EntitySpec))), RetVal) :-
         entity_load_failed(E, Spec, Msg),
         RetVal = error(entity_load_failed(E, Spec, Msg))
     ).
+
+% Read file command - execute read_file perceive operation
+cast(conjure(interface(read_file(FilePath, Start, End))), RetVal) :-
+    ensure_session_state_loaded,
+    % Convert start/end to lines list for the perceive operation
+    findall(LineNum, between(Start, End, LineNum), Lines),
+    (perceive(read_file(FilePath, Lines, ContentWithLineNumbers)) ->
+        RetVal = ok(ContentWithLineNumbers)
+    ;
+        RetVal = error(read_file_failed)
+    ).
+
+% Edit file command - forward to edit_file conjure operation  
+cast(conjure(interface(edit_file(FilePath, Edits))), RetVal) :-
+    ensure_session_state_loaded,
+    cast(conjure(edit_file(file(FilePath), Edits)), RetVal).
 
 % === CORE INTERFACE FUNCTIONS ===
 % These return structured data, no printing

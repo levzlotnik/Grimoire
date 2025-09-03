@@ -18,7 +18,7 @@ test(constructor_pattern) :-
 test(docstring_exists) :-
     % Test docstring availability
     load_entity(semantic(file('src/git.pl'))),
-    docstring(git, _).
+    docstring(git, _), !.
 
 test(semantic_mounting) :-
     % Test semantic mounting

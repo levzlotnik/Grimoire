@@ -2,9 +2,11 @@
   "mcpServers": {
     "Grimoire": {
       "type": "stdio",
-      "command": "grimoire-mcp",
-      "args": [],
-      "env": {}
+      "command": "./grimoire",
+      "args": ["mcp"],
+      "env": {
+        "GRIMOIRE_ROOT": "/home/levz/Projects/Grimoire"
+      }
     }
   }
 }

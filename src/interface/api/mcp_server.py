@@ -6,22 +6,12 @@ Uses the same GrimoireInterface backend as the REST API.
 """
 
 import argparse
+import yaml
 from mcp.server import FastMCP
 from typing import Dict, List, Any, Optional
-from grimoire_interface import (
-    GrimoireInterface,
-    ComponentTypesResponse,
-    ComponentsResponse,
-    DocumentationResponse,
-    StatusResponse,
-    PerceiveResponse,
-    ConjureResponse,
-    SystemInfo,
-    EntitiesResponse,
-    TestResponse,
-    SessionCommandResponse,
-    LoadResponse,
-)
+
+from pydantic import BaseModel
+from grimoire_interface import GrimoireInterface
 
 # Create global instance of Grimoire interface
 grimoire = GrimoireInterface()
@@ -33,85 +23,103 @@ mcp = FastMCP("Grimoire Interface", instructions=grimoire.system_instructions())
 interface_docs = grimoire.query_interface_docstrings()
 
 
+def _model_to_string(model: Any) -> str:
+    """Convert a model to YAML string representation for better nested structure readability"""
+    if not isinstance(model, BaseModel):
+        return str(model)
+    # Convert Pydantic model to dict and then to YAML
+    model_dict = model.model_dump()
+    return yaml.dump(model_dict, default_flow_style=False, sort_keys=False)
+
+
 @mcp.tool(description=interface_docs["compt"])
-def compt(entity: str = "system") -> ComponentTypesResponse:
-    return grimoire.compt(entity)
+def compt(entity: str = "system"):
+    return _model_to_string(grimoire.compt(entity))
 
 
 @mcp.tool(description=interface_docs["comp"])
-def comp(entity: str, component_type: str) -> ComponentsResponse:
-    return grimoire.comp(entity, component_type)
+def comp(entity: str, component_type: str):
+    return _model_to_string(grimoire.comp(entity, component_type))
 
 
 @mcp.tool(description=interface_docs["doc"])
-def doc(entity: str = "system") -> DocumentationResponse:
-    return grimoire.doc(entity)
+def doc(entity: str = "system"):
+    return _model_to_string(grimoire.doc(entity))
 
 
 @mcp.tool(description=interface_docs["status"])
-def status() -> StatusResponse:
-    return grimoire.status()
+def status():
+    return _model_to_string(grimoire.status())
 
 
 @mcp.tool(description=interface_docs["perceive"])
-def perceive(query: str) -> PerceiveResponse:
-    return grimoire.call_perceive_query(query)
+def perceive(query: str):
+    return _model_to_string(grimoire.call_perceive_query(query))
 
 
 @mcp.tool(description=interface_docs["conjure"])
-def conjure(spell: str) -> ConjureResponse:
-    return grimoire.call_conjure_spell(spell)
+def conjure(spell: str):
+    return _model_to_string(grimoire.call_conjure_spell(spell))
 
 
 @mcp.tool()
-def system_info() -> SystemInfo:
+def system_info():
     """Get Grimoire system information including root directory, Prolog status, and version details."""
-    result = grimoire.get_system_info()
-    return result
-
-
-@mcp.tool()
-def health_check() -> Dict[str, Any]:
-    """Test Prolog connection and system health. Returns diagnostic information about janus-swi and Prolog initialization."""
-    result = grimoire.test_prolog_connection()
-    return result
+    return _model_to_string(grimoire.get_system_info())
 
 
 @mcp.tool(description=interface_docs["entities"])
-def entities() -> EntitiesResponse:
-    return grimoire.entities()
+def entities():
+    return _model_to_string(grimoire.entities())
 
 
 @mcp.tool(description=interface_docs["test"])
-def test(args: Optional[List[str]] = None) -> TestResponse:
-    return grimoire.test(args)
+def test(args: Optional[List[str]] = None):
+    return _model_to_string(grimoire.test(args))
 
 
 @mcp.tool(description=interface_docs["session"])
-def session(args: List[str]) -> SessionCommandResponse:
-    return grimoire.session(args)
+def session(args: List[str]):
+    return _model_to_string(grimoire.session(args))
 
 
 @mcp.tool(description=interface_docs["load"])
-def load(entity_spec: str) -> LoadResponse:
-    return grimoire.load(entity_spec)
+def load(entity_spec: str):
+    return _model_to_string(grimoire.load(entity_spec))
 
 
-# Initialize dynamic docstrings with Prolog data
-def _initialize_docstrings():
-    """Set dynamic docstrings for MCP tools based on Prolog interface docstrings"""
-    interface_docstrings = grimoire.query_interface_docstrings()
+@mcp.tool(description=interface_docs["read_file"])
+def read_file(file_path: str, start: int, end: int):
+    """Read lines from a file using 1-based indexing."""
+    result = grimoire.read_file(file_path, start, end)
+    
+    # Format as simple string with line numbers
+    lines = []
+    for line_content in result.lines:
+        lines.append(f"{line_content.line_number}  {line_content.content}")
+    
+    return "\n".join(lines)
 
-    compt.__doc__ = f"List component types. {interface_docstrings.get('compt', 'List all component types of current entity')} Returns structured component type data for MCP clients."
-    comp.__doc__ = f"List components. {interface_docstrings.get('comp', 'List components of specific type for current entity')} Returns structured component data for MCP clients."
-    doc.__doc__ = f"Show documentation. {interface_docstrings.get('doc', 'Show docstring of current entity')} Returns entity documentation for MCP clients."
-    status.__doc__ = f"Show session status. {interface_docstrings.get('status', 'Show session/transaction status')} Returns session and git status information for MCP clients."
-    perceive.__doc__ = f"Execute perception query. {interface_docstrings.get('perceive', 'Execute perception spells (query operations)')} Returns query results with variable bindings for MCP clients."
-    conjure.__doc__ = f"Execute conjuration spell. {interface_docstrings.get('conjure', 'Execute conjuration spells (mutable operations)')} Returns spell execution results for MCP clients."
 
-
-# Initialize docstrings at module load time
-_initialize_docstrings()
+@mcp.tool(description=interface_docs["edit_file"])
+def edit_file(file_path: str, edits: List[Dict[str, Any]]):
+    """Edit file using Grimoire's edit_file conjure operation. Edits should be list of edit operations."""
+    from grimoire_interface import EditInsert, EditDelete, EditReplace, EditAppend
+    
+    # Convert dicts to typed models
+    typed_edits = []
+    for edit in edits:
+        op = edit.get("operation", "")
+        if op == "insert":
+            typed_edits.append(EditInsert(**edit))
+        elif op == "delete":
+            typed_edits.append(EditDelete(**edit))
+        elif op == "replace":
+            typed_edits.append(EditReplace(**edit))
+        elif op == "append":
+            typed_edits.append(EditAppend(**edit))
+    
+    return _model_to_string(grimoire.edit_file(file_path, typed_edits))
 
 
 def main():

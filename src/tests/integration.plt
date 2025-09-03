@@ -24,7 +24,7 @@ test(cross_domain_docstrings, [true]) :-
     entity(git),
     docstring(git, _),
     % Test basic system docstrings
-    docstring(entity, _).
+    docstring(entity, _), !.
 
 % Test semantic mounting across domains
 test(cross_domain_mounting, [true]) :-
