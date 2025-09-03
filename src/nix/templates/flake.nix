@@ -82,6 +82,18 @@
         - Run `cargo build` to build the project
       '';
     };
+
+    python-bridge-pattern = {
+      path = ./python-bridge-pattern;
+      description = "Python-Prolog bridge pattern template with tabled instances";
+      welcomeText = ''
+        # Getting started
+        - Run `nix develop` to enter the development environment
+        - Run `nix run .#bridge-domain test` to run Prolog tests
+        - Modify semantics.pl and python_bridge.pl for your domain
+        - Update python/bridge_domain/ with your Python implementation
+      '';
+    };
   };
 
   # The default template to use when none is specified with `nix flake new`

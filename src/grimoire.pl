@@ -404,7 +404,12 @@ docstring(conjure(edit_file), S) :-
     |}.
 
 cast(conjure(edit_file(file(Path), Edits)), RetVal) :-
-    read_file_to_lines(Path, Lines),
+    % Handle both existing and non-existing files
+    (exists_file(Path) ->
+        read_file_to_lines(Path, Lines)
+    ;
+        Lines = []
+    ),
     maplist(validate_edit, Edits),
     apply_edits(Edits, Lines, NewLines),
     write_lines_to_file(Path, NewLines),
