@@ -3,7 +3,7 @@
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-unstable";
-    grimoire.url = "github:your-org/grimoire";
+    grimoire.url = "path:../../../..";
   };
 
   outputs = { self, nixpkgs, grimoire, ... }:
@@ -16,63 +16,67 @@
     let
       pkgs = nixpkgs.legacyPackages.${system};
       grimoireEnv = grimoire.lib.mkGrimoireEnv pkgs;
-      
-      # Build internal Python package
+
+      # Build our Python package with janus-swi from Grimoire
       bridge-domain = pkgs.python3Packages.buildPythonPackage {
         pname = "bridge-domain";
         version = "0.1.0";
         src = ./python;
         format = "pyproject";
         propagatedBuildInputs = with pkgs.python3Packages; [
-          janus-swi pydantic
+          pydantic
+          setuptools
+          grimoireEnv.janus-swi  # janus-swi from Grimoire
         ];
       };
 
-      # Python environment with bridge package
-      pythonEnv = grimoireEnv.python.withPackages (p:
-        grimoireEnv.python.pkgs ++ [bridge-domain]
-      );
+
     in
     {
-      # Main executable
-      bridge-domain = grimoireEnv.mkGrimoireExecutable {
-        name = "bridge-domain";
-        script = ''
-          cd ${./.}
-          export GRIMOIRE_ROOT=''${GRIMOIRE_ROOT:-${./.}}
-          export PYTHONPATH="${pythonEnv}/${pkgs.python3.sitePackages}:$PYTHONPATH"
-          exec ${grimoireEnv.swipl}/bin/swipl \
-            -g "ensure_loaded('semantics.pl')" \
-            -t "halt" \
-            -- "$@"
-        '';
-      };
+      bridge-domain = bridge-domain;
+      default = bridge-domain;
     });
 
     devShells = forAllSystems (system:
     let
       pkgs = nixpkgs.legacyPackages.${system};
       grimoireEnv = grimoire.lib.mkGrimoireEnv pkgs;
+      selfPackages = self.packages.${system};
+
+      pythonEnv = grimoireEnv.python.withPackages (p:
+        [ selfPackages.bridge-domain ]
+      );
     in
     {
       default = pkgs.mkShell (grimoireEnv.env // {
-        buildInputs = grimoireEnv.buildInputs ++ [
-          self.packages.${system}.bridge-domain
-        ];
+        buildInputs = grimoireEnv.buildInputs ++ [ pythonEnv ];
+
+        shellHook = ''
+          echo "Python-Prolog Bridge Pattern Development Environment"
+          echo "SWI-Prolog: ${grimoireEnv.swipl}/bin/swipl"
+          echo "Python with janus-swi: ${pythonEnv}/bin/python"
+          echo ""
+          echo "Run 'grimoire exec semantics.pl' to test the bridge"
+          echo "Run 'grimoire exec -g run_tests -t halt semantics.plt' to run tests"
+        '';
       });
     });
 
     checks = forAllSystems (system:
     let
       pkgs = nixpkgs.legacyPackages.${system};
+      pythonEnv = grimoire.lib.mkGrimoireEnv(pkgs).python.withPackages (p:
+        grimoire.lib.mkGrimoireEnv(pkgs).python.pkgs ++ [self.packages.${system}.bridge-domain]
+      );
     in
     {
-      # Run Prolog tests
+      # Run Prolog tests using Grimoire's main executable
       bridge-tests = pkgs.runCommand "bridge-tests" {
-        buildInputs = [ self.packages.${system}.bridge-domain ];
+        buildInputs = [ grimoire.packages.${system}.grimoire ];
       } ''
         cd ${./.}
-        ${self.packages.${system}.bridge-domain}/bin/bridge-domain test
+        export PYTHONPATH="${pythonEnv}/${pkgs.python3.sitePackages}:$PYTHONPATH"
+        ${grimoire.packages.${system}.grimoire}/bin/grimoire exec -g "run_tests" -t "halt" semantics.plt
         touch $out
       '';
     });

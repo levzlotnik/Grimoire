@@ -1,6 +1,9 @@
 % Tests for Python bridge pattern
 % Validates proper separation and functionality
 
+% Load the main semantics file first
+:- ensure_loaded('semantics.pl').
+
 :- begin_tests(bridge_domain).
 
 % Test that bridge module exports expected predicates

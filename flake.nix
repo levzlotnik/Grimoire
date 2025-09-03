@@ -30,7 +30,7 @@
           cd ${./.}
           export GRIMOIRE_ROOT=''${GRIMOIRE_ROOT:-${./.}}
           exec ${grimoireEnv.swipl}/bin/swipl \
-            -g "ensure_loaded('src/grimoire.pl')" \
+            -g "ensure_loaded('$GRIMOIRE_ROOT/src/grimoire.pl')" \
             -t "main" \
             "src/interface/cli.pl" \
             -- "$@"
