@@ -4,9 +4,8 @@
 
 :- initialization(main, main).
 
-% Load grimoire system + interface layer
-:- ensure_loaded('src/grimoire.pl').
-:- ensure_loaded('src/interface/semantics.pl').
+% Load interface layer (grimoire.pl is already loaded by the grimoire script)
+:- grimoire_ensure_loaded('@/src/interface/semantics.pl').
 
 % Main entry point - parse command line arguments
 main(Args) :-
@@ -136,8 +135,16 @@ handle_command(test, []) :-
 
 handle_command(test, TestArgs) :-
     !,
-    cast(conjure(interface(test(TestArgs))), Result),
-    format_cli_result(Result).
+    % Check if there's a -- separator for file paths
+    (append(TestNames, ['--'|FilePaths], TestArgs) ->
+        % Handle test command with file paths  
+        cast(conjure(interface(test_files(TestNames, FilePaths))), Result),
+        format_cli_result(Result)
+    ;
+        % Regular test command
+        cast(conjure(interface(test(TestArgs))), Result),
+        format_cli_result(Result)
+    ).
 
 % Session commands
 handle_command(session, [SubCmd|Args]) :-

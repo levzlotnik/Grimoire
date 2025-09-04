@@ -2,7 +2,7 @@
 % Sessions are workspaces that accumulate commands, with SQLite logging and ECS integration
 :- use_module(library(uuid)).
 :- use_module(library(filesex)).
-:- load_entity(semantic(folder("src/db"))).
+:- load_entity(semantic(folder("@/src/db"))).
 
 % === ENTITIES AND COMPONENTS ===
 

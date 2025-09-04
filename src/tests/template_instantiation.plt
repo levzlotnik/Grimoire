@@ -13,7 +13,7 @@
 nix_templates_available :-
     catch(
         (
-            load_entity(semantic(folder('src/nix'))),
+            load_entity(semantic(folder('@/src/nix'))),
             % Try to check if nix command works
             process_create(path(nix), ['--version'], [stdout(null), stderr(null), process(PID)]),
             process_wait(PID, exit(0))
@@ -25,7 +25,7 @@ nix_templates_available :-
 % Test template discovery functionality
 test(discover_available_templates) :-
     % Load project domain that has the discovery function
-    load_entity(semantic(folder('src/project'))),
+    load_entity(semantic(folder('@/src/project'))),
 
     % Test that the discovery function exists and can be called
     % Note: actual template discovery depends on nix template loading
@@ -45,7 +45,7 @@ test(discover_template_entity_name) :-
     close(Stream),
 
     % Load project domain for the discovery function
-    load_entity(semantic(folder('src/project'))),
+    load_entity(semantic(folder('@/src/project'))),
 
     % Test discovery
     discover_template_entity_name(TmpFile, EntityName),
@@ -57,7 +57,7 @@ test(discover_template_entity_name) :-
 % Test comprehensive entity renaming
 test(rename_all_entity_occurrences) :-
     % Load project domain for the renaming function
-    load_entity(semantic(folder('src/project'))),
+    load_entity(semantic(folder('@/src/project'))),
 
     Content = ':- self_entity(old_entity).\ncomponent(old_entity, type, test).\ndocstring(old_entity, "test").\nentity(old_entity).',
     rename_all_entity_occurrences(Content, old_entity, new_entity, NewContent), !,
@@ -76,7 +76,7 @@ test(mkproject_basic_creation, [cleanup(cleanup_test_project)]) :-
     make_directory(TmpDir),
 
     % Load required domains
-    load_entity(semantic(folder('src/project'))),
+    load_entity(semantic(folder('@/src/project'))),
 
     % Test project creation
     TestProjectName = 'test_basic_project',
@@ -109,8 +109,8 @@ test(template_instantiation_rust, [cleanup(cleanup_test_project)]) :-
     delete_file(TmpFile),
 
     % Load required domains
-    load_entity(semantic(folder('src/nix'))),
-    load_entity(semantic(folder('src/project'))),
+    load_entity(semantic(folder('@/src/nix'))),
+    load_entity(semantic(folder('@/src/project'))),
 
     % Test project creation with template
     TestProjectName = 'test_rust_project',
@@ -156,7 +156,7 @@ test(mkproject_existing_project, [cleanup(cleanup_test_project)]) :-
     make_directory_path(ProjectPath),
 
     % Load required domains
-    load_entity(semantic(folder('src/project'))), !,
+    load_entity(semantic(folder('@/src/project'))), !,
 
     % Try to create project that already exists
     cast(conjure(mkproject(TmpDir, TestProjectName, [git(false)])), Result), !,
@@ -176,8 +176,8 @@ test(mkproject_invalid_template) :-
     delete_file(TmpFile),
 
     % Load required domains
-    load_entity(semantic(folder('src/nix'))),
-    load_entity(semantic(folder('src/project'))),
+    load_entity(semantic(folder('@/src/nix'))),
+    load_entity(semantic(folder('@/src/project'))),
 
     % Try to create project with invalid template
     catch(
@@ -197,7 +197,7 @@ test(mkproject_with_git, [cleanup(cleanup_test_project)]) :-
     make_directory(TmpDir),
 
     % Load required domains
-    load_entity(semantic(folder('src/project'))),
+    load_entity(semantic(folder('@/src/project'))),
 
     % Test project creation with git
     TestProjectName = 'test_git_project',

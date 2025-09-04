@@ -11,7 +11,7 @@
 % Test that a loaded Python project has essential components
 test(python_project_has_essentials) :-
     % Load the python template directly
-    once(load_entity(semantic(file('src/nix/templates/python/semantics.pl')))),
+    once(load_entity(semantic(file('@/src/nix/templates/python/semantics.pl')))),
 
     % Verify project type identification
     once(component(python_template, project_type, python)),
@@ -22,7 +22,7 @@ test(python_project_has_essentials) :-
     once(component(conjure, ctor, python_template)).
 
 test(python_project_subcommands) :-
-    once(load_entity(semantic(file('src/nix/templates/python/semantics.pl')))),
+    once(load_entity(semantic(file('@/src/nix/templates/python/semantics.pl')))),
 
     % Verify all expected subcommands
     once(component(python_template, subcommand, run)),
@@ -30,7 +30,7 @@ test(python_project_subcommands) :-
     once(component(python_template, subcommand, develop)).
 
 test(python_project_docstrings) :-
-    once(load_entity(semantic(file('src/nix/templates/python/semantics.pl')))),
+    once(load_entity(semantic(file('@/src/nix/templates/python/semantics.pl')))),
 
     % Verify main docstring exists and mentions Python
     once((docstring(python_template, MainDoc), sub_string(MainDoc, _, _, _, "Python"))),

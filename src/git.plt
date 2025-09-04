@@ -1,5 +1,5 @@
 :- use_module(library(plunit)).
-:- ensure_loaded('git.pl').
+:- grimoire_ensure_loaded('@/src/git.pl').
 
 :- begin_tests(git_semantics).
 

@@ -1,6 +1,6 @@
 :- use_module(library(plunit)).
-:- ensure_loaded('../grimoire.pl').
-:- ensure_loaded('../project/semantics.pl').
+:- grimoire_ensure_loaded('@/src/grimoire.pl').
+:- grimoire_ensure_loaded('@/src/project/semantics.pl').
 
 :- begin_tests(integration_tests).
 

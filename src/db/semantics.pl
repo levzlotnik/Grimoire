@@ -1,5 +1,5 @@
 % Database entity system with reverse proxy predicating
-:- ensure_loaded('sqlite3.pl').
+:- grimoire_ensure_loaded('@/src/db/sqlite3.pl').
 
 :- self_entity(db).
 

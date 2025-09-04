@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 
-# Set GRIMOIRE_ROOT to current directory if not already set
-export GRIMOIRE_ROOT="${GRIMOIRE_ROOT:-$(pwd)}"
+# Set GRIMOIRE_ROOT to the directory containing this script
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export GRIMOIRE_ROOT="${GRIMOIRE_ROOT:-$SCRIPT_DIR}"
 
 exec swipl \
-  -g "ensure_loaded('src/grimoire.pl')" \
+  -g "ensure_loaded('$GRIMOIRE_ROOT/src/grimoire.pl'), ensure_loaded('$GRIMOIRE_ROOT/src/interface/cli.pl')" \
   -t "main" \
-  "src/interface/cli.pl" \
   -- "$@"

@@ -23,33 +23,35 @@
       grimoireEnv = self.lib.mkGrimoireEnv pkgs;
     in
     {
-      # Main Grimoire executable
-      grimoire = grimoireEnv.mkGrimoireExecutable {
+      # Main Grimoire executable - include all source files
+      grimoire = pkgs.stdenv.mkDerivation {
         name = "grimoire";
-        script = ''
-          cd ${./.}
-          export GRIMOIRE_ROOT=''${GRIMOIRE_ROOT:-${./.}}
-          exec ${grimoireEnv.swipl}/bin/swipl \
-            -g "ensure_loaded('$GRIMOIRE_ROOT/src/grimoire.pl')" \
-            -t "main" \
-            "src/interface/cli.pl" \
-            -- "$@"
+        src = ./.;
+        buildInputs = [ grimoireEnv.swipl ];
+
+        installPhase = ''
+          # Copy everything to output - maintaining structure
+          cp -r . $out
+
+          # Substitute swipl path in the grimoire script (keep GRIMOIRE_ROOT dynamic)
+          substituteInPlace $out/grimoire \
+            --replace "exec swipl" "exec ${grimoireEnv.swipl}/bin/swipl"
+
+          # Ensure the grimoire script is executable
+          chmod +x $out/grimoire
+
+          # Create bin directory and symlink
+          mkdir -p $out/bin
+          ln -s $out/grimoire $out/bin/grimoire
+
+          # Create setup hook to export GRIMOIRE_ROOT for any environment that includes this package
+          mkdir -p $out/nix-support
+          cat >> $out/nix-support/setup-hook << EOF
+export GRIMOIRE_ROOT="\''${GRIMOIRE_ROOT:-$out}"
+EOF
         '';
       };
 
-      # Grimoire MCP server
-      grimoire-mcp = grimoireEnv.mkGrimoireExecutable {
-        name = "grimoire-mcp";
-        script = ''
-          cd ${./.}
-          export GRIMOIRE_ROOT=''${GRIMOIRE_ROOT:-${./.}}
-          exec ${grimoireEnv.swipl}/bin/swipl \
-            -g "ensure_loaded('src/grimoire.pl')" \
-            -t "main" \
-            "src/interface/cli.pl" \
-            -- mcp
-        '';
-      };
     });
 
     # Development shells
@@ -59,10 +61,20 @@
       grimoireEnv = import ./deps/grimoire.nix { inherit pkgs; };
     in
     {
-      default = pkgs.mkShell (grimoireEnv.env // {
-        buildInputs = grimoireEnv.buildInputs;
-        packages = with self.packages.${system}; [ grimoire grimoire-mcp ];
-      });
+      default = pkgs.mkShell {
+        buildInputs = grimoireEnv.buildInputs ++ [ self.packages.${system}.grimoire ];
+        
+        # Set GRIMOIRE_ROOT as a direct environment variable (works with -c)
+        GRIMOIRE_ROOT = toString self.packages.${system}.grimoire;
+        
+        # Inherit other environment variables from grimoireEnv
+        inherit (grimoireEnv.env) SWIPL_BIN LLM_DB_SCHEMA_PATH;
+        
+        shellHook = ''
+          echo "Grimoire development environment loaded"
+          echo "GRIMOIRE_ROOT=$GRIMOIRE_ROOT"
+        '';
+      };
     });
 
     # Apps for running Grimoire

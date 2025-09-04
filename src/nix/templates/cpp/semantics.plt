@@ -11,7 +11,7 @@
 % Test that a loaded C++ project has essential components
 test(cpp_project_has_essentials) :-
     % Load the cpp template directly
-    once(load_entity(semantic(file('src/nix/templates/cpp/semantics.pl')))),
+    once(load_entity(semantic(file('@/src/nix/templates/cpp/semantics.pl')))),
 
     % Verify project type identification
     once(component(cpp_template, project_type, cpp)),
@@ -22,7 +22,7 @@ test(cpp_project_has_essentials) :-
     once(component(conjure, ctor, cpp_template)).
 
 test(cpp_project_subcommands) :-
-    once(load_entity(semantic(file('src/nix/templates/cpp/semantics.pl')))),
+    once(load_entity(semantic(file('@/src/nix/templates/cpp/semantics.pl')))),
 
     % Verify all expected subcommands
     once(component(cpp_template, subcommand, run)),
@@ -30,7 +30,7 @@ test(cpp_project_subcommands) :-
     once(component(cpp_template, subcommand, develop)).
 
 test(cpp_project_docstrings) :-
-    once(load_entity(semantic(file('src/nix/templates/cpp/semantics.pl')))),
+    once(load_entity(semantic(file('@/src/nix/templates/cpp/semantics.pl')))),
 
     % Verify main docstring exists and mentions C++
     once((docstring(cpp_template, MainDoc), sub_string(MainDoc, _, _, _, "C++"))),

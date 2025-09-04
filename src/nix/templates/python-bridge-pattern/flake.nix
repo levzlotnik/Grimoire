@@ -49,7 +49,7 @@
     in
     {
       default = pkgs.mkShell (grimoireEnv.env // {
-        buildInputs = grimoireEnv.buildInputs ++ [ pythonEnv ];
+        buildInputs = grimoireEnv.buildInputs ++ [ pythonEnv grimoire.packages.${system}.grimoire ];
 
         shellHook = ''
           echo "Python-Prolog Bridge Pattern Development Environment"
@@ -57,7 +57,7 @@
           echo "Python with janus-swi: ${pythonEnv}/bin/python"
           echo ""
           echo "Run 'grimoire exec semantics.pl' to test the bridge"
-          echo "Run 'grimoire exec -g run_tests -t halt semantics.plt' to run tests"
+          echo "Run 'grimoire test -- semantics.plt' to run tests"
         '';
       });
     });

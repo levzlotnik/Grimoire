@@ -1,5 +1,5 @@
 :- use_module(library(plunit)).
-:- ensure_loaded('semantics.pl').
+:- grimoire_ensure_loaded('@/src/project/semantics.pl').
 
 :- begin_tests(project_semantics).
 

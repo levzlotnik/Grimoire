@@ -11,7 +11,7 @@
 % Test that a loaded Rust project has essential components
 test(rust_project_has_essentials) :-
     % Load the rust template directly
-    load_entity(semantic(file('src/nix/templates/rust/semantics.pl'))),
+    load_entity(semantic(file('@/src/nix/templates/rust/semantics.pl'))),
 
     % Verify project type identification
     component(rust_template, project_type, rust),
@@ -22,7 +22,7 @@ test(rust_project_has_essentials) :-
     component(conjure, ctor, rust_template).
 
 test(rust_project_subcommands) :-
-    load_entity(semantic(file('src/nix/templates/rust/semantics.pl'))),
+    load_entity(semantic(file('@/src/nix/templates/rust/semantics.pl'))),
 
     % Verify all expected subcommands
     component(rust_template, subcommand, build), !,
@@ -33,7 +33,7 @@ test(rust_project_subcommands) :-
     component(rust_template, subcommand, fmt), !.
 
 test(rust_project_docstrings) :-
-    load_entity(semantic(file('src/nix/templates/rust/semantics.pl'))),
+    load_entity(semantic(file('@/src/nix/templates/rust/semantics.pl'))),
 
     % Verify main docstring exists and mentions Rust
     docstring(rust_template, MainDoc),

@@ -4,6 +4,28 @@
 :- use_module(library(strings)).
 :- use_module(library(filesex)).
 
+% === GRIMOIRE_ROOT PATH RESOLUTION ===
+% Provides @/ prefix convention for GRIMOIRE_ROOT-relative paths
+
+% Get Grimoire root directory from environment
+grimoire_root(Root) :-
+    getenv('GRIMOIRE_ROOT', Root).
+
+% Resolve paths with @/ prefix for GRIMOIRE_ROOT-relative paths
+grimoire_resolve_path(Path, Resolved) :-
+    (   atom_concat('@/', RelPath, Path) ->
+        % @/ prefix means relative to GRIMOIRE_ROOT
+        grimoire_root(Root),
+        atomic_list_concat([Root, '/', RelPath], Resolved)
+    ;   % No @/ prefix - use as-is
+        Resolved = Path
+    ).
+
+% Load files with @/ support
+grimoire_ensure_loaded(File) :-
+    grimoire_resolve_path(File, Resolved),
+    ensure_loaded(Resolved).
+
 % Core ECS predicates - allow extension across files
 :- dynamic([
     entity/1,
@@ -111,8 +133,10 @@ get_ctor_docstring(Entity, Ctor, Doc) :-
 
 % Enhanced semantic mounting predicates
 mount_semantic_file(Path) :-
+    % Resolve @/ paths first
+    grimoire_resolve_path(Path, ResolvedPath),
     % Get absolute path and check file exists
-    absolute_file_name(Path, AbsPath),
+    absolute_file_name(ResolvedPath, AbsPath),
     (exists_file(AbsPath) ->
         % Only mount if not already mounted
         (\+ mounted_semantic(AbsPath, _) ->
@@ -132,7 +156,9 @@ mount_semantic_file(Path) :-
     ).
 
 mount_semantic_dir(Path) :-
-    absolute_file_name(Path, AbsPath),
+    % Resolve @/ paths first
+    grimoire_resolve_path(Path, ResolvedPath),
+    absolute_file_name(ResolvedPath, AbsPath),
     atomic_list_concat([AbsPath, '/semantics.pl'], SemanticFile),
     (exists_file(SemanticFile) ->
         mount_semantic_file(SemanticFile)

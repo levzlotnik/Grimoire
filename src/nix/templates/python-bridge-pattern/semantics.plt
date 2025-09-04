@@ -2,7 +2,7 @@
 % Validates proper separation and functionality
 
 % Load the main semantics file first
-:- ensure_loaded('semantics.pl').
+:- grimoire_ensure_loaded('@/src/nix/templates/python-bridge-pattern/semantics.pl').
 
 :- begin_tests(bridge_domain).
 
@@ -18,7 +18,15 @@ test(entity_exists) :-
 
 % Test component structure
 test(component_structure) :-
-    component(example_service, available_operations, _).
+    catch(
+        component(example_service, available_operations, _),
+        Error,
+        (   Error = error(python_module_not_found(_), Msg)
+        ->  format('Skipped: Python module not found - ~w~n', [Msg]),
+            fail
+        ;   throw(Error)
+        )
+    ).
 
 % Test conjure constructor
 test(conjure_ctor) :-
@@ -33,13 +41,29 @@ test(docstrings) :-
 
 % Test Python instance creation (if Python available)
 test(python_instance, [condition(python_available)]) :-
-    get_python_instance(test_entity, PyObj),
-    PyObj \= [].
+    catch(
+        (get_python_instance(test_entity, PyObj),
+         PyObj \= []),
+        Error,
+        (   Error = error(python_module_not_found(_), Msg)
+        ->  format('Skipped: Python module not found - ~w~n', [Msg]),
+            fail
+        ;   throw(Error)
+        )
+    ).
 
-% Test safe execution pattern
+% Test safe execution pattern  
 test(safe_execution) :-
     % This should not fail even if Python is not available
-    \+ execute_domain_task(nonexistent, invalid_input, error(_)).
+    catch(
+        \+ execute_domain_task(nonexistent, invalid_input, error(_)),
+        Error,
+        (   Error = error(python_module_not_found(_), Msg)
+        ->  format('Skipped: Python module not found - ~w~n', [Msg]),
+            fail
+        ;   throw(Error)
+        )
+    ).
 
 :- end_tests(bridge_domain).
 

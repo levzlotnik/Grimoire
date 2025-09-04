@@ -1,5 +1,5 @@
 :- use_module(library(plunit)).
-:- ensure_loaded('../grimoire.pl').
+:- grimoire_ensure_loaded('@/src/grimoire.pl').
 
 :- begin_tests(core_ecs).
 

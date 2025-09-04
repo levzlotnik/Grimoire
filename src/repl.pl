@@ -1,7 +1,7 @@
 % Interactive REPL frontend for Grimoire
 % Loads grimoire.pl and provides user interface
 
-:- ensure_loaded('src/grimoire.pl').
+:- grimoire_ensure_loaded('@/src/grimoire.pl').
 
 % Show welcome banner and helpful info on startup
 :- initialization(grimoire_startup).

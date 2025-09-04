@@ -1,5 +1,5 @@
 % Database entity tests - reverse proxy predicating system
-:- ensure_loaded('semantics.pl').
+:- grimoire_ensure_loaded('@/src/db/semantics.pl').
 
 :- dynamic(test_db_path/1).
 :- dynamic(registered_db/3).

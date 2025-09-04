@@ -1,5 +1,11 @@
-% Load core rules first
-:- ensure_loaded("./core_rules.pl").
+% Load core rules first - bootstrap with direct ensure_loaded
+% We need core_rules.pl to get grimoire_ensure_loaded, so we load it directly
+:- (getenv('GRIMOIRE_ROOT', Root) -> 
+    atomic_list_concat([Root, '/src/core_rules.pl'], CoreRules),
+    ensure_loaded(CoreRules)
+   ; 
+    ensure_loaded("./core_rules.pl")
+   ).
 :- use_module(library(filesex)).
 :- use_module(library(http/json)).
 
@@ -13,7 +19,8 @@
 :- self_entity(system).
 
 docstring(system, S) :-
-    read_file_to_string('src/GRIMOIRE.md', GrimoireDoc, []),
+    grimoire_resolve_path('@/src/GRIMOIRE.md', GrimoirePath),
+    read_file_to_string(GrimoirePath, GrimoireDoc, []),
     findall(Line, (
         component(system, concept, Concept),
         docstring(Concept, ConceptDoc),
@@ -108,11 +115,11 @@ docstring(project,
 
 % Core subsystem entities - loaded immediately on boot
 % Load core system components - immediate loading for core functionality
-:- load_entity(semantic(file("src/git.pl"))).
-:- load_entity(semantic(folder("src/nix"))).
-:- load_entity(semantic(file("src/fs.pl"))).
-:- load_entity(semantic(folder("src/project"))).
-:- load_entity(semantic(file("src/session.pl"))).
+:- load_entity(semantic(file("@/src/git.pl"))).
+:- load_entity(semantic(folder("@/src/nix"))).
+:- load_entity(semantic(file("@/src/fs.pl"))).
+:- load_entity(semantic(folder("@/src/project"))).
+:- load_entity(semantic(file("@/src/session.pl"))).
 
 % Spell system - fantasy-themed query/mutation separation
 entity(spell).

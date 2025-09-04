@@ -1,5 +1,5 @@
 :- use_module(library(plunit)).
-:- ensure_loaded('semantics.pl').
+:- grimoire_ensure_loaded('@/src/nix/semantics.pl').
 
 :- begin_tests(nix_semantics).
 

@@ -1,25 +1,25 @@
 :- use_module(library(plunit)).
 
 % Load all test files from their respective locations
-:- ensure_loaded('core_rules.plt').
-:- ensure_loaded('../git.plt').
-:- ensure_loaded('../nix/semantics.plt').
-:- ensure_loaded('../project/semantics.plt').
-:- ensure_loaded('self_entity.plt').
-:- ensure_loaded('integration.plt').
-:- ensure_loaded('spell_system.plt').
-:- ensure_loaded('session_cli.plt').
-:- ensure_loaded('session.plt').
-:- ensure_loaded('../db/semantics.plt').
-:- ensure_loaded('interface_session.plt').
-:- ensure_loaded('../interface/semantics.plt').
-:- ensure_loaded('template_instantiation.plt').
+:- grimoire_ensure_loaded('@/src/tests/core_rules.plt').
+:- grimoire_ensure_loaded('@/src/git.plt').
+:- grimoire_ensure_loaded('@/src/nix/semantics.plt').
+:- grimoire_ensure_loaded('@/src/project/semantics.plt').
+:- grimoire_ensure_loaded('@/src/tests/self_entity.plt').
+:- grimoire_ensure_loaded('@/src/tests/integration.plt').
+:- grimoire_ensure_loaded('@/src/tests/spell_system.plt').
+:- grimoire_ensure_loaded('@/src/tests/session_cli.plt').
+:- grimoire_ensure_loaded('@/src/tests/session.plt').
+:- grimoire_ensure_loaded('@/src/db/semantics.plt').
+:- grimoire_ensure_loaded('@/src/tests/interface_session.plt').
+:- grimoire_ensure_loaded('@/src/interface/semantics.plt').
+:- grimoire_ensure_loaded('@/src/tests/template_instantiation.plt').
 
 % Load template test suites
-:- ensure_loaded('../nix/templates/rust/semantics.plt').
-:- ensure_loaded('../nix/templates/cpp/semantics.plt').
-:- ensure_loaded('../nix/templates/python/semantics.plt').
-:- ensure_loaded('../nix/templates/haskell/semantics.plt').
+:- grimoire_ensure_loaded('@/src/nix/templates/rust/semantics.plt').
+:- grimoire_ensure_loaded('@/src/nix/templates/cpp/semantics.plt').
+:- grimoire_ensure_loaded('@/src/nix/templates/python/semantics.plt').
+:- grimoire_ensure_loaded('@/src/nix/templates/haskell/semantics.plt').
 % Note: Lean4 and MkDocs don't have test suites by design
 
 % Main test runner
@@ -120,6 +120,68 @@ list_available_tests :-
     ],
     forall(member(Test, All_Tests), 
            format('  ~w~n', [Test])).
+
+% Run tests from specific .plt files
+run_test_files(TestNames, FilePaths) :-
+    format('~n=== Running Tests from Files ===~n'),
+    (TestNames \= [] ->
+        format('Test suites: ~w~n', [TestNames])
+    ;
+        format('Running tests from specified files only~n')
+    ),
+    format('Files: ~w~n~n', [FilePaths]),
+    
+    % Ensure all files exist and are loadable
+    maplist(ensure_test_file_loadable, FilePaths, LoadedFiles),
+    
+    % Get current test units before loading
+    findall(Unit, current_test_unit(Unit), BeforeUnits),
+    
+    % Load the test files - this will register new test units
+    maplist(grimoire_ensure_loaded, LoadedFiles),
+    
+    % Get test units after loading 
+    findall(Unit, current_test_unit(Unit), AfterUnits),
+    
+    % Find the newly loaded test units
+    subtract(AfterUnits, BeforeUnits, NewUnits),
+    
+    % Run only the new test units (from the loaded files)
+    (NewUnits \= [] ->
+        format('Running test units from files: ~w~n', [NewUnits]),
+        run_tests(NewUnits)
+    ;
+        format('No test units found in the specified files~n')
+    ),
+    
+    test_summary.
+
+% Helper to get current test units
+current_test_unit(Unit) :-
+    plunit:current_unit(Unit, _, _, _).
+
+% Ensure test file exists and normalize path
+ensure_test_file_loadable(FilePath, NormalizedPath) :-
+    % Convert to absolute path if relative
+    (is_absolute_file_name(FilePath) ->
+        AbsPath = FilePath
+    ;
+        absolute_file_name(FilePath, AbsPath)
+    ),
+    
+    % Check if file exists
+    (exists_file(AbsPath) ->
+        NormalizedPath = AbsPath
+    ;
+        format('Error: Test file not found: ~w~n', [FilePath]),
+        fail
+    ).
+
+% Check if a test unit currently exists
+current_test_unit_exists(Unit) :-
+    % Check if test predicates exist for this unit
+    current_predicate(plunit:test/2),
+    plunit:test(Unit, _).
 
 % Convenient alias
 :- multifile user:term_expansion/2.

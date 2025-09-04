@@ -14,7 +14,15 @@
 get_python_instance(Entity, PyObj) :-
     % Gather configuration from Prolog components if needed
     % In this template, we use simple instantiation
-    py_call('bridge_domain.core':'DomainService'(Entity), PyObj).
+    catch(
+        py_call('bridge_domain.core':'DomainService'(Entity), PyObj),
+        Error,
+        (   Error = error(python_error('ModuleNotFoundError', _), _)
+        ->  throw(error(python_module_not_found('bridge_domain'), 
+                      'Ensure bridge_domain package is installed and in PYTHONPATH'))
+        ;   throw(Error)
+        )
+    ).
 
 % Get tools/operations from Python service - prolog-safe interface
 get_domain_tools(Entity, Tools) :-
