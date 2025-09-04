@@ -7,6 +7,12 @@
 test(project_entity_exists, [true]) :-
     entity(project), !.
 
+test(mkproject_entity_exists, [true]) :-
+    entity(mkproject), !.
+
+test(conjure_mkproject_entity_exists, [true]) :-
+    entity(conjure(mkproject)), !.
+
 % Test project command constructors
 test(project_command_constructors, [true]) :-
     component(conjure, ctor, mkproject), !.

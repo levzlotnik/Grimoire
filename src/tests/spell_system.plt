@@ -201,6 +201,70 @@ test(spell_docstrings_exist) :-
     docstring(perceive, _),
     docstring(cast, _).
 
+% === CONSTRUCTOR ENTITY CONSISTENCY TESTS ===
+
+test(all_conjure_ctors_are_entities) :-
+    % Test that all conjure constructors are also entities
+    findall(Ctor, component(conjure, ctor, Ctor), ConjureCtors),
+    maplist(assert_conjure_ctor_is_entity, ConjureCtors).
+
+test(all_perceive_ctors_are_entities) :-
+    % Test that all perceive constructors are also entities
+    findall(Ctor, component(perceive, ctor, Ctor), PerceiveCtors),
+    maplist(assert_perceive_ctor_is_entity, PerceiveCtors).
+
+test(all_conjure_ctors_have_docstrings) :-
+    % Test that all conjure constructors have docstrings
+    findall(Ctor, component(conjure, ctor, Ctor), ConjureCtors),
+    maplist(assert_conjure_ctor_has_docstring, ConjureCtors).
+
+test(all_perceive_ctors_have_docstrings) :-
+    % Test that all perceive constructors have docstrings
+    findall(Ctor, component(perceive, ctor, Ctor), PerceiveCtors),
+    maplist(assert_perceive_ctor_has_docstring, PerceiveCtors).
+
+% Helper predicates for constructor entity tests
+
+assert_conjure_ctor_is_entity(Ctor) :-
+    (entity(Ctor) ->
+        true
+    ; entity(conjure(Ctor)) ->
+        true
+    ;
+        format('FAIL: conjure ctor ~w is not an entity~n', [Ctor]),
+        fail
+    ).
+
+assert_perceive_ctor_is_entity(Ctor) :-
+    (entity(Ctor) ->
+        true
+    ; entity(perceive(Ctor)) ->
+        true
+    ;
+        format('FAIL: perceive ctor ~w is not an entity~n', [Ctor]),
+        fail
+    ).
+
+assert_conjure_ctor_has_docstring(Ctor) :-
+    (docstring(Ctor, _) ->
+        true
+    ; docstring(conjure(Ctor), _) ->
+        true
+    ;
+        format('FAIL: conjure ctor ~w has no docstring~n', [Ctor]),
+        fail
+    ).
+
+assert_perceive_ctor_has_docstring(Ctor) :-
+    (docstring(Ctor, _) ->
+        true
+    ; docstring(perceive(Ctor), _) ->
+        true
+    ;
+        format('FAIL: perceive ctor ~w has no docstring~n', [Ctor]),
+        fail
+    ).
+
 % === HELPER PREDICATES ===
 
 cleanup_test_files :-

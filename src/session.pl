@@ -9,6 +9,19 @@
 :- self_entity(session).
 entity(think).
 
+% Session command entities
+entity(session(start)).
+entity(session(delete)).
+entity(session(close)).
+entity(session(switch)).
+entity(session(commit)).
+entity(session(rollback)).
+entity(session(commit_accumulated)).
+entity(session(current)).
+entity(session(list)).
+entity(session(status)).
+entity(session(history)).
+
 component(session, subcommand, start).
 component(session, subcommand, delete).
 component(session, subcommand, close).
@@ -352,46 +365,99 @@ close_session(SessionId, Strategy, Result) :-
 docstring(session, "File-based session system with SQLite command logging. Sessions accumulate commands in workspace directories with commands.db logs and state.pl files.").
 docstring(think, "Record reasoning/thought process. Takes a string argument for LLM audit trails.").
 
-docstring(conjure(session(start)),
+docstring(session(start),
     {|string(_)||
     Start new session workspace.
     Creates session directory with commands.db, state.pl, and schema files.
-    Format: command(session(start)) or command(session(start(SessionId))).
+    Format: session(start) or session(start(SessionId)).
         SessionId - unique session identifier (auto-generated if not provided)
     |}
 ).
 
-docstring(conjure(session(delete)),
+docstring(session(delete),
     {|string(_)||
     Delete session workspace completely.
     Removes session directory and all associated files.
-    Format: command(session(delete(SessionId))).
+    Format: session(delete(SessionId)).
         SessionId - session identifier to delete
     |}
 ).
 
-docstring(perceive(session(history)),
+docstring(session(close),
     {|string(_)||
-    Show command history for current session.
-    Displays accumulated commands from session database.
-    Format: command(session(history)).
+    Close current session workspace.
+    Finalizes session state and switches back to main context.
+    Format: session(close).
     |}
 ).
 
-docstring(conjure(session(commit_accumulated)),
+docstring(session(switch),
+    {|string(_)||
+    Switch to a different session workspace.
+    Changes the active session context.
+    Format: session(switch(SessionId)).
+        SessionId - session identifier to switch to
+    |}
+).
+
+docstring(session(commit),
+    {|string(_)||
+    Commit current session changes to git.
+    Creates a git commit with accumulated session changes.
+    Format: session(commit(Message)).
+        Message - commit message for the changes
+    |}
+).
+
+docstring(session(rollback),
+    {|string(_)||
+    Roll back session changes.
+    Reverts accumulated session changes using git reset.
+    Format: session(rollback).
+    |}
+).
+
+docstring(session(current),
+    {|string(_)||
+    Get current active session identifier.
+    Returns the currently active session ID.
+    Format: session(current(SessionId)).
+        SessionId - unifies with current session identifier
+    |}
+).
+
+docstring(session(list),
+    {|string(_)||
+    List all available sessions.
+    Returns a list of all session identifiers.
+    Format: session(list(SessionIds)).
+        SessionIds - unifies with list of session identifiers
+    |}
+).
+
+docstring(session(status),
+    {|string(_)||
+    Show status of current session.
+    Returns session status information including workspace state.
+    Format: session(status(StatusInfo)).
+        StatusInfo - unifies with session status details
+    |}
+).
+
+docstring(session(history),
+    {|string(_)||
+    Show command history for current session.
+    Displays accumulated commands from session database.
+    Format: session(history).
+    |}
+).
+
+docstring(session(commit_accumulated),
     {|string(_)||
     Commit accumulated session commands (placeholder).
     Future implementation will handle command batching and persistence.
-    Format: command(session(commit_accumulated(Message))).
+    Format: session(commit_accumulated(Message)).
         Message - commit message for the accumulated commands
     |}
 ).
 
-docstring(conjure(think),
-    {|string(_)||
-    Record reasoning or thought process.
-    Logs thoughts to current session for LLM audit trails.
-    Format: command(think(ThoughtString)).
-        ThoughtString - the thought or reasoning to record
-    |}
-).

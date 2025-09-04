@@ -3,6 +3,19 @@
 
 :- self_entity(db).
 
+% Database command entities
+entity(db(create)).
+
+docstring(db(create),
+    {|string(_)||
+    Create a new database entity with schema validation.
+    Initializes database file and schema for data storage.
+    Format: db(create(DatabaseId, SchemaPath)).
+        DatabaseId - unique identifier for the database
+        SchemaPath - path to schema definition file
+    |}
+).
+
 % === DYNAMIC REGISTRATION SYSTEM ===
 
 % Db should be a unique identifier
@@ -82,15 +95,4 @@ cast(conjure(db(create(DbId, DbPath, schema(sql(SchemaSQL))))), RetVal) :-
 
 docstring(db, "Database entity system with reverse proxy predicating. Register databases with registered_db(database(UniqueId), data(file(DbPath)), schema(file(SchemaPath))) to enable components").
 
-docstring(conjure(db(create)),
-    {|string(_)||
-    Create SQLite database with schema.
-    Creates a .db file and corresponding .schema.sql file.
-    Format: conjure(db(create(DbId, DbPath, schema(file(SchemaFile)|sql(SchemaSQL))))).
-        DbId - unique database identifier for ECS registration
-        DbPath - path to .db file (must end with .db extension)
-        schema(file(SchemaFile)) - path to existing .sql schema file
-        schema(sql(SchemaSQL)) - SQL string (creates {db_name}.schema.sql file)
-    |}
-).
 

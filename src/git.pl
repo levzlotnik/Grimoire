@@ -3,6 +3,22 @@
 % Git entity declaration with automatic self-location
 :- self_entity(git).
 
+% Git command entities
+entity(git(clone)).
+entity(git(init)).
+entity(git(add)).
+entity(git(commit)).
+entity(git(push)).
+entity(git(pull)).
+entity(git(checkout)).
+entity(git(status)).
+entity(git(diff)).
+entity(git(log)).
+entity(git(branch)).
+entity(git(rev_parse)).
+entity(git(reset)).
+entity(git(merge)).
+
 % Removed legacy command ctor - using perceive/conjure above
 component(git, subcommand, clone).
 component(git, subcommand, init).

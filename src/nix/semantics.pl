@@ -23,6 +23,20 @@ entity(nix(derivation)).
 entity(nix(package)).
 entity(nix(target)).
 
+% Nix command entities
+entity(nix(build)).
+entity(nix(develop)).
+entity(nix(run)).
+entity(nix(flake(new))).
+entity(nix(flake(show))).
+entity(nix(store(gc))).
+entity(nix(store(repair))).
+entity(nix(store(optimise))).
+entity(nix(store(query))).
+entity(nix(search)).
+entity(nix(log)).
+entity(nix(why_depends)).
+
 % Spell constructors - separate mutable vs query operations
 % Conjure constructors (state-changing operations)
 component(conjure, ctor, nix(build)).
@@ -493,15 +507,28 @@ docstring(nix(flake(new)),
     |}
 ).
 
-docstring(conjure(nix(flake(new))),
+docstring(nix(flake(show)),
     {|string(_)||
-    Initialize a new flake from template.
-    Creates a new flake.nix from specified template.
-    Format: conjure(nix(flake(new(TemplateId, DestPath)))).
-        TemplateId - the ID of the template as it appears in `templates.*` attribute within the flake. default: none
-        DestPath - where to create the new flake
+    Show flake metadata, apps, and packages.
+    Displays available apps, packages, and development shells from a flake.
+    Format: perceive(nix(flake(show(FlakeRef, Apps, Packages, DevShells)))).
+        FlakeRef - flake reference (path or URL)
+        Apps - unifies with list of available applications
+        Packages - unifies with list of available packages  
+        DevShells - unifies with list of available development shells
     |}
 ).
+
+docstring(nix(store(query)),
+    {|string(_)||
+    Query the Nix store for packages and dependencies.
+    Searches store paths and package information.
+    Format: perceive(nix(store(query(Pattern, Results)))).
+        Pattern - search pattern for store paths
+        Results - unifies with list of matching store paths
+    |}
+).
+
 
 cast(conjure(nix(flake(new(TemplateId, DestPath)))), RetVal) :- 
     ( TemplateId = none -> TId = default ; TId = TemplateId ),

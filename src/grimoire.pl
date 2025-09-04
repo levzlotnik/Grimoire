@@ -135,12 +135,85 @@ component(conjure, ctor, edit_file).
 component(conjure, ctor, executable_program).
 component(conjure, ctor, session).
 
+% Core conjure command entities
+entity(shell).
+entity(mkdir).
+entity(mkfile).
+entity(executable_program).
+
+% Core conjure command docstrings
+docstring(shell,
+    {|string(_)||
+    Execute shell commands with argument escaping.
+    Runs shell commands safely with proper argument handling.
+    Format: shell(Args) or shell(Args, interactive).
+        Args - list of command arguments to execute
+        interactive - optional flag for interactive mode
+    |}
+).
+
+docstring(mkdir,
+    {|string(_)||
+    Create directory with semantic tracking.
+    Creates directory and initializes semantic relationships.
+    Format: mkdir(Path) or mkdir(Path, Options).
+        Path - directory path to create
+        Options - optional list of creation options
+    |}
+).
+
+docstring(mkfile,
+    {|string(_)||
+    Create file with semantic tracking.
+    Creates file and updates parent semantic relationships.
+    Format: mkfile(Path) or mkfile(Path, Options).
+        Path - file path to create
+        Options - optional list of creation options
+    |}
+).
+
+docstring(executable_program,
+    {|string(_)||
+    Execute external programs with process management.
+    Runs external programs with output capture and error handling.
+    Format: executable_program(Program, Args) or executable_program(Program, Args, interactive).
+        Program - executable path or name
+        Args - list of program arguments
+        interactive - optional flag for interactive mode
+    |}
+).
+
 % Perceive entity for query operations
 entity(perceive).
 % Core perceive constructors
 component(perceive, ctor, entities).
 component(perceive, ctor, read_file).
 component(perceive, ctor, search_regex).
+
+% Core perceive command entities
+entity(entities).
+entity(search_regex).
+
+% Core perceive docstrings
+docstring(entities,
+    {|string(_)||
+    List all entities in the system.
+    Returns all entities currently loaded in the knowledge base.
+    Format: perceive(entities(EntityList)).
+        EntityList - unifies with list of all entities
+    |}
+).
+
+docstring(search_regex,
+    {|string(_)||
+    Search content using regular expressions.
+    Searches through content with regex patterns to find matches.
+    Format: perceive(search_regex(ContentWithLineNumbers, Pattern, FoundContent)).
+        ContentWithLineNumbers - input content with line numbers
+        Pattern - regular expression pattern to search for
+        FoundContent - unifies with matching content
+    |}
+).
 
 % Read file entity and docstring
 entity(read_file).
@@ -161,8 +234,29 @@ docstring(read_file,
 % Generic entity and docstring rules for perceive and conjure constructors
 entity(perceive(Ctor)) :- component(perceive, ctor, Ctor), entity(Ctor).
 entity(conjure(Ctor)) :- component(conjure, ctor, Ctor), entity(Ctor).
-docstring(perceive(Ctor), S) :- entity(perceive(Ctor)), docstring(Ctor, S).
-docstring(conjure(Ctor), S) :- entity(conjure(Ctor)), docstring(Ctor, S).
+
+% Enhanced contextual docstrings for perceive/conjure constructors
+docstring(perceive(Ctor), S) :- 
+    component(perceive, ctor, Ctor),
+    docstring(Ctor, CtorDoc),
+    term_to_atom(Ctor, SCtorAtom),
+    S = {|string(SCtorAtom, CtorDoc)||
+    Perceives the `{SCtorAtom}` state.
+
+    `{SCtorAtom}` documentation:
+    {CtorDoc}
+    |}.
+
+docstring(conjure(Ctor), S) :- 
+    component(conjure, ctor, Ctor),
+    docstring(Ctor, CtorDoc),
+    term_to_atom(Ctor, SCtorAtom),
+    S = {|string(SCtorAtom, CtorDoc)||
+    Modifies the system state by conjuring `{SCtorAtom}`.
+
+    `{SCtorAtom}` documentation:
+    {CtorDoc}
+    |}.
 
 % Spell system docstrings
 docstring(spell,
@@ -256,16 +350,6 @@ docstring(session,
     |}).
 
 
-docstring(conjure(executable_program),
-    {|string(_)||
-    Executes a program with arguments.
-    Format:
-      conjure(executable_program(Program, Args))           % Capture output mode
-      conjure(executable_program(Program, Args, interactive)) % Interactive mode
-    Program is the executable path or name
-    Args is a list of arguments
-    |}
-).
 
 cast(conjure(executable_program(Program, Args)), RetVal) :-
     % Non-interactive mode - capture output and exit code
@@ -302,17 +386,6 @@ cast(conjure(executable_program(Program, Args, interactive)), RetVal) :-
     ),
     RetVal = ok("Interactive program completed").
 
-docstring(conjure(shell),
-    {|string(_)||
-    Executes a shell command with arguments.
-    Format:
-      conjure(shell(Args))           % Capture output mode
-      conjure(shell(Args, interactive)) % Interactive mode
-    Args is a list of strings that will be properly escaped.
-    Equivalent to: executable_program(sh, ["-c", JoinedArgs])
-    where JoinedArgs is the properly escaped and joined argument list.
-    |}
-).
 
 cast(conjure(shell(Args)), RetVal) :-
     join_args(Args, JoinedArgs),
@@ -336,16 +409,6 @@ join_args(Args, Cmd) :-
 shell_quote(Arg, Quoted) :-
     format(string(Quoted), "'~w'", [Arg]).
 
-docstring(conjure(mkdir),
-    {|string(_)||
-    Creates a directory and initializes its semantic tracking.
-    Format: conjure(mkdir(Path)).
-    - Creates directory at Path
-    - Creates semantics.pl inside it
-    - Initializes directory entity in semantics.pl
-    - If parent has semantics.pl, adds this dir as a component
-    |}
-).
 
 cast(conjure(mkdir(Path)), RetVal) :-
     % Create directory
@@ -375,14 +438,6 @@ cast(conjure(mkdir(Path)), RetVal) :-
         ])), _)
     ; true).
 
-docstring(conjure(mkfile),
-    {|string(_)||
-    Creates a file and updates semantic relationships.
-    Format: conjure(mkfile(Path)).
-    - Creates empty file at Path
-    - If parent dir has semantics.pl, adds file as a component
-    |}
-).
 
 cast(conjure(mkfile(Path)), RetVal) :-
     % Create empty file
@@ -400,15 +455,6 @@ cast(conjure(mkfile(Path)), RetVal) :-
     ; true),
     RetVal = ok("").
 
-docstring(conjure(edit_file), S) :-
-    docstring(edit_file, EditFileDoc),
-    S = {|string(EditFileDoc)||
-    Applies edits to a file.
-    Format: cast(conjure(edit_file(file(Path), [Edit1, Edit2, ...])), Result).
-
-    edit_file structure:
-    {EditFileDoc}
-    |}.
 
 cast(conjure(edit_file(file(Path), Edits)), RetVal) :-
     % Handle both existing and non-existing files
