@@ -24,14 +24,16 @@ component(conjure, ctor, domain_task).
 cast(conjure(domain_task(Entity, Input)), Result) :-
     execute_domain_task(Entity, Input, Result).
 
-% Docstring
-docstring(bridge_domain, "
-Template domain demonstrating Python-Prolog bridge pattern.
-Shows clean separation between Prolog logic and Python execution.
-All Python interactions are isolated in python_bridge.pl module.
-").
+% Docstrings
+docstring(bridge_domain,
+   {|string(_)||
+   Template domain demonstrating Python-Prolog bridge pattern.
+   Shows clean separation between Prolog logic and Python execution.
+   All Python interactions are isolated in python_bridge.pl module.
+   |}).
 
-docstring(example_service, "
-Example service entity that uses Python bridge for operations.
-Available operations are discovered dynamically from Python class.
-").
+docstring(example_service,
+   {|string(_)||
+   Example service entity that uses Python bridge for operations.
+   Available operations are discovered dynamically from Python class.
+   |}).

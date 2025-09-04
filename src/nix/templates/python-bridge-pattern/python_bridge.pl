@@ -3,26 +3,43 @@
 
 :- module(python_bridge, [
     get_domain_tools/2,
-    execute_domain_task/3,
-    get_python_instance/2
+    execute_domain_task/3,  
+    get_python_instance/2,
+    ensure_python_bridge_domain/0
 ]).
+
+% Initialize janus with the correct Python from our environment immediately
+:- (   getenv('PYTHON_EXECUTABLE', PythonExe)
+   ->  py_initialize(PythonExe, [], [])
+   ;   true
+   ).
 
 % Table Python instances for performance
 :- table get_python_instance/2.
 
+% Track whether bridge_domain has been imported
+:- dynamic bridge_domain_imported/0.
+
+% Ensure bridge_domain Python module is available (idempotent)
+ensure_python_bridge_domain :-
+    (   bridge_domain_imported
+    ->  true  % Already imported
+    ;   py_call(sys:version, Version),
+        py_call(sys:executable, Executable),
+        py_call(sys:path, Path),
+        format('Python version: ~w~n', [Version]),
+        format('Python executable: ~w~n', [Executable]),
+        format('Python sys.path: ~w~n', [Path]),
+        py_import(bridge_domain, []),
+        assertz(bridge_domain_imported)
+    ).
+
 % Get or create a Python domain service instance
 get_python_instance(Entity, PyObj) :-
+    ensure_python_bridge_domain,
     % Gather configuration from Prolog components if needed
     % In this template, we use simple instantiation
-    catch(
-        py_call('bridge_domain.core':'DomainService'(Entity), PyObj),
-        Error,
-        (   Error = error(python_error('ModuleNotFoundError', _), _)
-        ->  throw(error(python_module_not_found('bridge_domain'), 
-                      'Ensure bridge_domain package is installed and in PYTHONPATH'))
-        ;   throw(Error)
-        )
-    ).
+    py_call('bridge_domain.core':'DomainService'(Entity), PyObj).
 
 % Get tools/operations from Python service - prolog-safe interface
 get_domain_tools(Entity, Tools) :-
@@ -43,7 +60,7 @@ execute_domain_task(Entity, Input, Result) :-
 safe_py_call(Goal, ok(Result)) :-
     catch(
         py_call(Goal, Result),
-        Error,
+        _Error,
         fail
     ).
 safe_py_call(Goal, error(Exception)) :-

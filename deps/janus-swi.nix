@@ -7,16 +7,16 @@
 python3Packages.buildPythonPackage rec {
   pname = "janus-swi";
   version = "main";
-  
+
   pyproject = true;
 
   src = pkgs.fetchFromGitHub {
     owner = "SWI-Prolog";
     repo = "packages-swipy";
     rev = "a751822dc7eae86af873ddba41b255ae820698fe";
-    sha256 = "sha256-pVe+by/VQQM3dfrLvhCzF4H0FwMO7GSHi/VrqQlni4s="; # This needs to be updated
+    sha256 = "sha256-pVe+by/VQQM3dfrLvhCzF4H0FwMO7GSHi/VrqQlni4s=";
   };
-  
+
   build-system = with python3Packages; [
     setuptools
     setuptools-scm

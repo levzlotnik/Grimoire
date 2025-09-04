@@ -1,17 +1,17 @@
 { pkgs }:
 
 let
-  # Import SWI-Prolog with packs system
-  swipl = import ./swipl.nix { inherit pkgs; };
+  # Import janus-swi Python package
+  python = pkgs.python313;
+  python3Packages = pkgs.python313Packages;
+
+  # Import SWI-Prolog with packs system, using the same Python
+  swipl = import ./swipl.nix { inherit pkgs python; };
 
   # Create SWI-Prolog environment with selected packs
   swiplEnv = swipl.withPacks (p: with p; [
     # No packs needed - using sqlite3 CLI directly
   ]);
-
-  # Import janus-swi Python package
-  python = pkgs.python313;
-  python3Packages = pkgs.python313Packages;
 
   janus-swi = import ./janus-swi.nix {
     swipl = swiplEnv;

@@ -1,4 +1,4 @@
-{ pkgs }:
+{ pkgs, python ? pkgs.python313 }:
 
 let
   inherit (pkgs) lib;
@@ -11,8 +11,10 @@ let
 in
 
 rec {
-  # Base SWI-Prolog
-  swi-prolog-base = pkgs.swi-prolog;
+  # Base SWI-Prolog with specified Python for janus
+  swi-prolog-base = pkgs.swi-prolog.override { 
+    python3 = python;
+  };
   
   # Expose packs for selection
   packs = prologPacks;

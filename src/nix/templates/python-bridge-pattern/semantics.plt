@@ -19,7 +19,9 @@ test(entity_exists) :-
 % Test component structure
 test(component_structure) :-
     catch(
-        component(example_service, available_operations, _),
+        (   python_bridge:ensure_python_bridge_domain,
+            component(example_service, available_operations, _)
+        ),
         Error,
         (   Error = error(python_module_not_found(_), Msg)
         ->  format('Skipped: Python module not found - ~w~n', [Msg]),
@@ -42,8 +44,10 @@ test(docstrings) :-
 % Test Python instance creation (if Python available)
 test(python_instance, [condition(python_available)]) :-
     catch(
-        (get_python_instance(test_entity, PyObj),
-         PyObj \= []),
+        (   python_bridge:ensure_python_bridge_domain,
+            get_python_instance(test_entity, PyObj),
+            PyObj \= []
+        ),
         Error,
         (   Error = error(python_module_not_found(_), Msg)
         ->  format('Skipped: Python module not found - ~w~n', [Msg]),
@@ -56,7 +60,9 @@ test(python_instance, [condition(python_available)]) :-
 test(safe_execution) :-
     % This should not fail even if Python is not available
     catch(
-        \+ execute_domain_task(nonexistent, invalid_input, error(_)),
+        (   python_bridge:ensure_python_bridge_domain,
+            \+ execute_domain_task(nonexistent, invalid_input, error(_))
+        ),
         Error,
         (   Error = error(python_module_not_found(_), Msg)
         ->  format('Skipped: Python module not found - ~w~n', [Msg]),
