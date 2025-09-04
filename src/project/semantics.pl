@@ -1,5 +1,6 @@
 % Core entities
 :- self_entity(project).
+
 entity(package).
 entity(application).
 entity(environment).
@@ -8,6 +9,8 @@ entity(language).
 entity(build).
 entity(runtime).
 entity(test).
+entity(mkproject).
+entity(conjure(mkproject)).
 
 component(project, concept, application).
 component(project, concept, context).
@@ -245,27 +248,29 @@ docstring(mkproject,
       - template(Template): Flake template to use (default: none)
     |}).
 
+docstring(conjure(mkproject), S) :- docstring(mkproject, S).
+
 % Unified mkproject implementation
 cast(conjure(mkproject(FolderPath, ProjectName, Options)), RetVal) :-
     catch(
         (
             % Create full project path
             directory_file_path(FolderPath, ProjectName, ProjectPath),
-            
+
             % Ensure base folder exists
             (exists_directory(FolderPath) ->
                 true
             ;
                 make_directory_path(FolderPath)
             ),
-            
+
             % Check if project already exists
             (exists_directory(ProjectPath) ->
                 RetVal = error(project_already_exists(ProjectPath))
             ;
                 % Create project directory
                 make_directory(ProjectPath),
-                
+
                 % Apply template if specified
                 (member(template(Template), Options) ->
                     cast(conjure(nix(flake(new(Template, ProjectPath)))), TemplateResult),
@@ -280,7 +285,7 @@ cast(conjure(mkproject(FolderPath, ProjectName, Options)), RetVal) :-
                     create_basic_semantics_file(ProjectPath, ProjectName),
                     RenameResult = ok
                 ),
-                
+
                 (RenameResult = ok ->
                     % Initialize git if requested
                     (member(git(false), Options) ->
@@ -288,7 +293,7 @@ cast(conjure(mkproject(FolderPath, ProjectName, Options)), RetVal) :-
                     ;
                         cast(conjure(git(init(ProjectPath))), GitResult)
                     ),
-                    
+
                     (GitResult = ok ->
                         RetVal = ok(project_created(ProjectPath, ProjectName))
                     ;
@@ -488,61 +493,6 @@ extract_nix_apps(Entity, JsonDict, FlakeRef) :-
         true  % No apps section
     ).
 
-% General project command implementations using discovered Nix targets
-% These work for any project entity that has discovered Nix targets
-
-% Build command - uses nix build
-cast(conjure(Cmd), RetVal) :-
-    Cmd =.. [Entity, build],
-    entity(Entity),
-    component(Entity, nix_target, app(FlakeRef, _, build)),
-    !,
-    cast(conjure(nix(build(FlakeRef))), RetVal).
-
-cast(conjure(Cmd), RetVal) :-
-    Cmd =.. [Entity, build],
-    entity(Entity),
-    % Fallback: use current directory if no specific build target
-    cast(conjure(nix(build("."))), RetVal).
-
-% Test command - uses nix check or test target
-cast(conjure(Cmd), RetVal) :-
-    Cmd =.. [Entity, test],
-    entity(Entity),
-    component(Entity, nix_target, app(FlakeRef, _, test)),
-    !,
-    format(atom(Target), '~w#test', [FlakeRef]),
-    cast(conjure(nix(run(Target))), RetVal).
-
-cast(conjure(Cmd), RetVal) :-
-    Cmd =.. [Entity, test],
-    entity(Entity),
-    % Fallback: use nix flake check
-    cast(conjure(nix(check("."))), RetVal).
-
-% Run command - uses nix run
-cast(conjure(Cmd), RetVal) :-
-    Cmd =.. [Entity, run],
-    entity(Entity),
-    component(Entity, nix_target, app(FlakeRef, _, run)),
-    !,
-    format(atom(Target), '~w#run', [FlakeRef]),
-    cast(conjure(nix(run(Target))), RetVal).
-
-cast(conjure(Cmd), RetVal) :-
-    Cmd =.. [Entity, run],
-    entity(Entity),
-    component(Entity, nix_target, app(FlakeRef, _, default)),
-    !,
-    cast(conjure(nix(run(FlakeRef))), RetVal).
-
-% Generic command for any discovered Nix target
-cast(conjure(Cmd), RetVal) :-
-    Cmd =.. [Entity, Command],
-    entity(Entity),
-    component(Entity, nix_target, app(FlakeRef, _, Command)),
-    format(atom(Target), '~w#~w', [FlakeRef, Command]),
-    cast(conjure(nix(run(Target))), RetVal).
 
 % Discover flake.nix artifact
 discover_flake_artifact(Entity, BaseDir) :-
@@ -620,8 +570,4 @@ discover_custom_artifacts(Entity, [IncludePatterns, ExcludePatterns]) :-
     discover_fs_components(Entity, CurrentDir,
         [include(IncludePatterns), exclude(ExcludePatterns)],
         Components),
-    maplist(assert_component, Components).
-
-% Assert discovered component
-assert_component(Component) :-
-    assertz(Component).
+    maplist(assertz, Components).

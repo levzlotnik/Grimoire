@@ -141,6 +141,8 @@ cast(conjure(thought(Content)), RetVal) :-
 
 ### Python Bridge Implementation
 
+**Prerequisite: DONE** - The `python-bridge-pattern` template in `src/nix/templates/` provides unified Python 3.13/janus-swi environment with idempotent imports and tabled instances. This proven pattern will be adapted by replacing `bridge_domain` → `grimoire_golems` and `DomainService` → `Golem` class.
+
 ```prolog
 % In src/golems/python_bridge.pl - handles all Python interaction
 :- module(python_bridge, [
@@ -642,9 +644,9 @@ else:
 ## Implementation Roadmap
 
 ### Phase 0: Prerequisites  
-- [ ] Create `python-bridge-pattern` template in `src/nix/templates/`
-- [ ] Test template with `nix flake new --template github:your-org/grimoire#python-bridge-pattern`
-- [ ] Validate template produces working Python-Prolog bridge
+- [x] **DONE** - Create `python-bridge-pattern` template in `src/nix/templates/`
+- [x] **DONE** - Test template with `nix develop` and validate working Python-Prolog bridge
+- [x] **DONE** - Template produces unified Python 3.13 environment with janus-swi integration
 
 ### Phase 1: Core Infrastructure
 - [ ] Set up `src/golems/` directory structure using python-bridge-pattern template
