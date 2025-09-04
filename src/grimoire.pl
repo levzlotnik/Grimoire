@@ -120,6 +120,7 @@ docstring(project,
 :- load_entity(semantic(file("@/src/fs.pl"))).
 :- load_entity(semantic(folder("@/src/project"))).
 :- load_entity(semantic(file("@/src/session.pl"))).
+:- load_entity(semantic(folder("@/src/golems"))).
 
 % Spell system - fantasy-themed query/mutation separation
 entity(spell).

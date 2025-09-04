@@ -15,6 +15,9 @@
 :- grimoire_ensure_loaded('@/src/interface/semantics.plt').
 :- grimoire_ensure_loaded('@/src/tests/template_instantiation.plt').
 
+% Load golems test suite
+:- grimoire_ensure_loaded('@/src/golems/semantics.plt').
+
 % Load template test suites
 :- grimoire_ensure_loaded('@/src/nix/templates/rust/semantics.plt').
 :- grimoire_ensure_loaded('@/src/nix/templates/cpp/semantics.plt').
@@ -38,6 +41,7 @@ run_all_tests :-
         interface,
         interface_session_integration,
         template_instantiation,
+        golems,
         rust_project_semantics,
         cpp_project_semantics,
         python_project_semantics,
@@ -60,6 +64,9 @@ run_project_tests :-
 
 run_integration_tests :-
     run_tests([integration_tests]).
+
+run_golems_tests :-
+    run_tests([golems]).
 
 % Template test runners
 run_template_tests :-
@@ -113,6 +120,7 @@ list_available_tests :-
         db_entity,
         interface_session_integration,
         template_instantiation,
+        golems,
         rust_project_semantics,
         cpp_project_semantics,
         python_project_semantics,

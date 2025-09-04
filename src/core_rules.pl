@@ -12,13 +12,28 @@ grimoire_root(Root) :-
     getenv('GRIMOIRE_ROOT', Root).
 
 % Resolve paths with @/ prefix for GRIMOIRE_ROOT-relative paths
+% and ./ prefix for current file directory-relative paths
 grimoire_resolve_path(Path, Resolved) :-
     (   atom_concat('@/', RelPath, Path) ->
         % @/ prefix means relative to GRIMOIRE_ROOT
         grimoire_root(Root),
         atomic_list_concat([Root, '/', RelPath], Resolved)
-    ;   % No @/ prefix - use as-is
+    ;   atom_concat('./', RelPath, Path) ->
+        % ./ prefix means relative to current file's directory
+        grimoire_calling_file_directory(CallingDir),
+        atomic_list_concat([CallingDir, '/', RelPath], Resolved)
+    ;   % No special prefix - use as-is
         Resolved = Path
+    ).
+
+% Get the directory of the file that's currently being loaded/executed
+grimoire_calling_file_directory(Dir) :-
+    % Get the current source location from Prolog
+    source_location(File, _Line),
+    (File \= user ->
+        file_directory_name(File, Dir)
+    ;   % Fallback to current working directory if no source file
+        working_directory(Dir, Dir)
     ).
 
 % Load files with @/ support
