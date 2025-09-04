@@ -13,7 +13,7 @@
         pkgs = nixpkgs.legacyPackages.${system};
 
         # Get grimoireEnv from parent flake
-        grimoireEnv = grimoire-flake.lib.mkGrimoireEnv pkgs;
+        grimoireEnv = grimoire-flake.lib.getGrimoireEnv system;
 
         # Build the Python package
         grimoireApiPackage = pkgs.python313Packages.buildPythonPackage {

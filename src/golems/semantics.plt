@@ -33,7 +33,7 @@ test(golems_have_required_components) :-
 
 % Test LLM configuration structure
 test(llm_configs_are_valid) :-
-    forall(component(GolemId, llm_config, Config), (
+    forall(component(_GolemId, llm_config, Config), (
         % Must be a dictionary with required keys
         is_valid_llm_config(Config),
         get_dict(provider, Config, Provider),
@@ -68,10 +68,10 @@ test(docstrings_generate_correctly) :-
 % === CONJURE SPELL TESTS ===
 
 test(golem_task_constructor_exists) :-
-    component(conjure, ctor, golem_task).
+    component(conjure, ctor, golem_task), !.
 
 test(thought_constructor_exists) :-
-    component(conjure, ctor, thought).
+    component(conjure, ctor, thought), !.
 
 % === PYTHON BRIDGE TESTS ===
 
@@ -96,40 +96,40 @@ test(python_bridge_initialization, [condition(python_available)]) :-
 % === GOLEM CONFIGURATION TESTS ===
 
 test(code_assistant_configuration) :-
-    component(golem(code_assistant), role, Role),
+    component(golem(code_assistant), role, Role), !,
     atom_string(Role, RoleStr),
     sub_atom(RoleStr, _, _, _, 'software engineer'),
-    component(golem(code_assistant), llm_config, Config),
+    component(golem(code_assistant), llm_config, Config), !,
     get_dict(provider, Config, anthropic).
 
 test(project_manager_configuration) :-
-    component(golem(project_manager), role, Role),
+    component(golem(project_manager), role, Role), !,
     atom_string(Role, RoleStr),
     sub_atom(RoleStr, _, _, _, 'project manager'),
-    component(golem(project_manager), llm_config, Config),
+    component(golem(project_manager), llm_config, Config), !,
     get_dict(provider, Config, openai).
 
 test(test_runner_configuration) :-
-    component(golem(test_runner), role, Role),
+    component(golem(test_runner), role, Role), !,
     atom_string(Role, RoleStr),
     sub_atom(RoleStr, _, _, _, 'QA engineer'),
-    component(golem(test_runner), llm_config, Config),
+    component(golem(test_runner), llm_config, Config), !,
     get_dict(provider, Config, ollama).
 
 % === DELEGATION HIERARCHY TESTS ===
 
 test(delegation_relationships) :-
-    component(golem(code_assistant), can_delegate_to, golem(test_runner)),
-    component(golem(project_manager), can_delegate_to, golem(code_assistant)),
-    component(golem(test_runner), supervisor, golem(project_manager)).
+    component(golem(code_assistant), can_delegate_to, golem(test_runner)), !,
+    component(golem(project_manager), can_delegate_to, golem(code_assistant)), !,
+    component(golem(test_runner), supervisor, golem(project_manager)), !.
 
 % === DOCSTRING TESTS ===
 
 test(main_docstring) :-
-    docstring(golems, Doc),
+    docstring(golems, Doc), !,
     atom_string(Doc, DocStr),
-    sub_atom(DocStr, _, _, _, 'AI Agent Framework'),
-    sub_atom(DocStr, _, _, _, 'Entity-Component-System').
+    once(sub_atom(DocStr, _, _, _, 'AI Agent Framework')),
+    once(sub_atom(DocStr, _, _, _, 'Entity-Component-System')).
 
 :- end_tests(golems).
 

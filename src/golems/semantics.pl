@@ -21,6 +21,9 @@
 :- load_entity(semantic(file("./test_runner.pl"))).
 
 % Golem task execution system - conjure spells
+entity(golem_task).
+entity(thought).
+
 component(conjure, ctor, golem_task).
 component(conjure, ctor, thought).
 
@@ -82,6 +85,26 @@ docstring(golem(Id), DocString) :-
     format_golem_docstring(Role, Config, Tools, Inputs, Outputs, DocString).
 
 % Docstrings
+docstring(golem_task,
+   {|string(_)||
+   Golem task execution constructor for conjure spells.
+   
+   Executes an AI agent task with specified inputs, returning a Python object
+   reference for task monitoring and result retrieval.
+   
+   Usage: conjure(golem_task(golem(agent_id), input_data))
+   |}).
+
+docstring(thought,
+   {|string(_)||
+   Golem thought logging constructor for conjure spells.
+   
+   Logs AI agent reasoning and thought processes to session database
+   for debugging and audit trails.
+   
+   Usage: conjure(thought(content))
+   |}).
+
 docstring(golems,
    {|string(_)||
    Grimoire Golems AI Agent Framework

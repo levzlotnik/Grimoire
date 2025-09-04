@@ -12,63 +12,43 @@
     forAllSystems = nixpkgs.lib.genAttrs systems;
   in
   {
-    lib = {
-      getGrimoireEnv = system: self.packages.${system}.grimoireEnv;
-    };
-
     packages = forAllSystems (system:
     let
       pkgs = nixpkgs.legacyPackages.${system};
       grimoireEnv = grimoire.lib.getGrimoireEnv system;
 
-      # Build our Python package with janus-swi from Grimoire
+      # Build our Python package - include janus-swi from grimoireEnv as dependency
       grimoire-golems = pkgs.callPackage ./grimoire-golems.nix {
         python3Packages = pkgs.python313Packages;
+        janus-swi = grimoireEnv.janus-swi;
       };
-
-      # Create unified Python environment
-      pythonEnv = grimoireEnv.python.withPackages (ps: 
-        grimoireEnv.pythonPackages ++ [
-          grimoireEnv.janus-swi
-          grimoire-golems
-        ]
-      );
 
     in
     {
-      grimoireEnv = grimoireEnv;
       grimoire-golems = grimoire-golems;
-      pythonEnv = pythonEnv;
       default = grimoire-golems;
     });
 
     devShells = forAllSystems (system:
     let
       pkgs = nixpkgs.legacyPackages.${system};
-      grimoireEnv = self.lib.getGrimoireEnv system;
+      grimoireEnv = grimoire.lib.getGrimoireEnv system;
     in
     {
-      default = pkgs.mkShell (grimoireEnv.env // {
-        buildInputs = [
-          self.packages.${system}.pythonEnv
+      default = pkgs.mkShell {
+        buildInputs = [ 
+          grimoireEnv.python
           grimoireEnv.swipl
+          self.packages.${system}.grimoire-golems
         ];
-
-        # Ensure janus-swi uses the same Python environment
-        PYTHONPATH = "${self.packages.${system}.pythonEnv}/${self.packages.${system}.pythonEnv.sitePackages}";
-        PYTHON_EXECUTABLE = "${self.packages.${system}.pythonEnv}/bin/python";
-        PATH = "${self.packages.${system}.pythonEnv}/bin:$PATH";
-
+        
+        inherit (grimoireEnv.env) SWIPL_BIN LLM_DB_SCHEMA_PATH;
 
         shellHook = ''
           echo "Grimoire Golems AI Agent Framework Development Environment"
-          echo "SWI-Prolog: ${grimoireEnv.swipl}/bin/swipl"
-          echo "Python with janus-swi: ${self.packages.${system}.pythonEnv}/bin/python"
-          echo ""
-          echo "Run 'grimoire exec semantics.pl' to test the golems bridge"
-          echo "Run 'grimoire test golems' to run tests"
+          echo "Use main Grimoire flake for full development environment"
         '';
-      });
+      };
     });
 
     checks = forAllSystems (system:

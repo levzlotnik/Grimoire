@@ -19,7 +19,7 @@
     packages = forAllSystems (system:
     let
       pkgs = nixpkgs.legacyPackages.${system};
-      grimoireEnv = grimoire.lib.mkGrimoireEnv pkgs;
+      grimoireEnv = grimoire.lib.getGrimoireEnv system;
 
       # Build our Python package with janus-swi from Grimoire
       bridge-domain = pkgs.callPackage ./bridge-domain.nix {

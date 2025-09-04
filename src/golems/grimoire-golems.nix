@@ -1,4 +1,4 @@
-{ lib, python3Packages }:
+{ lib, python3Packages, janus-swi }:
 
 python3Packages.buildPythonPackage rec {
   pname = "grimoire-golems";
@@ -14,6 +14,7 @@ python3Packages.buildPythonPackage rec {
     openai
     anthropic
     groq
+    janus-swi
   ];
 
   meta = with lib; {
