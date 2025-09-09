@@ -48,8 +48,9 @@ class Golem:
         # Initialize Grimoire interface
         self.grimoire_interface = GrimoireInterface()
         
-        # Initialize LLM provider from config (will implement providers next)
-        self.llm_provider = None  # Placeholder
+        # Initialize LLM provider from config
+        from ..providers.factory import llm_provider_factory
+        self.llm_provider = llm_provider_factory(llm_config)
     
     def tools(self) -> List[Dict]:
         """Return tools in a format that can be converted to Prolog and processed by LLM provider"""
@@ -123,16 +124,26 @@ class Golem:
 
     def start_task(self, inputs: List, input_schema: List, output_schema: List):
         """Start executing a task with the LLM provider"""
-        # For now, return a placeholder implementation
+        # Execute task using the LLM provider
+        result = self.llm_provider.execute_task(
+            role=self.role,
+            inputs=inputs,
+            tools=self.tools(),
+            input_schema=input_schema,
+            output_schema=output_schema
+        )
+        
+        # Return TaskResult with execution details
         return TaskResult(
-            success=True,
-            output=f"Golem {self.golem_id} would process inputs: {inputs}",
+            success=result.get("success", False),
+            output=result.get("content", result.get("error", "No output")),
             metadata={
                 "golem_id": self.golem_id,
                 "session_id": self.session_id,
                 "role": self.role,
                 "input_schema": input_schema,
                 "output_schema": output_schema,
-                "tools_available": len(self.tools())
+                "tools_available": len(self.tools()),
+                "llm_response": result
             }
         )

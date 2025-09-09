@@ -21,16 +21,20 @@
 % Track whether grimoire_golems has been imported
 :- dynamic grimoire_golems_imported/0.
 
+% Don't initialize at load time - let it happen on first use
+
 % Ensure grimoire_golems Python module is available (idempotent)
 ensure_python_grimoire_golems :-
     (   grimoire_golems_imported
     ->  true  % Already imported
-    ;   py_call(sys:version, Version),
+    ;   % Check Python environment (sys is already available in janus)
+        py_call(sys:version, Version),
         py_call(sys:executable, Executable),
         py_call(sys:path, Path),
         format('Python version: ~w~n', [Version]),
         format('Python executable: ~w~n', [Executable]),
         format('Python sys.path: ~w~n', [Path]),
+        % Import grimoire_golems - fail fast if not available
         py_import(grimoire_golems, []),
         assertz(grimoire_golems_imported)
     ).
@@ -46,8 +50,9 @@ get_golem_python_instance(golem(Id), GolemObj) :-
     % Create Python Golem instance with real config
     py_call('grimoire_golems.core.golem':'Golem'(Id, LLMConfigDict, Role, SessionId), GolemObj).
 
-% Get current session ID (placeholder - will integrate with session system)
-get_current_session_id('bridge_session').
+% Get current session ID from session system
+get_current_session_id(SessionId) :-
+    perceive(session(current(SessionId))).
 
 % Get tools from instantiated Golem - prolog-safe interface
 get_golem_tools(golem(Id), Tools) :-
@@ -56,45 +61,19 @@ get_golem_tools(golem(Id), Tools) :-
 
 % Execute a golem task via Python
 execute_golem_task(Id, LLMConfigDict, Role, InputSchema, OutputSchema, Inputs, RetVal) :-
-    % Send to Python execution layer with all config
-    catch(
-        (py_call('grimoire_golems.manager':execute_task(
-            Id, LLMConfigDict, Role, InputSchema, OutputSchema, Inputs
-        ), PyResult),
-         parse_py_result(PyResult, RetVal)),
-        Error,
-        RetVal = error(python_exception(Error))
-    ).
+    ensure_python_grimoire_golems,
+    % Send to Python execution layer with all config - fail fast
+    py_call('grimoire_golems.manager':execute_task(
+        Id, LLMConfigDict, Role, InputSchema, OutputSchema, Inputs
+    ), PyResult),
+    parse_py_result(PyResult, RetVal).
 
 % Parse Python results into Prolog return values
 parse_py_result(task_started(TaskObj), ok(py_obj(TaskObj))).
 parse_py_result(error(Reason), error(python(Reason))).
 parse_py_result(success(Output), ok(Output)).
 
-% Log thoughts to session database
+% Log thoughts to session database using existing think command
 log_thought_to_session(Content, RetVal) :-
-    get_current_session_id(SessionId),
-    catch(
-        (py_call('grimoire_golems.session':log_thought(SessionId, Content), Result),
-         (Result = success -> 
-             RetVal = ok(thought_logged(Content))
-         ;
-             RetVal = error(thought_log_failed)
-         )),
-        Error,
-        RetVal = error(python_exception(Error))
-    ).
-
-% Helper predicate for safe Python calls
-safe_py_call(Goal, ok(Result)) :-
-    catch(
-        py_call(Goal, Result),
-        _Error,
-        fail
-    ).
-safe_py_call(Goal, error(Exception)) :-
-    catch(
-        py_call(Goal, _),
-        Exception,
-        true
-    ).
+    % Use the existing think command from session.pl
+    cast(conjure(think(Content)), RetVal).

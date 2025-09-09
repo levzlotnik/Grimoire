@@ -44,6 +44,8 @@ let
       groq
       # Web framework
       flask
+      # YAML support
+      pyyaml
     ]
   );
 

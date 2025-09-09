@@ -73,17 +73,15 @@ def llm_provider_factory(config: Dict[str, Any]) -> BaseLLMProvider:
 
 
 def _create_openai_provider(config: Dict[str, Any]) -> BaseLLMProvider:
-    """Create OpenAI provider (placeholder - will implement when needed)."""
-    # For now, return mock provider
-    # TODO: Implement actual OpenAI provider
-    return MockLLMProvider(config)
+    """Create OpenAI provider."""
+    from .openai import OpenAIProvider
+    return OpenAIProvider(config)
 
 
 def _create_anthropic_provider(config: Dict[str, Any]) -> BaseLLMProvider:
-    """Create Anthropic provider (placeholder - will implement when needed)."""
-    # For now, return mock provider
-    # TODO: Implement actual Anthropic provider
-    return MockLLMProvider(config)
+    """Create Anthropic provider."""
+    from .anthropic import AnthropicProvider
+    return AnthropicProvider(config)
 
 
 def _create_groq_provider(config: Dict[str, Any]) -> BaseLLMProvider:

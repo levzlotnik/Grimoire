@@ -11,14 +11,14 @@
     log_thought_to_session/2
 ]).
 
-% Auto-register Python bridge functions on load
-% TODO: Fix Python bridge integration
-% :- py_call('grimoire_golems.janus_bridge':register_functions(), _).
+% Note: Python functions are accessible directly via py_call
+% No registration needed with modern janus-swi
 
 % Load all individual golems
 :- load_entity(semantic(file("./code_assistant.pl"))).
 :- load_entity(semantic(file("./project_manager.pl"))).
 :- load_entity(semantic(file("./test_runner.pl"))).
+:- load_entity(semantic(file("./documentation.pl"))).
 
 % Golem task execution system - conjure spells
 entity(golem_task).

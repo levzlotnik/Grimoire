@@ -1,15 +1,15 @@
-{ lib, python3Packages, janus-swi }:
+{ lib, buildPythonPackage, setuptools, pydantic, openai, anthropic, groq, janus-swi }:
 
-python3Packages.buildPythonPackage rec {
+buildPythonPackage rec {
   pname = "grimoire-golems";
   version = "0.1.0";
   
   src = ./python;
   
   pyproject = true;
-  build-system = with python3Packages; [ setuptools ];
+  build-system = [ setuptools ];
   
-  dependencies = with python3Packages; [
+  dependencies = [
     pydantic
     openai
     anthropic

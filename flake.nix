@@ -3,14 +3,21 @@
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-unstable";
+    flake-utils.url = "github:numtide/flake-utils";
     golems = {
       url = "path:./src/golems";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.grimoire.follows = "";
     };
+    grimoire-api = {
+      url = "path:./src/interface/api";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.flake-utils.follows = "flake-utils";
+      inputs.grimoire-flake.follows = "";
+    };
   };
 
-  outputs = { self, nixpkgs, golems, ... }@inputs:
+  outputs = { self, nixpkgs, flake-utils, golems, grimoire-api, ... }@inputs:
   let
     systems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
     forAllSystems = nixpkgs.lib.genAttrs systems;
@@ -24,17 +31,54 @@
     # Packages
     packages = forAllSystems (system:
     let
-      pkgs = nixpkgs.legacyPackages.${system};
+      # First get base pkgs without overlay
+      basePkgs = nixpkgs.legacyPackages.${system};
+      
+      # Then apply overlays to get pkgs with grimoire-golems and grimoire-api available
+      pkgs = import nixpkgs {
+        inherit system;
+        overlays = [ 
+          golems.overlays.default 
+          grimoire-api.overlays.default 
+        ];
+      };
+      
+      # Create base grimoire environment with overlay-enabled pkgs
       baseGrimoireEnv = import ./deps/grimoire.nix { inherit pkgs; };
       
-      # Get golems Python package
-      grimoire-golems = golems.packages.${system}.grimoire-golems;
+      # Extend the Python environment to include grimoire-golems and grimoire-api while preserving all base packages
+      # We need to extract the packages from the base environment and add our new ones
+      extendedPython = pkgs.python313.withPackages (ps: with ps; [
+        # Core Python packages (from deps/grimoire.nix)
+        requests
+        python-dotenv
+        gitpython
+        baseGrimoireEnv.janus-swi
+        # API/Server packages
+        fastapi
+        uvicorn
+        pydantic
+        mcp  # Model Context Protocol SDK
+        # Testing packages
+        httpx
+        pytest
+        pytest-asyncio
+        # Development packages
+        black
+        # LLM packages
+        openai
+        anthropic
+        groq
+        # Web framework
+        flask
+        # YAML support (needed by MCP server)
+        pyyaml
+        # Additional grimoire packages
+        grimoire-golems
+        grimoire-api
+      ]);
       
-      # Create extended Python environment with golems
-      # The base python already includes all packages, we just need to add grimoire-golems
-      extendedPython = baseGrimoireEnv.python.withPackages (ps: [ grimoire-golems ]);
-      
-      # Extended grimoire environment with golems
+      # Create extended grimoire environment
       grimoireEnv = baseGrimoireEnv // {
         python = extendedPython;
         buildInputs = baseGrimoireEnv.buildInputs ++ [ extendedPython ];
@@ -83,7 +127,7 @@ EOF
     in
     {
       default = pkgs.mkShell {
-        buildInputs = grimoireEnv.buildInputs ++ [ self.packages.${system}.grimoire ];
+        buildInputs = [ grimoireEnv.swipl grimoireEnv.python grimoireEnv.sqlite self.packages.${system}.grimoire ];
         
         # Set GRIMOIRE_ROOT as a direct environment variable (works with -c)
         GRIMOIRE_ROOT = toString self.packages.${system}.grimoire;
