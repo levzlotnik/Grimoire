@@ -1,939 +1,1347 @@
-# Grimoire Design Document
+# Grimoire System Design
 
-## Project Evolution: MyPAOS → Grimoire
+## Project Overview
 
-### Vision Statement
-Grimoire is a knowledge-based operating system built on Entity-Component-System (ECS) architecture with Prolog as the semantic knowledge layer and Nix as the system configuration foundation.
+Grimoire is a knowledge-based operating system built on Entity-Component-System (ECS) architecture. It treats semantic knowledge as first-class entities stored in distributed Prolog files, integrating domain-specific tools through common patterns while maintaining their natural interfaces. The system currently runs with Prolog backend and Janus Python integration at version 0.1.0.
 
-## Core System Domains
+**Current Functional Status**: Production-ready core with all subsystems operational. The system passes comprehensive test suites covering ECS semantics, spell execution, domain integrations, session management, and multi-frontend interfaces. Git-backed session management provides atomic operations with rollback capabilities.
 
-### Nix Domain - System Configuration Foundation
-- **Purpose**: System configuration, packages, and flake management
-- **Paradigm**: Declarative system configuration with reproducible builds
-- **Key Features**:
-  - Dynamic target discovery via `nix flake show --json` introspection
-  - Memoized performance optimization
-  - Template system with Nix-centric commands
-  - All language templates use `nix run .#command` pattern for canonical operations
-- **Revolutionary Design**: All 6 language templates (Rust, Python, C++, Haskell, Lean4, MkDocs) use Nix flake apps instead of language-native commands
-
-### Database Domain - SQLite ECS Integration
-- **Purpose**: Database creation, management, and automatic ECS discovery
-- **Paradigm**: Reverse proxy predicating with schema tracking and command-based creation
-- **Key Features**:
-  - Schema-aware database registration: `registered_db(database(Id), data(file(DbPath)), schema(file(SchemaPath)))`
-  - Command-based database creation: `command(db(create(DbId, DbPath, schema(file|sql))))`
-  - Automatic schema file generation for inline SQL
-  - ECS component discovery for database tables and columns
-  - Integration with session command logging system
-
-### Git Domain - Version Control
-- **Purpose**: Version control operations and repository management
-- **Paradigm**: Git-native operations with command modeling
-- **Key Features**:
-  - Command modeling for all Git operations
-  - Repository state introspection and management
-  - Integration with project discovery system
-
-### Session Domain - File-Based Workspace Management
-- **Purpose**: Logical work contexts with file-based command logging and ECS database discovery
-- **Paradigm**: Session → Workspace directory with commands.db (.db extension) and state.pl files
-- **Key Features**:
-  - File-based session workspaces under `${GRIMOIRE_DATA}/sessions/`
-  - SQLite command logging (.db extension) with automatic ECS discovery and schema tracking
-  - Session database registration: `registered_db(database(session_SessionId), data(file(DbPath)), schema(file(SchemaPath)))`
-  - Session state management via state.pl files for persistent entity loads
-  - **ECS Database Integration**: Session commands database becomes discoverable ECS entity
-    - Automatic table/column component discovery for session database
-    - Schema files automatically created: `{session_workspace}/commands.schema.sql`
-    - Database creation via command system: `command(db(create(SessionDbId, DbPath, schema(file(SchemaFile)))))`
-  - **Stateful Interface System**: Session-owned Prolog files for persistent entity state
-    - Entity loads persist across operations within sessions
-    - Interface operations automatically load session state for stateful behavior
-    - Session isolation: different sessions maintain separate entity state
-    - CLI integration: `./grimoire load entity` persists entities for session-scoped access
-
-### Filesystem Domain - Project Discovery
-- **Purpose**: Filesystem introspection and artifact discovery
-- **Paradigm**: Pattern-based discovery with configurable traversal
-- **Key Features**:
-  - `discover_fs_components` utility for filesystem scanning
-  - Glob pattern matching for file type identification
-  - Integration with project template systems
-
-### Project Domain - Artifact Management
-- **Purpose**: Project structure analysis and artifact discovery
-- **Paradigm**: Template-based project analysis with core artifact requirements
-- **Key Features**:
-  - Core artifacts: `nix(flake)`, `git`, `readme`, `sources`
-  - `discover_project_artifacts` with configurable patterns
-  - Template composition for multi-project architectures
-  - Language-specific project type identification
-
-## Core Design Principles
-
-### 1. Knowledge Locality
-- Each domain maintains its knowledge in local `semantics.pl` files
-- Git-like distributed knowledge pattern
-- Semantic mounting system for runtime knowledge extension
-- No runtime asserts - all knowledge lives in files
-
-### 2. ECS Architecture
-- `entity/1` - Things that exist in the system
-- `component/3` - Relationships between things
-- **Component Relation Patterns**:
-  - `component(Type, ctor, Constructor)` - Extensible sum types (variants)
-  - `component(Type, relation_pattern, Pattern)` - Meta-patterns for defining new relation types
-- **Enhanced Spell System**: Fantasy-themed command/query separation
-  - `component(conjure, ctor, ...)` - Mutation operations (state-changing)
-  - `component(perceive, ctor, ...)` - Query operations (read-only)
-  - `cast/2` - Execute conjure spells with explicit results
-  - `perceive/1` - Enhanced multifile predicate for domain queries
-    - Collects all solutions through backtracking
-    - Displays multiple solutions with semicolon separation
-    - Direct domain queries: `git(status(...))` works without wrapper
-- Clean composition and extension patterns
-
-### 3. Domain Natural Paradigms
-- **Nix**: System configuration, packages, flakes
-- **Git**: Version control operations
-- **Prolog**: Semantic queries and knowledge representation
-- **SQLite**: Database entity system with automatic ECS discovery
-- Each tool speaks its natural language
-
-### 4. Multi-Frontend Interface System
-
-The interface layer (`src/interface.pl`) provides a clean separation between the ECS system and various frontends (CLI, API, MCP):
-
-**ECS-Native Interface Pattern**: Interface as ECS entity with subcommands that promote to command constructors
-
-**Structured Return Values**: Interface returns data structures, not terminal output - CLI formats the structured data for display
-
-**Context-Aware Operation**: Auto-detect current working context and ensure local project loading
-
-**Stateful Session Integration**: Interface operations automatically load session state when in session context
-
-**Benefits**:
-- **Multi-Frontend Ready**: Same interface layer supports CLI, API, and MCP
-- **ECS Integration**: Interface commands follow established ECS patterns
-- **Context Awareness**: Automatically detects and loads local project semantics
-- **Structured Data**: Returns data structures, not formatted output
-- **Auto-Generated Usage**: CLI usage generated from ECS component definitions
-- **Session State Persistence**: Entity loads persist across operations within sessions
-- **Session Isolation**: Different sessions maintain separate interface state
-
-## Entity Management System
-
-### Entity Declaration Conventions
-The system uses explicit entity declarations for all semantic files:
-
-**Explicit Entity Declarations**: All semantic files declare their entities directly
-```prolog
-% git.pl - Core git domain
-:- self_entity(git).
-component(git, source, file("git.pl")).
-
-% rust/semantics.pl - Rust project template
-:- self_entity(rust_template).
-component(rust_template, project_type, rust).
-component(command, ctor, rust_template).
-```
-- Use for: All entities (core domains, templates, projects)
-- Characteristics: Explicit naming, no ambiguity, predictable behavior
-- Loading: Simple `load_entity(semantic(file/folder))` pattern
-
-This explicit approach ensures clarity, maintainability, and eliminates complexity.
-
-### Self-entity declaration
-
-To make semantics files self-describing and avoid repeating source paths, we recommend using ``:- self_entity(Entity).`` at the top of a semantics file instead of a plain ``entity(Entity).`` header.
-
-Behavior:
-- Asserts ``entity(Entity)`` for the file being loaded.
-- Adds a ``component(Entity, self, semantic(...))`` component pointing to the file or folder that defined the entity. If the file is named ``semantics.pl`` the component will be ``semantic(folder(Dir))``, otherwise ``semantic(file(Path))``.
-
-Example usage:
-```prolog
-% In src/git.pl
-:- self_entity(git).
-% component(git, self, semantic(file("src/git.pl"))).
-
-% In a template's semantics.pl
-:- self_entity(rust_template).
-% component(rust_template, self, semantic(folder("src/nix/templates/rust"))).
-```
-
-### Load Entity API Design
-
-The system implements a simple single-arity API for loading semantic entities:
-
-**load_entity/1 - Semantic Entity Loading**
-```prolog
-% Load semantic files directly
-load_entity(semantic(file("src/git.pl"))).
-load_entity(semantic(folder("src/nix"))).
-load_entity(semantic(file("templates/rust/semantics.pl"))).
-```
-- Use for: All entity loading (core domains, templates, projects)
-- Pattern: Direct semantic source specification
-- Behavior: Loads and asserts all facts from the semantic source
-
-**API Benefits:**
-- **Simplicity**: Single pattern for all entity loading
-- **Clarity**: Source location explicit in call
-- **Predictability**: No transformation or binding complexity
-- **Maintainability**: Easy to understand and debug
-
-### Clean Entity Loading
-Simple pattern for loading domain knowledge:
-```prolog
-% In core_rules.pl
-load_entity(semantic(Source)) :-
-    mount_semantic(Source).
-
-% In grimoire.pl - core system loading
-:- load_entity(semantic(file("src/git.pl"))).
-:- load_entity(semantic(folder("src/nix"))).
-:- load_entity(semantic(file("src/fs.pl"))).
-:- load_entity(semantic(folder("src/project"))).
-
-% Template loading
-?- load_entity(semantic(file("templates/rust/semantics.pl"))).
-% Now rust_template entity is available
-
-% Project loading via passive loading
-?- passive_load(my_project, semantic(file("project/semantics.pl"))).
-```
-
-Benefits:
-- **Simple single-arity API** with clear semantics
-- **Explicit source specification** - no magic or transformation
-- **Maintains ECS purity** - no asserts in semantic files
-- **Predictable behavior** - what you load is what you get
-- **Easy debugging** - clear loading patterns
-
-## Current System Status
-
-**System State: Functional**
-- 94 tests passing across all subsystems
-- Core ECS architecture with knowledge locality
-- Spell system with multiple-solution perceive queries
-- Git-backed session management with stateful interface system
-- Multi-frontend interface layer with session-persistent entity state
-- 6 language templates with Nix-centric commands
-
-**CLI Commands:**
-- `./grimoire perceive "query"` - Multiple solutions with semicolon separation
-- `./grimoire conjure "operation"` - Mutation operations
-- `./grimoire exec "query"` - Direct Prolog query execution
-- `./grimoire session switch/list/commit/rollback` - Transaction management
-- `./grimoire load entity` - Load entity into current session for persistent access
-- Domain queries work directly: `git(status(...))`, `session(current(...))`
-
-### Completed Phases Overview
-
-**Phase 1-6 + Interface Layer + Stateful Sessions Complete**: Foundation cleanup, Nix CLI mastery, testing infrastructure, simplified entity loading system, complete Nix-centric template revolution, Git-backed session system, multi-frontend interface layer, and stateful interface session system - **94 tests passing**
-
-**All 6 Language Templates Complete**: Rust, Python, C++, Haskell (with full test suites), Lean4, MkDocs (templates appropriate to their domains)
-
-**Current System Features**:
-- Pure Prolog Implementation: All Python components removed, system now runs entirely in SWI-Prolog
-- Spell System: Fantasy-themed conjure/perceive with multiple-solution query capabilities
-- Session System: DB backed session system with persistent state `state.pl`
-- Interface Layer: Multi-frontend system (`src/interface.pl`) with structured returns
-- Stateful Interface Sessions: Entity loads persist across operations within sessions using session-owned Prolog files
-- CLI Tool: Context-aware `./grimoire` with `conjure`/`perceive`/`exec`/`session`/`load` commands
-- Templates: 6 language templates with Nix-centric commands and test coverage
-- Core Systems: git, nix, fs, project, session domains loaded and tested
-
-## Current Priorities
-
-**Phase 7: Pure Prolog LLM Integration**:
-1. **ECS Command Discovery**: Agents query `component(command, ctor, _)` to find available operations
-2. **Transaction Construction**: LLM builds `transaction([command(...), ...])` from natural language
-3. **OpenAI HTTP Client**: Direct API integration using SWI-Prolog HTTP library (no Python bridge needed)
-4. **User Approval Workflow**: Present transaction plan before execution
-5. **Agent Entity Framework**: Domain-specific agents (coding_assistant, project_manager)
-
-**Phase 8: Composite Project Architecture & Enhanced Discovery**:
-1. **Multi-Project Composition**: Combine templates in subdirectories with top-level orchestration
-2. **Semantic Composition**: Load subproject semantics via `load_entity` in parent `semantics.pl`
-3. **Nix Flake Composition**: Import subproject flakes as inputs in parent `flake.nix`
-4. **Command Orchestration**: Implement composite commands that coordinate subproject operations
-5. **Enhanced Discovery System**: Implement filesystem pattern matching and automatic project type inference
-
-**Phase 9: Knowledge Evolution Layer**:
-- Reactivate database infrastructure (`src/db/`) for persistent knowledge
-- Transaction logging and knowledge base evolution tracking
-- Learning from user interactions and command patterns
+**Vision and Scope**: Grimoire aims to be a reproducible, declarative development environment where knowledge, tools, and processes are semantically interconnected. Unlike traditional operating systems that manage files and processes, Grimoire manages semantic relationships and knowledge transformations. The system enables developers to work with projects, templates, and tools through a unified semantic layer while maintaining full reproducibility through Nix integration.
 
 ---
 
-# Implementation Details
+## Core ECS Architecture
 
-## Template System Architecture
+### Fundamental Predicates
 
-### Nix-Centric Build Operations
-**Revolutionary Design**: All language templates use Nix flake apps instead of language-native commands, ensuring reproducibility and consistency across the system.
+The ECS system rests on three foundational predicates that form the semantic backbone:
 
-**Template Coverage** (Phase 5.3-5.4 Complete):
-- ✅ **Rust Template**: `nix run .#build|test|run|check|clippy|fmt` + full test suite
-- ✅ **Python Template**: `nix run .#run|build` + `nix develop` + full test suite
-- ✅ **C++ Template**: `nix run .#run|build` + `nix develop` + full test suite
-- ✅ **Haskell Template**: `nix run .#build|test|run|ghci|hlint` + full test suite
-- ✅ **Lean4 Template**: `nix run .#build|check|clean|doc` (no tests - formal verification focused)
-- ✅ **MkDocs Template**: `nix run .#build|serve|deploy|new` (no tests - documentation generation)
-
-**Benefits**:
-- **Reproducible builds** across all environments
-- **Canonical operations** - one way to build/run/test per language
-- **System consistency** - all templates use the same Nix patterns
-- **Zero dependency management** - Nix handles all toolchain dependencies
-- **Cross-platform compatibility** - works on any Nix-supported system
-
-## Current Architecture Assessment
-
-### Strengths to Preserve - IMPLEMENTED
-1. **Core ECS System** (`core_rules.pl`)
-   - Entity-component abstractions
-   - Transaction-based operations
-
-2. **Nix Integration** (`src/nix/semantics.pl`) - COMPLETED
-   - **Dynamic Target Discovery**: Memoized `nix flake show --json` introspection
-   - **JSON Integration**: Flake metadata parsing
-
-3. **Git Integration** (`src/git.pl`)
-   - Command modeling
-   - Domain extension patterns
-
-4. **Interface Layer** (`src/interface.pl`)
-   - Multi-frontend interface system
-   - CLI, API, and MCP support
-
-### Recent Major Improvements
-1. **Pure Prolog Implementation** - Removed all Python infrastructure, system now runs entirely in SWI-Prolog
-2. **Simplified Entity Loading** - Single-arity `load_entity/1` with explicit entity declarations, removed self-binding complexity
-3. **Nix Semantics Overhaul** - Removed unnecessary complexity, memoized performance
-4. **Polyglot Foundation** - Language-native introspection patterns, 500-1000 token contexts → 50-100 tokens
-5. **Passive Loading System** - `passive_load/2` for on-demand loading, 66 tests passing
-6. **Template System** - All 6 templates implemented with explicit entity declarations and discovery integration
-
-### Components to Defer (Not Remove)
-1. **Database Infrastructure** - `src/db/` SQLite logging system for knowledge evolution
-
-**Rationale**: Focus on Prolog-native LLM integration first, then add database persistence as needed. Python infrastructure has been removed in favor of pure Prolog implementation.
-
-## Detailed Phase History
-
-**Phase 1: Foundation Cleanup** - Project renamed MyPAOS → Grimoire, Python infrastructure removed, core ECS architecture established
-
-**Phase 2: Nix CLI Mastery** - Comprehensive Nix integration with flake-first approach, dynamic target discovery via JSON introspection, seven language template domains implemented
-
-**Phase 3: Testing Infrastructure** - 28 comprehensive tests, PLUnit framework with setup/cleanup patterns, cross-domain integration validation
-
-**Phase 4: Simplified Entity Loading** - Single-arity `load_entity/1` implementation, explicit entity declarations, clean semantic mounting
-
-**Phase 5.1-5.4 Complete**: **Nix-Centric Template Revolution** - Implemented system domains and **completely redesigned language templates to use Nix flake apps instead of language-native commands**. All 6 templates (Rust, Python, C++, Haskell, Lean4, MkDocs) now use `nix run .#command` pattern for canonical, reproducible operations.
-
-**Interface Layer Complete**: **Multi-Frontend Interface System** - Implemented `src/interface.pl` as ECS-native interface layer with structured return values. Transformed `./grimoire` from bash script to Prolog CLI wrapper with context-aware operation and auto-generated usage.
-
-## Discovery-Based Template Implementation Details
-
-### New System Domains
-`fs` domain provides filesystem discovery utilities, `project` domain handles project artifact discovery.
-
-### Core Project Discovery Architecture
-Every project entity must have these non-negotiable core artifacts:
-- `nix(flake)` - every project must have a flake
-- `git` - every project must be in git
-- `readme` - every project must have documentation
-- `sources` - every project must have source files (inferred from git)
-
-### Current Directory Structure
-After restructuring, the system follows this clean organization:
-```
-src/
-├── core_rules.pl         # Core ECS system
-├── grimoire.pl          # System initialization
-├── interface.pl         # Multi-frontend interface layer
-├── git.pl              # Git domain semantics
-├── fs.pl               # Filesystem utilities
-├── session.pl          # Session management
-├── project.pl          # Project semantics
-├── db/                 # Database infrastructure
-│   ├── schema.sql
-│   └── semantics.pl
-├── nix/                # Nix domain and templates
-│   ├── semantics.pl
-│   └── templates/
-│       ├── rust/
-│       ├── python/
-│       ├── cpp/
-│       ├── haskell/
-│       ├── lean4/
-│       └── mkdocs/
-├── project/            # Project domain
-│   ├── semantics.pl
-│   └── semantics.plt
-└── tests/              # Test suites
-    ├── run_tests.pl
-    ├── core_rules.plt
-    ├── integration.plt
-    └── [other test files...]
-```
-
-### Template Structure
-All templates follow a standardized structure:
-```
-src/nix/templates/{language}/
-├── semantics.pl          # Generative context with discovery
-├── semantics.plt         # Discriminative test suite
-└── [existing template files...]
-```
-
-### Template Requirements
-- Project type and build tool identification
-- Build system subcommand integration
-- Docstrings for all commands
-- Filesystem pattern matching for language-specific files
-- Discovery system integration
-- Test suite with 5+ discriminative tests
-
-## Recent Updates
-
-**August 19, 2025**:
-- **Pure Prolog Implementation**: Completely removed Python infrastructure
-  - All components now run in SWI-Prolog
-  - No external Python dependencies
-  - Simplified architecture with single runtime
-- **Repository Restructuring**: Moved all Prolog files from `src/prolog/` to `src/`
-  - Clean directory structure
-  - All paths updated throughout system
-  - Git history preserved for all moves
-- Enhanced Perceive System implemented:
-  - Multiple choicepoint collection through backtracking
-  - Semicolon-separated solutions like normal Prolog queries
-  - Direct domain queries: `./grimoire perceive "git(status(...))"` works without wrapper
-  - Proper fallback: tries `perceive/1` first, then `call/1`
-  - Clean error handling for failed queries
-- `./grimoire exec "query"` command for arbitrary Prolog queries
-- 66 total tests passing - Core (27) + Templates (14) + Spell System (21) + Session CLI (4)
-- All previous systems maintained:
-  - Phase 6: Git-backed session system with clean ontology
-  - Interface Layer: Multi-frontend ECS-native interface system
-  - All 6 language templates with Nix-centric commands
-  - Complete CLI interface with session management
-
-
-# Detailed System Designs
-
-## Session + Transaction System Design
-
-### File-Based Session Management with Database ECS Discovery
-
-**Core Architecture**: Sessions create workspace directories with SQLite command logging and automatic ECS discovery.
-
-**Session**: A logical work context that creates a workspace directory with commands.db and state.pl
-**Database Integration**: Session commands database becomes an ECS entity with auto-discovered table structures
-
-### Session Workspace Management
+**`entity/1`** - Declares atomic identifiers for things that exist in the system. Entities represent concepts, tools, files, projects, or any meaningful unit within Grimoire's knowledge space.
 
 ```prolog
-entity(session).
-entity(session_commands_db).  % ECS entity for session database
+entity(system).
+entity(git).
+entity(nix(flake(template(rust)))).
+entity(database(session_commands)).
+```
 
-% Session workspace structure
-component(session, workspace_path, path(WorkspacePath)) :-
-    session_workspace_path(SessionId, WorkspacePath).
+**`component/3`** - Expresses typed relationships between entities using the pattern `component(Entity, Type, Value)`. This predicate enables flexible, extensible data modeling where new relationship types can be introduced without schema changes.
 
-% Session database as ECS entity with auto-discovery
-component(session_commands_db, data, data(file(DbPath))) :-
-    session_commands_db_path(SessionId, DbPath).
+```prolog
+component(system, concept, spell).
+component(git, subcommand, commit).
+component(conjure, ctor, mkproject).
+component(nix(flake(template)), instance, nix(flake(template(rust)))).
+```
 
-% Auto-discovered database structure
-entity(session_commands_db(table(commands))).
-component(session_commands_db(table(commands)), columns, [
-    column(id, 'INTEGER', false, null, true),
-    column(timestamp, 'TEXT', true, null, false),
-    column(command_type, 'TEXT', true, null, false),
-    column(command_term, 'TEXT', true, null, false),
-    column(result, 'TEXT', false, null, false),
-    column(source, 'TEXT', false, 'user', false)
+**`docstring/2`** - Documents entities and components with human-readable descriptions. Documentation is embedded directly in the semantic layer, ensuring it remains synchronized with implementation.
+
+```prolog
+docstring(spell, "The fundamental magic system of Grimoire").
+docstring(conjure, "Conjuration spells that modify system state").
+```
+
+### Component Type Patterns
+
+Grimoire uses a rich vocabulary of component types to model different kinds of relationships:
+
+**`ctor`** - Constructor types for sum types and extensible enumerations. Used extensively in the spell system to define available operations.
+
+```prolog
+component(conjure, ctor, git(commit)).
+component(perceive, ctor, git(status)).
+component(edit_file, ctor, insert).
+```
+
+**`subcommand`** - Command hierarchies within domain entities. Provides structured command namespacing.
+
+```prolog
+component(git, subcommand, clone).
+component(session, subcommand, start).
+component(interface, subcommand, entities).
+```
+
+**`concept`** - High-level conceptual relationships expressing domain knowledge.
+
+```prolog
+component(system, concept, transaction).
+component(nix, concept, nix(flake)).
+component(project, concept, application).
+```
+
+**`self`** - Self-referential components indicating entity location and metadata.
+
+```prolog
+component(git, self, semantic(file("git.pl"))).
+component(nix, self, semantic(folder("nix"))).
+```
+
+**`source`** - Source code and knowledge provenance tracking.
+
+```prolog
+component(system, source, source(semantic(file("grimoire.pl")))).
+component(rust_template, source, source(semantic(file("semantics.pl")))).
+```
+
+**`subsystem`** - Major architectural components of Grimoire.
+
+```prolog
+component(system, subsystem, git).
+component(system, subsystem, nix).
+component(system, subsystem, session).
+```
+
+### Entity and Loading Patterns
+
+**`:- self_entity(EntityName).`** - Declares the primary entity that a semantic file represents. This pattern enables automatic entity discovery and loading.
+
+```prolog
+:- self_entity(git).
+:- self_entity(nix).
+:- self_entity(rust_template).
+```
+
+**`:- load_entity(semantic(Source)).`** - Single-arity loading API that resolves and loads semantic knowledge from files or folders. The `@/` prefix resolves to `GRIMOIRE_ROOT`.
+
+```prolog
+:- load_entity(semantic(file("@/src/git.pl"))).
+:- load_entity(semantic(folder("@/src/nix"))).
+:- load_entity(semantic(folder("@/src/project"))).
+```
+
+### ECS Relationship Modeling
+
+The ECS system enables complex relationship modeling through component composition:
+
+```prolog
+% Hierarchical relationships
+entity(nix(target)).
+component(nix(target), ctor, package).
+component(nix(target), ctor, app).
+entity(nix(target(package))).
+entity(nix(target(app))).
+
+% Cross-domain relationships  
+component(context(build), requires, config(build)).
+component(context(build), requires, deps(build)).
+component(application, requires, context(C)) :- component(context, ctor, C).
+
+% Dynamic discovery relationships
+component(database(Db), table, table(TableName)) :-
+    registered_db_table(database(Db), table(TableName)).
+```
+
+### Semantics and Testing System
+
+Each domain follows the `.pl/.plt` pattern where `semantics.pl` contains the logic and `semantics.plt` contains comprehensive tests. This ensures semantic knowledge remains verifiable and correct.
+
+```prolog
+% In semantics.pl
+component(git, subcommand, commit).
+cast(conjure(git(commit(Message))), RetVal) :-
+    phrase(git_args(commit(Message)), Args),
+    cast(conjure(executable_program(git, Args)), RetVal).
+
+% In semantics.plt  
+test(git_commit_entity_exists) :-
+    entity(git(commit)).
+test(git_commit_conjure_ctor_exists) :-
+    component(conjure, ctor, git(commit)).
+```
+
+---
+
+## Spell System Implementation
+
+The spell system provides a fantasy-themed interface that separates query operations (perception) from mutation operations (conjuration), ensuring clear distinction between safe and potentially dangerous operations.
+
+### Conjure/Perceive Architecture
+
+**Conjure Spells** - Mutable operations that modify system state. All conjure operations must be executed through the `cast/2` predicate for safety and transaction support.
+
+```prolog
+% Must use cast/2 wrapper
+cast(conjure(git(commit("Initial commit"))), Result).
+cast(conjure(mkproject("/projects", "myapp", [template(rust)])), Result).
+cast(conjure(session(start("experimental"))), Result).
+```
+
+**Perceive Spells** - Query operations that read system state without modification. Called directly with variable unification for results.
+
+```prolog
+% Direct calls with unification
+perceive(git(status(Branch, Status, Files))).
+perceive(entities(EntityList)).
+perceive(nix(flake(show(FlakeRef, Apps, Packages, DevShells)))).
+```
+
+### Cast/2 Safety Mechanism
+
+The `cast/2` predicate provides essential safety features for mutable operations:
+
+**Transaction Support** - Enables atomic operations and rollback capabilities through session integration.
+
+**Error Handling** - Standardized error reporting with structured `ok(Result)` and `error(Details)` returns.
+
+**Command Logging** - Automatic logging to session databases for audit trails and replay capabilities.
+
+**Process Isolation** - Safe execution of external programs with proper output capture and error handling.
+
+```prolog
+cast(conjure(executable_program(Program, Args)), RetVal) :-
+    setup_call_cleanup(
+        process_create(path(Program), Args, [
+            stdout(pipe(Out)), 
+            stderr(pipe(Err)), 
+            process(PID)
+        ]),
+        (read_string(Out, _, Stdout),
+         read_string(Err, _, Stderr),
+         process_wait(PID, exit(ExitCode))),
+        (close(Out), close(Err))
+    ),
+    (ExitCode = 0 ->
+        RetVal = ok(result(Stdout, Stderr))
+    ;
+        RetVal = error(process_error(Program, exit(ExitCode), Stdout, Stderr))
+    ).
+```
+
+### Direct Predicate Calls for Queries
+
+Perceive operations bypass the cast mechanism for efficiency, allowing direct predicate calls with Prolog's native unification:
+
+```prolog
+% Core perceive implementations
+perceive(entities(Entities)) :-
+    findall(Entity, entity(Entity), Entities).
+
+perceive(git(status(Branch, WorkingStatus, Files))) :-
+    cast(conjure(git(branch(['--show-current']))), BranchResult),
+    (BranchResult = ok(result(BranchOutput, _)) ->
+        string_concat(BranchStr, "\n", BranchOutput),
+        atom_string(Branch, BranchStr)
+    ;
+        Branch = unknown
+    ),
+    cast(conjure(git(status(['--porcelain']))), StatusResult),
+    (StatusResult = ok(result(StatusOutput, _)) ->
+        (StatusOutput = "" ->
+            WorkingStatus = clean, Files = []
+        ;
+            WorkingStatus = dirty,
+            parse_git_status_output(StatusOutput, Files)
+        )
+    ;
+        WorkingStatus = unknown, Files = []
+    ).
+```
+
+### Ritual System for Atomic Operations
+
+The `ritual/1` constructor enables atomic execution of multiple conjure spells, ensuring all-or-nothing semantics:
+
+```prolog
+cast(ritual([
+    conjure(mkdir('/project/new-feature')),
+    conjure(mkfile('/project/new-feature/main.rs')),
+    conjure(git(add(['/project/new-feature']))),
+    conjure(git(commit("Add new feature scaffolding")))
+]), Result).
+```
+
+---
+
+## Git Domain
+
+The Git domain provides version control operations with session integration and structured data parsing. It models Git as both a tool for code versioning and a foundation for Grimoire's transactional session system.
+
+### Version Control Operations
+
+Git operations are split between conjure (state-changing) and perceive (query) operations:
+
+**Conjure Operations:**
+- `git(clone(Url, Path))` - Clone remote repositories
+- `git(init(Path))` - Initialize new repositories  
+- `git(add(Paths))` - Stage files for commit
+- `git(commit(Message))` - Record changes
+- `git(push(Remote, Branch))` - Push to remote
+- `git(pull(Remote, Branch))` - Pull from remote
+- `git(checkout(Branch))` - Switch branches
+- `git(reset(Args))` - Reset repository state
+- `git(merge(Args))` - Merge branches
+
+**Perceive Operations:**
+- `git(status(Branch, WorkingStatus, Files))` - Structured repository status
+- `git(diff)` - Show changes
+- `git(log)` - Commit history
+- `git(branch)` - Branch listing
+- `git(rev_parse(Args))` - Parse revision information
+
+### Command Modeling and Execution
+
+Git commands follow a consistent pattern using DCG (Definite Clause Grammar) for argument construction:
+
+```prolog
+% Command argument generation
+git_args(clone(Url, Path)) --> ["clone", Url, Path].
+git_args(commit(Message)) --> ["commit", "-m", Message].
+git_args(add(all_tracked)) --> ["add", "-u"].
+git_args(add(Paths)) --> ["add"|Paths].
+
+% Execution through conjure system
+cast(conjure(git(Term)), RetVal) :-
+    functor(Term, SubCmdType, _),
+    component(git, subcommand, SubCmdType),
+    phrase(git_args(Term), Args),
+    cast(conjure(executable_program(git, Args)), RetVal).
+```
+
+### Session Integration and Transaction Support
+
+Git provides the transactional foundation for Grimoire's session system. Each session corresponds to a Git branch, enabling atomic commits and rollbacks:
+
+```prolog
+% Session-based git workflow
+perceive(git(status(Branch, WorkingStatus, Files))) :-
+    % Current branch detection for session correlation
+    cast(conjure(git(branch(['--show-current']))), BranchResult),
+    % Parse porcelain output for structured file status
+    cast(conjure(git(status(['--porcelain']))), StatusResult),
+    parse_git_status_output(StatusOutput, Files).
+
+% Structured file status parsing
+parse_status_line(Line, FileStatus) :-
+    atom_codes(Line, [S1, S2, 32 | FileCodes]),
+    atom_codes(File, FileCodes),
+    status_code_to_term([S1, S2], File, FileStatus).
+
+status_code_to_term([32, 77], File, modified(File)).     % " M"
+status_code_to_term([77, 32], File, staged(File)).       % "M "  
+status_code_to_term([63, 63], File, created(File)).      % "??"
+status_code_to_term([65, 32], File, created(File)).      % "A "
+status_code_to_term([68, 32], File, deleted(File)).      % "D "
+```
+
+---
+
+## Nix Domain
+
+The Nix domain manages package dependencies, build environments, and the template system through flake-based reproducible builds. It provides the foundation for Grimoire's reproducible development environments.
+
+### Package Management and Flakes
+
+Nix operations center around flakes for reproducible package management:
+
+**Core Concepts:**
+- `nix(store)` - Immutable package store management
+- `nix(flake)` - Reproducible project specifications
+- `nix(target)` - Buildable outputs (packages, apps, devShells)
+- `nix(derivation)` - Build specifications
+
+**Conjure Operations:**
+- `nix(build(Installable))` - Build packages or flakes
+- `nix(develop(Options))` - Enter development environments
+- `nix(run(Installable, Args))` - Execute applications
+- `nix(store(gc))` - Garbage collect unused packages
+- `nix(flake(new(Template, Path)))` - Create projects from templates
+
+**Perceive Operations:**
+- `nix(flake(show(FlakeRef, Apps, Packages, DevShells)))` - Discover flake outputs
+- `nix(search(Query, Results))` - Search package repositories
+- `nix(log(Installable, BuildLog))` - View build logs
+- `nix(why_depends(Pkg1, Pkg2, Trace))` - Dependency analysis
+
+### Build System Integration
+
+Nix commands integrate with Grimoire's execution system while preserving Nix's reproducibility guarantees:
+
+```prolog
+% Build operations with artifact tracking
+cast(conjure(nix(build(Installable))), RetVal) :-
+    Args = ["nix", "build", Installable],
+    cast(conjure(shell(Args)), RetVal),
+    (RetVal = ok(Output) ->
+        assertz(entity(nix(derivation(Output)))),
+        assertz(component(build_result, output_path, Output))
+    ; true).
+
+% Development environments with phase control
+cast(conjure(nix(develop(Options))), RetVal) :-
+    findall(OptionArgs, (
+        member(Option, Options),
+        (Option = shell_cmd(Args) -> OptionArgs = ["--command" | Args]
+        ;Option = phase(Phase) -> OptionArgs = ["--phase", Phase]
+        )
+    ), AllOptionArgs),
+    flatten([["nix", "develop"] | AllOptionArgs], Args),
+    cast(conjure(shell(Args, interactive)), RetVal).
+```
+
+### Template Framework Architecture
+
+The template system provides project scaffolding with automatic discovery and instantiation:
+
+**Template Discovery:**
+```prolog
+% Automatic template discovery from flake outputs
+nix_flake_templates(Pairs) :-
+    nix_templates_path(TemplatePath),
+    format(string(PathExpr), "path:~w", [TemplatePath]),
+    process_create(path(nix), ["flake","show","--json",PathExpr], [stdout(pipe(Out))]),
+    json_read_dict(Out, JsonDict),
+    close(Out),
+    dict_pairs(JsonDict.templates, _Tag, Pairs).
+
+% Dynamic template entities
+entity(nix(flake(template(Id)))) :-
+    nix_flake_templates(Pairs),
+    member(Id-_, Pairs).
+
+% Component instance discovery
+component(nix(flake(template)), instance, nix(flake(template(Id)))) :-
+    nix_flake_templates(Pairs),
+    member(Id-_V, Pairs).
+```
+
+**Available Templates:**
+- `rust` - Rust project with Cargo integration
+- `python` - Python project with Poetry/pip integration  
+- `cpp` - C++ project with CMake build system
+- `haskell` - Haskell project with Cabal/Stack support
+- `lean4` - Lean 4 theorem prover projects
+- `mkdocs` - Documentation sites with MkDocs
+- `python-bridge-pattern` - Python-Prolog integration example
+- `python-rest-api` - REST API service template
+- `database` - Database project with SQLite integration
+
+### Dynamic Target Discovery
+
+Nix flakes expose their outputs dynamically, which Grimoire discovers and models as ECS entities:
+
+```prolog
+% Flake target discovery through nix flake show
+get_nix_flake_targets(FlakeRef, Targets) :-
+    process_create(path(nix), ["flake", "show", "--json", FlakeRef], [stdout(pipe(Out))]),
+    json_read_dict(Out, JsonDict),
+    close(Out),
+    findall(Target, extract_flake_target(JsonDict, FlakeRef, Target), Targets).
+
+% Extract different target types
+extract_flake_target(JsonDict, FlakeRef, Target) :-
+    get_dict(packages, JsonDict, Packages),
+    dict_pairs(Packages, _, SystemPairs),
+    member(System-SystemPackages, SystemPairs),
+    dict_pairs(SystemPackages, _, PackagePairs),
+    member(PackageName-_, PackagePairs),
+    format(atom(AttrPath), 'packages.~w.~w', [System, PackageName]),
+    Target = nix(target(package(FlakeRef, AttrPath))).
+
+% Dynamic entity generation
+entity(nix(target(package(FlakeRef, AttrPath)))) :-
+    entity(nix(flake(_, FlakeRef))),
+    get_nix_flake_targets(FlakeRef, Targets),
+    member(nix(target(package(FlakeRef, AttrPath))), Targets).
+```
+
+---
+
+## Session Domain
+
+The Session domain provides workspace management with SQLite command logging and Git-backed transactionality. Sessions enable atomic operations across multiple tools while maintaining complete audit trails.
+
+### Workspaces and Command Logging
+
+Each session creates an isolated workspace with dedicated SQLite database for command logging:
+
+**Session Structure:**
+- `${GRIMOIRE_DATA}/sessions/{SessionId}/` - Workspace directory
+- `commands.db` - SQLite database with command log
+- `commands.schema.sql` - Database schema definition  
+- `state.pl` - Persistent Prolog state file
+
+**Command Logging Schema:**
+```sql
+CREATE TABLE commands (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp TEXT NOT NULL,
+    command_type TEXT NOT NULL,
+    command_term TEXT NOT NULL,
+    result TEXT,
+    source TEXT DEFAULT 'user'
+);
+```
+
+### SQLite Integration and State Persistence
+
+Session commands are automatically logged to SQLite for replay and audit capabilities:
+
+```prolog
+% Automatic command logging for session operations
+log_command_to_session_db(SessionId, CommandType, CommandTerm, Result) :-
+    session_commands_db_path(SessionId, DbPath),
+    (exists_file(DbPath) ->
+        catch(
+            (get_time(TimeStamp),
+             format_time(atom(FormattedTime), '%Y-%m-%d %H:%M:%S', TimeStamp),
+             term_string(CommandTerm, CommandTermStr),
+             escape_sql_string(CommandTermStr, EscapedCommandTerm),
+             term_string(Result, ResultStr),
+             escape_sql_string(ResultStr, EscapedResult),
+             format(atom(InsertSQL),
+                'INSERT INTO commands (timestamp, command_type, command_term, result) VALUES (\'~w\', \'~w\', \'~w\', \'~w\')',
+                [FormattedTime, CommandType, EscapedCommandTerm, EscapedResult]),
+             sqlite3_exec(DbPath, InsertSQL)),
+            Error,
+            format('Warning: Failed to log command: ~w~n', [Error])
+        )
+    ; true).
+```
+
+### Transaction Model and Git Integration
+
+Sessions map to Git branches, providing atomic commit/rollback semantics:
+
+**Session Operations:**
+- `session(start)` - Create new session workspace and Git branch
+- `session(switch(SessionId))` - Change active session context
+- `session(commit(Message))` - Commit accumulated changes to Git
+- `session(rollback)` - Discard changes and reset to branch start
+- `session(delete(SessionId))` - Remove session and workspace completely
+
+**Session State Management:**
+```prolog
+% Dynamic session tracking
+:- dynamic current_session_id/1.
+
+get_current_session_id(SessionId) :-
+    (current_session_id(SessionId) -> true ; SessionId = main).
+
+% Session workspace initialization
+initialize_session_workspace(SessionId) :-
+    session_workspace_path(SessionId, WorkspacePath),
+    (exists_directory(WorkspacePath) -> true ; make_directory_path(WorkspacePath)).
+
+initialize_session_database(SessionId) :-
+    session_commands_db_path(SessionId, DbPath),
+    session_workspace_path(SessionId, WorkspacePath),
+    format(atom(SchemaFile), '~w/commands.schema.sql', [WorkspacePath]),
+    format(atom(SessionDbId), 'session_~w', [SessionId]),
+    cast(conjure(db(create(SessionDbId, DbPath, schema(file(SchemaFile))))), _).
+```
+
+### Think Command for AI Integration
+
+The `think` command provides thought logging for AI agent interactions:
+
+```prolog
+cast(conjure(think(ThoughtString)), RetVal) :-
+    string(ThoughtString),
+    log_command_to_session(think, ThoughtString, thought_recorded),
+    RetVal = ok(thought_recorded(ThoughtString)).
+```
+
+---
+
+## Database Domain
+
+The Database domain provides SQLite integration with automatic schema discovery and ECS component mapping. It enables databases to be treated as first-class entities within Grimoire's semantic system.
+
+### SQLite Integration and Schema Tracking
+
+Databases are registered and discovered dynamically through the registration system:
+
+```prolog
+% Dynamic database registration
+:- dynamic registered_db/3.
+
+% Registration pattern: registered_db(database(Id), data(file(DbPath)), schema(file(SchemaPath)))
+registered_db(database(session_commands), 
+              data(file('/home/user/.grimoire/sessions/main/commands.db')),
+              schema(file('/home/user/.grimoire/sessions/main/commands.schema.sql'))).
+
+% Automatic entity generation
+entity(database(Db)) :-
+    registered_db(database(Db), data(file(_)), schema(file(_))).
+```
+
+### ECS Component Mapping for Database Structure
+
+Database tables and columns become queryable ECS components through reverse proxy patterns:
+
+```prolog
+% Table discovery through SQLite introspection
+component(database(Db), table, table(TableName)) :-
+    registered_db_table(database(Db), table(TableName)).
+
+registered_db_table(database(Db), table(TableName)) :-
+    registered_db(database(Db), data(file(DbFile)), schema(file(_))),
+    exists_file(DbFile),
+    get_database_tables(DbFile, TableStrings),
+    member(TableString, TableStrings),
+    atom_string(TableName, TableString).
+
+% Column discovery with type information
+component(database(Db), column, column(TableName, ColumnName, ColumnInfo)) :-
+    registered_db_column(database(Db), column(TableName, ColumnName, ColumnInfo)).
+
+registered_db_column(database(Db), column(TableName, ColumnName, ColumnInfo)) :-
+    registered_db(database(Db), data(file(DbFile)), schema(file(_))),
+    get_table_columns(DbFile, TableName, Columns),
+    member(ColumnInfo, Columns),
+    ColumnInfo = column(ColumnNameString, _, _, _, _),
+    atom_string(ColumnName, ColumnNameString).
+```
+
+### Database Creation and Schema Management
+
+Database creation integrates with the conjure system for safe database operations:
+
+```prolog
+% Database creation from schema file
+cast(conjure(db(create(DbId, DbPath, schema(file(SchemaFile))))), RetVal) :-
+    sqlite3_init_db(DbPath, SchemaFile),
+    assertz(registered_db(database(DbId), data(file(DbPath)), schema(file(SchemaFile)))),
+    RetVal = ok(database_created(DbId, DbPath)).
+
+% Database creation from SQL string
+cast(conjure(db(create(DbId, DbPath, schema(sql(SchemaSQL))))), RetVal) :-
+    file_name_extension(DbBaseName, db, DbPath),
+    format(atom(SchemaFile), '~w.schema.sql', [DbBaseName]),
+    open(SchemaFile, write, Stream),
+    write(Stream, SchemaSQL),
+    close(Stream),
+    sqlite3_init_db(DbPath, SchemaFile),
+    assertz(registered_db(database(DbId), data(file(DbPath)), schema(file(SchemaFile)))),
+    RetVal = ok(database_created(DbId, DbPath)).
+```
+
+### Automatic Structure Exposure Through Templates
+
+The database template demonstrates automatic discovery patterns:
+
+```prolog
+% Example database with automatic artifact discovery
+cast(conjure(example_db(inspect)), RetVal) :-
+    catch(
+        (discover_database_artifacts(example_db),
+         findall(Table, component(example_db, table, Table), Tables),
+         findall(table_info(Table, Columns), (
+             member(Table, Tables),
+             TableEntity =.. [example_db, table(Table)],
+             component(TableEntity, columns, Columns)
+         ), TableInfos),
+         RetVal = ok(database_structure(TableInfos))),
+        Error,
+        RetVal = error(inspect_failed(Error))
+    ).
+```
+
+---
+
+## Project Domain
+
+The Project domain handles artifact discovery, template instantiation, and build context management. It provides the organizational framework for software development within Grimoire.
+
+### Artifact Discovery and Build Contexts
+
+Projects organize software development through three primary contexts:
+
+**Context Types:**
+- `context(build)` - Compilation and build-time environment
+- `context(runtime)` - Execution environment and dependencies
+- `context(test)` - Testing framework and test-specific dependencies
+
+**Context Requirements:**
+```prolog
+component(context(build), requires, config(build)).
+component(context(build), requires, deps(build)).
+component(context(build), requires, source(code)).
+
+component(context(runtime), requires, config(runtime)).
+component(context(runtime), requires, deps(runtime)).
+component(context(runtime), requires, source(data)).
+
+component(context(test), requires, config(test)).
+component(context(test), requires, deps(test)).
+```
+
+### Template Instantiation Process
+
+The `mkproject` conjure operation provides comprehensive project creation with template support:
+
+```prolog
+cast(conjure(mkproject(FolderPath, ProjectName, Options)), RetVal) :-
+    catch(
+        (directory_file_path(FolderPath, ProjectName, ProjectPath),
+         (exists_directory(FolderPath) -> true ; make_directory_path(FolderPath)),
+         (exists_directory(ProjectPath) ->
+             RetVal = error(project_already_exists(ProjectPath))
+         ;
+             make_directory(ProjectPath),
+             % Apply template if specified
+             (member(template(Template), Options) ->
+                 cast(conjure(nix(flake(new(Template, ProjectPath)))), TemplateResult),
+                 (TemplateResult = ok(_) ->
+                     rename_project_entities(ProjectPath, Template, ProjectName, RenameResult)
+                 ;
+                     RenameResult = TemplateResult
+                 )
+             ;
+                 create_basic_semantics_file(ProjectPath, ProjectName),
+                 RenameResult = ok
+             ),
+             % Initialize git if requested
+             (member(git(false), Options) ->
+                 GitResult = ok
+             ;
+                 cast(conjure(git(init(ProjectPath))), GitResult)
+             ),
+             (GitResult = ok ->
+                 RetVal = ok(project_created(ProjectPath, ProjectName))
+             ;
+                 RetVal = GitResult
+             )
+         )),
+        Error,
+        RetVal = error(conjure_failed(Error))
+    ).
+```
+
+### Build Context Discovery
+
+Projects automatically discover their build artifacts and dependencies:
+
+```prolog
+discover_project_artifacts(Entity, Options) :-
+    discover_core_artifacts(Entity),
+    discover_nix_targets(Entity),
+    (member(fs_patterns(IncludePatterns, ExcludePatterns), Options) ->
+        discover_custom_artifacts(Entity, [IncludePatterns, ExcludePatterns])
+    ;
+        true
+    ).
+
+discover_core_artifacts(Entity) :-
+    working_directory(CurrentDir, CurrentDir),
+    discover_flake_artifact(Entity, CurrentDir),
+    discover_git_artifact(Entity, CurrentDir),
+    discover_readme_artifact(Entity, CurrentDir),
+    discover_sources_artifact(Entity, CurrentDir).
+
+discover_nix_targets(Entity) :-
+    working_directory(CurrentDir, CurrentDir),
+    process_create(path(nix), ['flake', 'show', '--json'], [
+        stdout(pipe(Out)),
+        cwd(CurrentDir)
+    ]),
+    read_string(Out, _, JsonString),
+    close(Out),
+    atom_string(JsonAtom, JsonString),
+    atom_json_term(JsonAtom, JsonDict, []),
+    extract_nix_apps(Entity, JsonDict, CurrentDir).
+```
+
+### Multi-Template Project Composition
+
+Projects can compose multiple templates for full-stack development:
+
+```prolog
+% Example: Backend + Frontend composition
+cast(conjure(mkproject("/projects", "webapp", [
+    template(python-rest-api),  % Backend API
+    template(rust),             % Frontend WASM
+    git(true),
+    composition(fullstack)
+])), Result).
+```
+
+---
+
+## Golems Domain
+
+The Golems domain implements an AI agent framework with Python-Prolog bridge integration. It provides autonomous AI agents built on ECS architecture with structured input/output validation and multi-provider LLM support.
+
+### AI Agent Framework Architecture
+
+Golems are defined as ECS entities with role, configuration, and capability components:
+
+**Available Golems:**
+- `golem(code_assistant)` - Code generation and refactoring assistance
+- `golem(project_manager)` - Project organization and planning
+- `golem(test_runner)` - Automated testing and validation
+- `golem(documentation)` - Documentation generation and maintenance
+
+**Golem Components:**
+```prolog
+component(golem(code_assistant), role, "Assists with code generation, refactoring, and debugging").
+component(golem(code_assistant), llm_config, _{provider: anthropic, model: "claude-3-sonnet"}).
+component(golem(code_assistant), input, code_context).
+component(golem(code_assistant), input, user_request).
+component(golem(code_assistant), output, code_changes).
+component(golem(code_assistant), output, explanation).
+```
+
+### Python Bridge Integration and Provider Abstraction
+
+The Python bridge enables seamless integration with AI providers while maintaining Prolog's logical foundation:
+
+```prolog
+% Import prolog-safe predicates from python bridge
+:- use_module('python_bridge.pl', [
+    get_golem_tools/2,
+    execute_golem_task/7,
+    get_golem_python_instance/2,
+    log_thought_to_session/2
 ]).
 
-% Create session workspace with database discovery
-start_session(SessionId, Result) :-
-    uuid(SessionId),
-    create_session_workspace(SessionId),
-    % Discover database structure as ECS components
-    discover_database_artifacts(session_commands_db),
-    Result = ok(session_started(SessionId)).
+% Execute golem task with full ECS configuration
+cast(conjure(golem_task(golem(Id), Inputs)), RetVal) :-
+    component(golem(Id), llm_config, LLMConfigDict),
+    component(golem(Id), role, Role),
+    findall(I, component(golem(Id), input, I), InputSchema),
+    findall(O, component(golem(Id), output, O), OutputSchema),
+    execute_golem_task(Id, LLMConfigDict, Role, InputSchema, OutputSchema, Inputs, RetVal).
 ```
 
-### Command Logging with Database ECS Integration
+### Provider Factory and Multi-LLM Support
+
+The system supports multiple LLM providers through a unified interface:
+
+**Supported Providers:**
+- `anthropic` - Claude models (Claude-3 Sonnet, Haiku, Opus)
+- `openai` - GPT models (GPT-4, GPT-3.5-turbo)
+- `ollama` - Local models (Llama 2, Code Llama, Mistral)
+- `groq` - High-speed inference (Llama 2, Mixtral)
+
+**Configuration Examples:**
+```prolog
+component(golem(fast_coder), llm_config, _{
+    provider: groq,
+    model: "llama2-70b-4096",
+    temperature: 0.1,
+    max_tokens: 2048
+}).
+
+component(golem(thoughtful_architect), llm_config, _{
+    provider: anthropic,
+    model: "claude-3-opus-20240229",
+    temperature: 0.3,
+    max_tokens: 4096
+}).
+```
+
+### Structured Input/Output Validation
+
+Golems enforce structured schemas for reliable AI interactions:
 
 ```prolog
-% Log commands to session database with ECS discovery
-log_command_to_session(Command, CommandType, Result, Source) :-
-    get_current_session_id(SessionId),
-    (SessionId = main ->
-        true  % Don't log commands in main session
+% Input validation example
+component(golem(test_runner), input, test_files).
+component(golem(test_runner), input, test_framework).
+component(golem(test_runner), input, coverage_threshold).
+
+% Output validation example  
+component(golem(test_runner), output, test_results).
+component(golem(test_runner), output, coverage_report).
+component(golem(test_runner), output, recommendations).
+```
+
+### Thought Logging and Session Integration
+
+Golems integrate with the session system for complete audit trails:
+
+```prolog
+% Thought logging for debugging and audit
+cast(conjure(thought(Content)), RetVal) :-
+    log_thought_to_session(Content, RetVal).
+
+% Dynamic docstring generation with live configuration
+docstring(golem(Id), DocString) :-
+    component(golem(Id), role, Role),
+    component(golem(Id), llm_config, Config),
+    findall(input(I), component(golem(Id), input, I), Inputs),
+    findall(output(O), component(golem(Id), output, O), Outputs),
+    (catch(get_golem_tools(golem(Id), Tools), _, Tools = []) -> true; Tools = []),
+    format_golem_docstring(Role, Config, Tools, Inputs, Outputs, DocString).
+```
+
+---
+
+## Interface Domain
+
+The Interface domain provides CLI, API, and MCP multi-frontend access to Grimoire functionality. It maintains consistency across different interaction modalities while adapting to each medium's conventions.
+
+### CLI/API/MCP Multi-Frontend Architecture
+
+The interface layer provides unified access through three primary frontends:
+
+**Command Line Interface (CLI)** - Direct command execution through `./grimoire` script
+**REST API** - HTTP-based access for web integration  
+**Model Context Protocol (MCP)** - Integration with AI development tools
+
+**Interface Commands:**
+- `interface(entities)` - List all entities in the system
+- `interface(compt(Entity))` - Show component types for entity
+- `interface(comp(Entity, Type))` - List components of specific type
+- `interface(doc(Entity))` - Show entity documentation
+- `interface(status)` - Display session and system status
+- `interface(conjure(Spell))` - Execute conjuration spells
+- `interface(perceive(Query))` - Execute perception queries
+
+### Command Routing and Context Management
+
+The interface layer provides automatic context detection and entity resolution:
+
+```prolog
+% Auto-detect current working context
+current_entity(Entity) :-
+    (exists_file('./semantics.pl') ->
+        working_directory(Cwd, Cwd),
+        file_base_name(Cwd, DirName),
+        atom_string(Entity, DirName),
+        ensure_local_project_loaded(Entity)
     ;
-        log_command_to_session_db(SessionId, Command, CommandType, Result, Source),
-        % Update ECS components after logging
-        discover_database_artifacts(session_commands_db)
+        Entity = system
     ).
 
-% Query session history via ECS components
-get_session_command_history(SessionId, Commands) :-
-    (SessionId = main ->
-        Commands = []  % Main session has no accumulated commands
+% Entity path resolution with shortcuts
+resolve_entity_path(PathStr, Entity) :-
+    (PathStr = "/" ->
+        Entity = system
     ;
-        % Query via database entity
-        component(session_commands_db, data, data(file(DbPath))),
-        sqlite3_query(DbPath,
-            'SELECT timestamp, command_type, command_term, result, source FROM commands ORDER BY timestamp DESC',
-            QueryResults),
-        maplist(json_to_command_entry, QueryResults, Commands)
-    ).
-
-% ECS-based database introspection
-inspect_session_database_structure(SessionId) :-
-    discover_database_artifacts(session_commands_db),
-    findall(Table, component(session_commands_db, table, Table), Tables),
-    forall(member(TableName, Tables), (
-        TableEntity =.. [session_commands_db, table(TableName)],
-        component(TableEntity, columns, Columns),
-        format('Table ~w: ~w~n', [TableName, Columns])
-    )).
-```
-
-### Session Management Patterns
-
-```prolog
-% Session closure strategies
-close_session(SessionId, CloseStrategy, Result) :-
-    active_session(SessionId, BranchName, StartCommit),
-
-    (CloseStrategy = merge_to_main ->
-        cast(conjure(git(checkout(['main']))), _),
-        cast(conjure(git(merge(['--no-ff', BranchName]))), _),
-        cast(conjure(git(branch(['-d', BranchName]))), _)
-    ; CloseStrategy = abandon ->
-        cast(conjure(git(checkout(['main']))), _),
-        cast(conjure(git(branch(['-D', BranchName]))), _)
-    ; CloseStrategy = keep_branch ->
-        true  % Keep branch for later reference
-    ),
-
-    retract(active_session(SessionId, BranchName, StartCommit)).
-
-% Convenience workflow patterns
-with_session(BranchStrategy, Commands, Result) :-
-    start_session(SessionId, BranchStrategy, _),
-    execute_transaction(SessionId, Commands, TransactionResult),
-    close_session(SessionId, merge_to_main, CloseResult),
-    Result = session_completed(SessionId, TransactionResult, CloseResult).
-
-% Multi-transaction workflows
-session_workflow(SessionId, BranchStrategy, TransactionsList, Result) :-
-    start_session(SessionId, BranchStrategy, _),
-    execute_session_transactions(SessionId, TransactionsList, Results),
-    close_session(SessionId, merge_to_main, CloseResult),
-    Result = session_workflow_completed(SessionId, Results, CloseResult).
-```
-
-### Session Context and History
-
-```prolog
-% Session introspection
-list_active_sessions(Sessions) :-
-    findall(session(Id, Branch, Start), active_session(Id, Branch, Start), Sessions).
-
-list_session_transactions(SessionId, Transactions) :-
-    findall(transaction(TId, Commands, State),
-            session_transaction(SessionId, TId, Commands, State),
-            Transactions).
-
-% Git-native session history
-show_session_history(SessionId) :-
-    active_session(SessionId, BranchName, _),
-    cast(conjure(git(log(['--oneline', '--graph', BranchName]))), ok(History)),
-    format("Session ~w history:~n~w~n", [SessionId, History]).
-```
-
-### Integration with Existing System
-
-```prolog
-% Backwards compatibility - sessions are optional
-execute(transaction(Commands), Result) :-
-    (active_session(SessionId, _, _) ->
-        execute_transaction(SessionId, Commands, Result)
-    ;
-        % Legacy direct execution
-        execute_commands(Commands, Results),
-        (member(error(E), Results) -> Result = error(E) ; Result = ok(Results))
+        catch(
+            (load_entity(semantic(folder(PathStr))),
+             file_base_name(PathStr, DirName),
+             atom_string(Entity, DirName)),
+            _,
+            atom_string(Entity, PathStr)
+        )
     ).
 ```
 
-## Stateful Interface Session System
+### Session State Integration
 
-### Overview
-
-The stateful interface session system provides persistent entity state across operations within sessions using session-owned Prolog files. This enables workflows where entity loads persist for the duration of a session, providing a stateful context for interface operations.
-
-### Architecture
-
-**Session-Owned Prolog Files**: Each session creates a persistent state file at `${GRIMOIRE_DATA:-$HOME/.grimoire}/session-{uuid}.pl` containing entity load directives.
-
-**Automatic State Loading**: Interface operations automatically load session state when operating within a session context.
-
-**Session Isolation**: Different sessions maintain completely separate entity state via independent state files.
-
-### Core Components
-
-#### Session State File Management
-
-```prolog
-% Session state file path resolution
-session_state_file_path(SessionId, FilePath) :-
-    session_storage_strategy(Strategy),
-    session_state_file_path(SessionId, Strategy, FilePath).
-
-% Global storage: ${GRIMOIRE_DATA:-$HOME/.grimoire}/session-{uuid}.pl
-session_state_file_path(SessionId, global, FilePath) :-
-    grimoire_root_directory(GrimoireRoot),
-    format(atom(FileName), 'session-~w.pl', [SessionId]),
-    format(atom(FilePath), '~w/~w', [GrimoireRoot, FileName]).
-
-% Initialize empty session state file
-initialize_session_state_file(SessionId) :-
-    ensure_session_state_directory(SessionId),
-    session_state_file_path(SessionId, FilePath),
-    open(FilePath, write, Stream),
-    format(Stream, '% Session state file for session ~w~n', [SessionId]),
-    format(Stream, '% Auto-generated by Grimoire session system~n~n', []),
-    close(Stream).
-```
-
-#### Entity Loading with Session Persistence
+Interface operations integrate with session state for persistent entity loading:
 
 ```prolog
 % Load entity into current session state
 load_entity_in_session(Entity) :-
     get_current_session_id(SessionId),
     entity_to_semantic_spec(Entity, EntitySpec),
-    % Validate that the entity exists before adding to session
     (validate_entity_exists(Entity, EntitySpec) ->
         (SessionId \= main ->
             add_entity_load_to_session(SessionId, EntitySpec)
         ;
-            true  % In main session, no persistent storage
+            true
         )
     ;
         format(atom(ErrorMsg), 'Entity ~w not found', [Entity]),
         throw(entity_load_failed(Entity, EntitySpec, ErrorMsg))
     ).
 
-% Add entity load to session state file
-add_entity_load_to_session(SessionId, EntitySpec) :-
-    ensure_session_state_directory(SessionId),
-    session_state_file_path(SessionId, FilePath),
-    open(FilePath, append, Stream),
-    format(Stream, '% Entity loaded: ~w~n', [EntitySpec]),
-    format(Stream, ':- load_entity(~q).~n~n', [EntitySpec]),
-    close(Stream).
-```
-
-#### Interface Operation Integration
-
-```prolog
-% Interface operations automatically load session state
-cast(conjure(interface(compt)), RetVal) :-
-    ensure_session_state_loaded,
-    current_entity(Entity),
-    interface_compt(Entity, Types),
-    RetVal = ok(component_types(Entity, Types)).
-
-% Ensure session state is loaded before interface operations
+% Ensure session state is loaded before operations
 ensure_session_state_loaded :-
     get_current_session_id(SessionId),
     (SessionId \= main ->
         load_session_state_file(SessionId)
     ;
-        true  % In main session, no persistent state to load
+        true
     ).
 ```
 
-### CLI Integration
+### Python Interface Support for MCP Integration
 
-The `./grimoire load` command provides CLI access to the stateful interface system:
-
-```bash
-# Load entity into current session for persistent access
-./grimoire load system
-./grimoire load interface
-./grimoire load .
-
-# Entities persist across operations within the same session
-./grimoire compt system  # Uses loaded session state
-./grimoire comp system concept  # Uses loaded session state
-```
-
-### Session Workflow Example
+The interface provides Python-friendly data conversion for MCP protocol compatibility:
 
 ```prolog
-% Start a session
-?- start_session('my-work-session', Result).
-
-% Load entities for persistent access
-?- cast(conjure(interface(load('system'))), LoadResult).
-% Session file now contains: :- load_entity(semantic(entity(system))).
-
-% Switch to another session temporarily
-?- start_session('temp-session', _).
-
-% Return to original session
-?- cast(conjure(git(checkout(['session-my-work-session']))), _).
-
-% Interface operations automatically reload session state
-?- cast(conjure(interface(compt)), Result).
-% Automatically loads session state including system entity
-
-% Close session with cleanup
-?- close_session('my-work-session', merge_to_main, _).
-% Session state file is cleaned up
-```
-
-### Testing
-
-The system includes comprehensive test coverage:
-
-- **Session State File Lifecycle**: Creation, persistence, and cleanup
-- **Entity Load Validation**: Proper error handling for non-existent entities
-- **Session Isolation**: Different sessions maintain separate state
-- **Interface Integration**: Automatic state loading in interface operations
-- **Semantic Specification Mapping**: Correct entity-to-semantic mappings
-
-All 94 tests pass, including 10 specific interface session integration tests that validate the complete stateful interface workflow.
-
-### Key Design Benefits
-
-1. **Session Isolation**: Concurrent work streams in separate Git branches
-2. **Atomic Transactions**: Git commits provide natural transaction boundaries
-3. **Git-Native History**: Full audit trail via Git log and branching
-4. **Flexible Workflows**: Support for experimental, feature, and iterative development
-5. **Clean Integration**: Sessions enhance but don't break existing transaction system
-6. **Rollback Support**: Git reset provides transaction-level rollback capability
-7. **LLM Context**: Sessions provide natural boundaries for agent work contexts
-
-## LLM Integration Design
-
-### ECS-Driven Agent Workflow
-
-The core LLM agent workflow leverages the existing ECS and transaction systems:
-
-1. **ECS Exploration**: Agent queries the ECS to discover available commands for its task
-2. **Transaction Construction**: Agent builds a complete transaction with discovered commands
-3. **User Approval**: Present transaction plan to user (with auto-execute option)
-4. **Transaction Execution**: Run the complete transaction using existing `execute/2`
-
-### OpenAI API Integration
-
-Direct HTTP integration for OpenAI-compatible endpoints using SWI-Prolog's HTTP library:
-
-```prolog
-entity(llm_agent).
-component(llm_agent, provider, openai).
-component(llm_agent, model, "gpt-4o").
-component(llm_agent, api_endpoint, "https://api.openai.com/v1/chat/completions").
-
-% Send request to LLM provider
-llm_request(Agent, Messages, Response) :-
-    component(Agent, api_endpoint, Endpoint),
-    component(Agent, model, Model),
-    http_post(Endpoint,
-        json(_{model: Model, messages: Messages}),
-        Response,
-        [authorization(bearer(ApiKey)),
-         content_type('application/json')]).
-```
-
-### ECS Command Discovery
-
-Agents explore the ECS to find relevant commands for their task:
-
-```prolog
-% Discover available commands for agent planning
-discover_commands_for_task(Task, AvailableCommands) :-
-    findall(Command, component(command, ctor, Command), AllCommands),
-    filter_relevant_commands(Task, AllCommands, AvailableCommands).
-
-% Get command documentation for agent context
-get_command_context(Commands, Context) :-
-    maplist(get_command_doc, Commands, Docs),
-    atomic_list_concat(Docs, '\n\n', Context).
-
-get_command_doc(Command, Doc) :-
-    (docstring(Command, CommandDoc) ->
-        format(string(Doc), "~w: ~w", [Command, CommandDoc])
+% Python-specific cast that converts Prolog terms to Python dictionaries
+python_cast(conjure(ConjureStruct), PyResult) :-
+    (atom(ConjureStruct) ->
+        atom_to_term(ConjureStruct, Term, [])
     ;
-        format(string(Doc), "~w: No documentation available", [Command])
+        Term = ConjureStruct
+    ),
+    cast(conjure(Term), Result),
+    term_struct_to_python_dict(Result, PyResult).
+
+% Recursive term to dictionary conversion
+term_struct_to_python_dict(Term, Dict) :-
+    (atomic(Term) ->
+        (atom(Term) ->
+            Dict = _{type: "atom", value: Term}
+        ; string(Term) ->
+            Dict = _{type: "string", value: Term}
+        ; number(Term) ->
+            Dict = _{type: "int", value: Term}
+        )
+    ; is_list(Term) ->
+        maplist(term_struct_to_python_dict, Term, Elements),
+        Dict = _{type: "list", elements: Elements}
+    ; compound(Term) ->
+        compound_name_arity(Term, Functor, Arity),
+        Term =.. [Functor|Args],
+        maplist(term_struct_to_python_dict, Args, ConvertedArgs),
+        Dict = _{type: "term_struct", functor: Functor, arity: Arity, args: ConvertedArgs}
     ).
 ```
 
-### Transaction Construction Agent
+---
 
-Core agent that constructs transactions from natural language tasks:
+## Template System
+
+The template system provides scaffolding for nine different project types, each with Nix-based build systems and flake app integration. Templates enable rapid project creation with reproducible development environments.
+
+### Complete Template Catalog
+
+**Rust Template (`rust`):**
+- Build system: Nix + Cargo integration
+- Commands: `build`, `test`, `run`, `check`, `clippy`, `fmt`
+- Structure: `src/main.rs`, `Cargo.toml`, `flake.nix`
+- Usage: High-performance systems programming
+
+**Python Template (`python`):**
+- Build system: Nix + pip/Poetry integration  
+- Commands: `run`, `build`, `develop`
+- Structure: `main.py`, `pyproject.toml`, `flake.nix`
+- Usage: General-purpose scripting and applications
+
+**C++ Template (`cpp`):**
+- Build system: Nix + CMake integration
+- Commands: `run`, `build`, `develop`
+- Structure: `src/main.cpp`, `CMakeLists.txt`, `include/`
+- Usage: High-performance native applications
+
+**Haskell Template (`haskell`):**
+- Build system: Nix + Cabal/Stack integration
+- Commands: `build`, `test`, `run`, `ghci`, `hlint`
+- Structure: `*.hs`, `*.cabal`, `stack.yaml`
+- Usage: Functional programming and theorem proving
+
+**Lean 4 Template (`lean4`):**
+- Build system: Nix + Lake integration
+- Commands: `build`, `test`, `prove`
+- Structure: `*.lean`, `lakefile.lean`
+- Usage: Formal verification and mathematical proofs
+
+**MkDocs Template (`mkdocs`):**
+- Build system: Nix + MkDocs integration
+- Commands: `serve`, `build`, `deploy`
+- Structure: `docs/`, `mkdocs.yml`
+- Usage: Documentation websites and technical writing
+
+**Python Bridge Pattern Template (`python-bridge-pattern`):**
+- Build system: Nix + Python-Prolog integration
+- Commands: Domain-specific operations through bridge
+- Structure: `semantics.pl`, `python_bridge.pl`
+- Usage: Hybrid logic/computational systems
+
+**Python REST API Template (`python-rest-api`):**
+- Build system: Nix + FastAPI/Flask integration
+- Commands: `serve`, `test`, `deploy`
+- Structure: API endpoints, models, database integration
+- Usage: Web service backends and microservices
+
+**Database Template (`database`):**
+- Build system: Nix + SQLite integration
+- Commands: `setup`, `populate`, `inspect`
+- Structure: `schema.sql`, database discovery patterns
+- Usage: Data-centric applications with ECS integration
+
+### Template Structure and Instantiation Process
+
+All templates follow consistent patterns while providing language-specific optimizations:
 
 ```prolog
-entity(transaction_planner).
-component(transaction_planner, agent_type, llm_agent).
-component(transaction_planner, model, "gpt-4o").
-component(transaction_planner, role, transaction_construction).
-
-% Main agent workflow: Task -> Transaction
-plan_transaction(Agent, UserTask, Transaction) :-
-    % 1. Discover relevant commands
-    discover_commands_for_task(UserTask, Commands),
-    get_command_context(Commands, CommandContext),
-
-    % 2. Build LLM prompt with ECS context
-    format(string(Prompt),
-        "Task: ~w~n~nAvailable Commands:~n~w~n~nConstruct a transaction (list of commands) to complete this task. Return only the Prolog transaction term.",
-        [UserTask, CommandContext]),
-
-    % 3. Get LLM response
-    llm_request(Agent, [_{role: "user", content: Prompt}], Response),
-    parse_transaction_response(Response, Transaction).
-
-% Parse LLM response into transaction term
-parse_transaction_response(Response, transaction(Commands)) :-
-    _{choices: [_{message: _{content: Content}}]} :< Response,
-    % Parse Prolog term from LLM response
-    read_term_from_atom(Content, transaction(Commands), []).
-```
-
-### Agent Transaction Execution
-
-Execute agent-constructed transactions with optional user approval:
-
-```prolog
-% Execute agent task with user approval
-execute_agent_task(Agent, Task, Result) :-
-    plan_transaction(Agent, Task, Transaction),
-
-    % Present transaction to user
-    format("Agent proposes transaction:~n~w~n~nExecute? (y/n/auto): ", [Transaction]),
-    read_line_to_string(user_input, Response),
-
-    ( Response = "y" ; Response = "auto" ->
-        execute(Transaction, Result)
-    ; Response = "n" ->
-        Result = cancelled("User rejected transaction")
+% Template instantiation through mkproject
+cast(conjure(mkproject(FolderPath, ProjectName, Options)), RetVal) :-
+    (member(template(Template), Options) ->
+        cast(conjure(nix(flake(new(Template, ProjectPath)))), TemplateResult),
+        (TemplateResult = ok(_) ->
+            rename_project_entities(ProjectPath, Template, ProjectName, RenameResult)
+        ;
+            RenameResult = TemplateResult
+        )
     ;
-        Result = error("Invalid response")
+        create_basic_semantics_file(ProjectPath, ProjectName),
+        RenameResult = ok
     ).
 
-% Auto-execute mode for brave users
-execute_agent_task_auto(Agent, Task, Result) :-
-    plan_transaction(Agent, Task, Transaction),
-    format("Agent executing: ~w~n", [Transaction]),
-    execute(Transaction, Result).
+% Entity renaming for project customization
+rename_project_entities(ProjectPath, TemplateId, ProjectName, Result) :-
+    directory_file_path(ProjectPath, 'semantics.pl', SemanticsFile),
+    (exists_file(SemanticsFile) ->
+        discover_template_entity_name(SemanticsFile, TemplateEntityName)
+    ;
+        format(atom(TemplateEntityName), '~w_template', [TemplateId])
+    ),
+    findall(File, (
+        member(FileName, ['semantics.pl', 'semantics.plt']),
+        directory_file_path(ProjectPath, FileName, File),
+        exists_file(File)
+    ), SemanticsFiles),
+    maplist(rename_entities_in_file(TemplateEntityName, ProjectName), SemanticsFiles, Results),
+    (member(error(_), Results) -> Result = error(Results) ; Result = ok).
 ```
 
-### Agent Entity Framework
+### Nix Flake Apps Integration
 
-Define specialized agents for different domains:
+Templates integrate with Nix flake apps for reproducible command execution:
 
 ```prolog
-entity(coding_assistant).
-component(coding_assistant, agent_type, transaction_planner).
-component(coding_assistant, domain, [rust_template, python_template, git, nix]).
+% Example: Rust template command implementations
+cast(conjure(rust_template(build)), RetVal) :-
+    cast(conjure(nix(build(['.']))), RetVal).
 
-entity(project_manager).
-component(project_manager, agent_type, transaction_planner).
-component(project_manager, domain, [fs, project, git]).
+cast(conjure(rust_template(test)), RetVal) :-
+    cast(conjure(nix(flake(['check']))), RetVal).
 
-% Domain-specific command filtering
-filter_relevant_commands(Task, AllCommands, FilteredCommands) :-
-    % Simple keyword matching - could be enhanced with embeddings
-    findall(Cmd, (
-        member(Cmd, AllCommands),
-        command_relevant_to_task(Cmd, Task)
-    ), FilteredCommands).
+cast(conjure(rust_template(run)), RetVal) :-
+    cast(conjure(nix(run(['.#run']))), RetVal).
+
+% Python template with development environment
+cast(conjure(python_template(develop)), RetVal) :-
+    cast(conjure(nix(develop(['.']))), RetVal).
 ```
 
-This design leverages the existing ECS system for command discovery and the current transaction system for execution, creating a natural bridge between LLM planning and Grimoire's operational capabilities.
+### Multi-Template Composition for Full-Stack Projects
 
-## Composite Project Architecture Design
+Templates can be composed to create complex project structures:
 
-### Multi-Project Composition Pattern
-
-Templates can be composed by instantiating multiple templates in subdirectories and orchestrating them at the parent level:
-
-```
-fullstack-app/
-├── flake.nix              # Orchestrator flake with subproject inputs
-├── semantics.pl           # Composite semantics loading subprojects
-├── frontend/              # Template instance (e.g., React, Vue)
-│   ├── flake.nix
-│   └── semantics.pl
-└── backend/               # Template instance (e.g., Rust, Python)
-    ├── flake.nix
-    └── semantics.pl
+**Backend + Frontend Composition:**
+```prolog
+% Create full-stack web application
+cast(conjure(mkproject("/projects", "webapp", [
+    template(python-rest-api),    % Backend API
+    template(rust),               % Frontend WASM
+    template(database),           % Data layer
+    composition(webapp)
+])), Result).
 ```
 
-### Semantic Composition
+**Documentation + Code Composition:**
+```prolog
+% Create documented library project
+cast(conjure(mkproject("/projects", "mathlib", [
+    template(lean4),              % Formal proofs
+    template(mkdocs),             % Documentation
+    template(haskell),            % Reference implementation
+    composition(formal_library)
+])), Result).
+```
 
-Parent `semantics.pl` loads subproject semantics and defines orchestration commands:
+### Template Discovery and Validation
+
+Templates are automatically discovered from the Nix flake outputs:
 
 ```prolog
-entity(fullstack_app).
-component(fullstack_app, project_type, composite).
+% Template availability check
+discover_available_templates(Templates) :-
+    findall(TemplateId,
+            component(nix(flake(template)), instance, nix(flake(template(TemplateId)))),
+            Templates).
 
-% Load subproject semantics
-:- load_entity(semantic(file("frontend/semantics.pl"))).
-:- load_entity(semantic(file("backend/semantics.pl"))).
-
-% Composite commands
-component(command, ctor, fullstack_app).
-component(fullstack_app, subcommand, dev).
-component(fullstack_app, subcommand, build).
-
-cast(conjure(fullstack_app(dev)), RetVal) :-
-    cast(conjure(nix(run(['.#dev']))), RetVal).
+% Template validation before instantiation
+validate_template_exists(TemplateId) :-
+    component(nix(flake(template)), instance, nix(flake(template(TemplateId)))).
 ```
 
-### Nix Flake Composition
+---
 
-Parent `flake.nix` imports subproject flakes as inputs and composes their outputs:
+## Implementation Details
 
-```nix
-{
-  inputs = {
-    frontend.url = "path:./frontend";
-    backend.url = "path:./backend";
-  };
+### File Structure Conventions
 
-  outputs = { self, frontend, backend }: {
-    apps.x86_64-linux.dev = {
-      type = "app";
-      program = pkgs.writeShellScript "dev" ''
-        ${frontend.apps.x86_64-linux.dev.program} &
-        ${backend.apps.x86_64-linux.dev.program} &
-        wait
-      '';
-    };
-  };
-}
+Grimoire follows consistent file organization patterns across all domains:
+
+**Core Structure:**
+```
+/home/levz/Projects/Grimoire/
+├── src/
+│   ├── grimoire.pl           # Core system bootstrap
+│   ├── git.pl               # Git domain semantics
+│   ├── session.pl           # Session management
+│   ├── fs.pl                # Filesystem operations
+│   ├── nix/
+│   │   ├── semantics.pl     # Nix domain core
+│   │   └── templates/       # Project templates
+│   │       ├── rust/
+│   │       ├── python/
+│   │       └── ...
+│   ├── project/
+│   │   └── semantics.pl     # Project management
+│   ├── db/
+│   │   ├── semantics.pl     # Database integration
+│   │   └── sqlite3.pl       # SQLite interface
+│   ├── golems/
+│   │   ├── semantics.pl     # AI agent framework
+│   │   └── python_bridge.pl # Python integration
+│   ├── interface/
+│   │   └── semantics.pl     # Multi-frontend interface
+│   └── tests/
+│       ├── *.plt            # PLUnit test suites
+│       └── run_tests.pl     # Test runner
+├── flake.nix                # Nix package specification
+├── grimoire                 # CLI entry point script
+└── DESIGN.md               # This document
 ```
 
-### Command Orchestration Patterns
+**Domain Pattern:**
+Each domain follows the `semantics.pl/semantics.plt` pattern:
+- `semantics.pl` - Core logic and entity definitions
+- `semantics.plt` - Comprehensive test coverage
+- `:- self_entity(DomainName).` - Entity self-declaration
+- Component definitions with docstrings
 
-- **Parallel execution**: Development servers running simultaneously
-- **Sequential builds**: Backend first, then frontend with backend artifacts
-- **Conditional execution**: Skip frontend build if backend fails
-- **Service coordination**: Backend provides API endpoint, frontend consumes it
+### Session Management Internals
 
-This approach maintains template reusability - no modifications needed to existing templates when used as subprojects.
+Session management integrates Git branches with workspace isolation:
+
+**Workspace Isolation:**
+```prolog
+% Session paths relative to GRIMOIRE_DATA
+grimoire_data_directory(DataDir) :-
+    (getenv('GRIMOIRE_DATA', CustomDataDir) ->
+        DataDir = CustomDataDir
+    ;
+        getenv('HOME', HomeDir),
+        format(atom(DataDir), '~w/.grimoire', [HomeDir])
+    ).
+
+session_workspace_path(SessionId, WorkspacePath) :-
+    grimoire_data_directory(DataDir),
+    format(atom(WorkspacePath), '~w/sessions/~w', [DataDir, SessionId]).
+```
+
+**Command Logging Schema:**
+```sql
+CREATE TABLE commands (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp TEXT NOT NULL,
+    command_type TEXT NOT NULL,
+    command_term TEXT NOT NULL,
+    result TEXT,
+    source TEXT DEFAULT 'user'
+);
+CREATE INDEX idx_timestamp ON commands(timestamp);
+CREATE INDEX idx_command_type ON commands(command_type);
+CREATE INDEX idx_source ON commands(source);
+```
+
+**State File Management:**
+```prolog
+initialize_session_state_file(SessionId) :-
+    session_state_file_path(SessionId, StatePath),
+    (exists_file(StatePath) ->
+        true
+    ;
+        open(StatePath, write, Stream),
+        format(Stream, '%% Session state file for session ~w~n', [SessionId]),
+        format(Stream, '%% Entity loads and persistent state~n~n', []),
+        close(Stream)
+    ).
+```
+
+### Database Integration Patterns
+
+Database entities use reverse proxy patterns for dynamic component generation:
+
+**Registration Pattern:**
+```prolog
+% Dynamic database registration
+:- dynamic registered_db/3.
+registered_db(database(Db), data(file(DbPath)), schema(file(SchemaPath))).
+
+% Automatic entity generation
+entity(database(Db)) :-
+    registered_db(database(Db), data(file(_)), schema(file(_))).
+
+% Component proxy patterns
+component(database(Db), table, table(TableName)) :-
+    registered_db_table(database(Db), table(TableName)).
+
+component(database(Db), column, column(TableName, ColumnName, ColumnInfo)) :-
+    registered_db_column(database(Db), column(TableName, ColumnName, ColumnInfo)).
+```
+
+**SQLite Introspection:**
+```prolog
+% Table discovery through PRAGMA statements
+get_database_tables(DbFile, TableNames) :-
+    sqlite3_query(DbFile, "SELECT name FROM sqlite_master WHERE type='table'", Results),
+    maplist(extract_table_name, Results, TableNames).
+
+% Column information with types
+get_table_columns(DbFile, TableName, Columns) :-
+    format(atom(Query), 'PRAGMA table_info(~w)', [TableName]),
+    sqlite3_query(DbFile, Query, Results),
+    maplist(parse_column_info, Results, Columns).
+```
+
+### Multi-Frontend Interface Architecture
+
+The interface layer abstracts Grimoire operations for different frontends:
+
+**Frontend Abstraction:**
+```prolog
+% CLI interface through ./grimoire script
+% REST API through HTTP endpoints  
+% MCP through Model Context Protocol
+
+% Unified interface command pattern
+cast(conjure(interface(Command)), RetVal) :-
+    ensure_session_state_loaded,
+    interface_command_dispatch(Command, RetVal).
+
+% Context-aware entity resolution
+current_entity(Entity) :-
+    (exists_file('./semantics.pl') ->
+        working_directory(Cwd, Cwd),
+        file_base_name(Cwd, DirName),
+        atom_string(Entity, DirName),
+        ensure_local_project_loaded(Entity)
+    ;
+        Entity = system
+    ).
+```
+
+**Python Compatibility Layer:**
+```prolog
+% Convert Prolog terms to Python-friendly structures
+term_struct_to_python_dict(Term, Dict) :-
+    (compound(Term) ->
+        compound_name_arity(Term, Functor, Arity),
+        Term =.. [Functor|Args],
+        maplist(term_struct_to_python_dict, Args, ConvertedArgs),
+        Dict = _{type: "term_struct", functor: Functor, arity: Arity, args: ConvertedArgs}
+    ; is_list(Term) ->
+        maplist(term_struct_to_python_dict, Term, Elements),
+        Dict = _{type: "list", elements: Elements}
+    ; atomic(Term) ->
+        Dict = _{type: "atom", value: Term}
+    ).
+```
+
+### Environment Variable Integration
+
+Grimoire uses environment variables for flexible configuration:
+
+**Core Environment Variables:**
+- `GRIMOIRE_ROOT` - Project directory (where `./grimoire` script runs)
+- `GRIMOIRE_DATA` - Data storage directory (defaults to `$HOME/.grimoire`)
+
+**Path Resolution:**
+```prolog
+grimoire_root_directory(RootDir) :-
+    (getenv('GRIMOIRE_ROOT', CustomRoot) ->
+        RootDir = CustomRoot
+    ;
+        working_directory(CurrentDir, CurrentDir),
+        RootDir = CurrentDir
+    ).
+
+% Semantic path resolution with @/ prefix
+grimoire_resolve_path('@/src/git.pl', '/home/levz/Projects/Grimoire/src/git.pl').
+```
+
+This comprehensive design document captures Grimoire's current architecture and implementation status. The system demonstrates a novel approach to semantic computing where knowledge, tools, and processes are unified through Entity-Component-System patterns while maintaining reproducibility through Nix integration and transactionality through Git-backed sessions.

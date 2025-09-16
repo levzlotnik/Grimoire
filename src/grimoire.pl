@@ -1,9 +1,9 @@
 % Load core rules first - bootstrap with direct ensure_loaded
 % We need core_rules.pl to get grimoire_ensure_loaded, so we load it directly
-:- (getenv('GRIMOIRE_ROOT', Root) -> 
+:- (getenv('GRIMOIRE_ROOT', Root) ->
     atomic_list_concat([Root, '/src/core_rules.pl'], CoreRules),
     ensure_loaded(CoreRules)
-   ; 
+   ;
     ensure_loaded("./core_rules.pl")
    ).
 :- use_module(library(filesex)).
@@ -237,7 +237,7 @@ entity(perceive(Ctor)) :- component(perceive, ctor, Ctor), entity(Ctor).
 entity(conjure(Ctor)) :- component(conjure, ctor, Ctor), entity(Ctor).
 
 % Enhanced contextual docstrings for perceive/conjure constructors
-docstring(perceive(Ctor), S) :- 
+docstring(perceive(Ctor), S) :-
     component(perceive, ctor, Ctor),
     docstring(Ctor, CtorDoc),
     term_to_atom(Ctor, SCtorAtom),
@@ -248,7 +248,7 @@ docstring(perceive(Ctor), S) :-
     {CtorDoc}
     |}.
 
-docstring(conjure(Ctor), S) :- 
+docstring(conjure(Ctor), S) :-
     component(conjure, ctor, Ctor),
     docstring(Ctor, CtorDoc),
     term_to_atom(Ctor, SCtorAtom),
@@ -529,15 +529,6 @@ split_at(N, [H|T], [H|Before], After) :-
     N1 is N - 1,
     split_at(N1, T, Before, After).
 
-% Transaction execution
-execute(transaction(Commands), RetVal) :-
-    execute_commands(Commands, Results),
-    % If any command failed, return its error
-    (member(error(E), Results) ->
-        RetVal = error(E)
-    ;
-        RetVal = ok(Results)
-    ).
 
 % Spell casting system - replaces run/2 for mutable operations
 docstring(cast,
@@ -705,43 +696,10 @@ docstring(edit_file, S) :-
     Format: edit_file(file(Path), [Edit1, Edit2, ...])
     - Path: File path to edit
     - Edits: List of edit operations
-    
+
     Available edit operations:
     {CtorsDoc}
     |}.
-
-% Agent subsystem
-entity(agent).
-component(agent, source, source(semantic(file("agent.pl")))).
-component(system, subsystem, agent).
-
-docstring(agent,
-    {|string(_)||
-    Agent subsystem for autonomous task execution.
-    Manages agent operations and logging through agent_log constructors.
-    Provides infrastructure for LLM-based agents to interact with the system.
-    Components: source points to agent.pl implementation.
-    |}).
-
-% Define agent logging schema constructors
-entity(agent_log).
-component(agent_log, ctor, natural_language).
-component(agent_log, ctor, tool_call).
-component(agent_log, ctor, tool_result).
-component(agent_log, ctor, user_input).
-component(agent_log, ctor, return_value).
-
-docstring(agent_log,
-    {|string(_)||
-    Log entry types for agent interactions.
-    Matches the Thought hierarchy from tool_calling.py:
-    - natural_language: Human-like reasoning steps
-    - tool_call: Request to use a specific tool
-    - tool_result: Result from tool execution
-    - user_input: User's direct prompt.
-    - return_value: Final conclusion/answer
-    |}
-).
 
 % ========================================================================
 % CORE PERCEIVE SPELLS
@@ -807,11 +765,3 @@ perceive(search_regex(ContentWithLineNumbers, Pattern, FoundContent)) :-
          re_match(Pattern, Line)),
         FoundContent).
 
-% ========================================================================
-% GRIMOIRE CORE SEMANTIC SYSTEM
-% ========================================================================
-% This file contains only the core semantic system.
-% User interfaces are implemented separately:
-% - repl.pl: Interactive REPL
-% - api.pl: HTTP API (future)
-% - mcp.pl: Model Context Protocol (future)
