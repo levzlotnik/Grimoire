@@ -18,6 +18,35 @@ Knowledge is organized locally - each domain (git, nix, filesystem, etc.) mainta
 - **Components** (`component/3`): Relationships and properties that connect entities
 - **Systems**: Operations that act on entities with specific components
 
+**Prolog Examples:**
+```prolog
+% Entity declarations
+entity(git).
+entity(nix).
+entity(session).
+entity(nix(flake(template(python)))).  % Hierarchical entity
+
+% Component declarations (entity, type, value)
+component(git, ctor, commit).           % git has constructor 'commit'
+component(git, ctor, clone).            % git has constructor 'clone'
+component(git, subsystem, vcs).         % git is a version control subsystem
+component(nix, concept, reproducibility). % nix embodies reproducibility concept
+component(session, source, file('state.pl')). % session has state file source
+
+% Documentation predicates
+docstring(git, "Version control and knowledge evolution tracking").
+docstring(nix(flake), "Declarative, reproducible package management").
+
+% Self-entity declaration pattern (in semantics.pl files)
+:- self_entity(my_project).
+
+% Loading entities from semantic sources
+:- load_entity(semantic(file("src/git.pl"))).         % Individual .pl file with self_entity
+:- load_entity(semantic(folder("src/nix"))).          % Folder with semantics.pl
+:- load_entity(semantic(folder("src/project"))).      % Another folder with semantics.pl
+:- load_entity(semantic(folder("src/nix/templates/python"))). % Nested template folder
+```
+
 ### Recursive Subsystems
 Each domain implements the same ECS patterns recursively. For example, `nix` is an entity with its own entities like `nix(flake)`, which has its own entities like `nix(flake(template))`. This fractal structure allows unlimited depth while maintaining consistent patterns.
 
@@ -46,7 +75,7 @@ The fundamental magic system of Grimoire. Spells are divided into two categories
 - **conjure**: Mutable operations that change system state
 - **perceive**: Perception operations that query system state
 
-Format: `spell(conjure(...))` or `spell(perceive(...))`
+Note: `spell` is a conceptual entity. The actual usage patterns are shown below.
 
 #### Conjuration Spells
 Conjuration spells modify system state and must be cast using `cast/2` predicate for safety.
