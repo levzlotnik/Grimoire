@@ -12,19 +12,26 @@ import torch
 import torch.library
 from typing import Tuple, Optional
 
-# Load the C++ extension (if installed)
+# Load the C++ extension - fail loudly if not available
 try:
-    torch.ops.load_library(torch.ops.pytorch_custom_ops)
-except Exception:
-    # Extension may not be built yet
-    pass
+    # Import the compiled extension module
+    # This will be created by setuptools when building the package
+    import pytorch_custom_ops._C
+except ImportError as e:
+    raise ImportError(
+        f"Failed to load pytorch_custom_ops C++ extension: {e}\n"
+        f"Make sure the extension is built. Try:\n"
+        f"  pip install -e .\n"
+        f"  or\n"
+        f"  python setup.py build_ext --inplace"
+    ) from e
 
 def _parametric_swish_backward(ctx, grad_output: torch.Tensor) -> Tuple[torch.Tensor, None]:
-    """Backward pass for parametric swish activation"""
-    from . import ops
+    """Backward pass for parametric swish activation using C++ implementation"""
     saved_input, = ctx.saved_tensors
     beta = ctx.beta
-    grad_input = ops.parametric_swish_backward(grad_output, saved_input, beta)
+    # Use C++ backward implementation directly
+    grad_input = torch.ops.pytorch_custom_ops.parametric_swish_backward(grad_output, saved_input, beta)
     return grad_input, None
 
 def _parametric_swish_setup_context(ctx, inputs, output):
@@ -41,11 +48,11 @@ torch.library.register_autograd(
 )
 
 def _fused_attention_backward(ctx, grad_output: torch.Tensor, grad_weights: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, None]:
-    """Backward pass for fused attention"""
-    from . import ops
+    """Backward pass for fused attention using C++ implementation"""
     saved_query, saved_key, saved_value, saved_attention_weights = ctx.saved_tensors
     scale = ctx.scale
-    grad_q, grad_k, grad_v = ops.fused_attention_backward(
+    # Use C++ backward implementation directly
+    grad_q, grad_k, grad_v = torch.ops.pytorch_custom_ops.fused_attention_backward(
         grad_output, saved_query, saved_key, saved_value, saved_attention_weights, scale
     )
     return grad_q, grad_k, grad_v, None

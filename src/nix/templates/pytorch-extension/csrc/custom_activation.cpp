@@ -7,14 +7,16 @@ namespace custom_ops {
 
 torch::Tensor parametric_swish_cpu_forward(const torch::Tensor& input, double beta) {
     TORCH_CHECK(input.is_cpu(), "Input tensor must be on CPU");
-    TORCH_CHECK(input.is_contiguous(), "Input tensor must be contiguous");
+    TORCH_CHECK(input.dtype() == torch::kFloat32, "Input tensor must be float32, got ", input.dtype());
     
-    auto output = torch::empty_like(input);
+    // Make input contiguous if it isn't already
+    auto contiguous_input = input.contiguous();
+    auto output = torch::empty_like(contiguous_input);
     
     // Use OpenMP for parallelization
-    auto input_data = input.data_ptr<float>();
+    auto input_data = contiguous_input.data_ptr<float>();
     auto output_data = output.data_ptr<float>();
-    auto numel = input.numel();
+    auto numel = contiguous_input.numel();
     
     #pragma omp parallel for
     for (int64_t i = 0; i < numel; ++i) {
@@ -29,16 +31,19 @@ torch::Tensor parametric_swish_cpu_forward(const torch::Tensor& input, double be
 torch::Tensor parametric_swish_cpu_backward(const torch::Tensor& grad_output, const torch::Tensor& input, double beta) {
     TORCH_CHECK(grad_output.is_cpu(), "Gradient tensor must be on CPU");
     TORCH_CHECK(input.is_cpu(), "Input tensor must be on CPU");
-    TORCH_CHECK(grad_output.is_contiguous(), "Gradient tensor must be contiguous");
-    TORCH_CHECK(input.is_contiguous(), "Input tensor must be contiguous");
     TORCH_CHECK(grad_output.sizes() == input.sizes(), "Gradient and input must have same shape");
+    TORCH_CHECK(input.dtype() == torch::kFloat32, "Input tensor must be float32, got ", input.dtype());
+    TORCH_CHECK(grad_output.dtype() == torch::kFloat32, "Gradient tensor must be float32, got ", grad_output.dtype());
     
-    auto grad_input = torch::empty_like(input);
+    // Make tensors contiguous if they aren't already
+    auto contiguous_grad_output = grad_output.contiguous();
+    auto contiguous_input = input.contiguous();
+    auto grad_input = torch::empty_like(contiguous_input);
     
-    auto grad_output_data = grad_output.data_ptr<float>();
-    auto input_data = input.data_ptr<float>();
+    auto grad_output_data = contiguous_grad_output.data_ptr<float>();
+    auto input_data = contiguous_input.data_ptr<float>();
     auto grad_input_data = grad_input.data_ptr<float>();
-    auto numel = input.numel();
+    auto numel = contiguous_input.numel();
     
     #pragma omp parallel for
     for (int64_t i = 0; i < numel; ++i) {

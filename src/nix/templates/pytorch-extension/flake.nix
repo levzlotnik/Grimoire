@@ -13,98 +13,63 @@
   in
   {
     lib = {
-      getGrimoireEnv = system: self.packages.${system}.grimoireEnv;
+      getGrimoireEnv = system: grimoire.lib.getGrimoireEnv system;
     };
 
     packages = forAllSystems (system:
     let
       pkgs = nixpkgs.legacyPackages.${system};
       grimoireEnv = grimoire.lib.getGrimoireEnv system;
-
-      # Python environment with PyTorch and development tools
-      pythonEnv = pkgs.python3.withPackages (ps: with ps; [
-        torch
-        numpy
-        pytest
-        pytest-benchmark
-        setuptools
-        wheel
-        pybind11
-      ]);
-
-      # C++ build environment
-      cppEnv = pkgs.stdenv.mkDerivation {
-        name = "pytorch-cpp-env";
-        buildInputs = with pkgs; [
-          cmake
-          pkg-config
-          openmp
-          pythonEnv
-        ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [
-          glibc.dev
-        ];
-      };
-
-      # Custom PyTorch extension package
-      pytorch-custom-ops = pkgs.stdenv.mkDerivation {
-        name = "pytorch-custom-ops";
-        src = ./.;
-        
-        buildInputs = [
-          pythonEnv
-          pkgs.cmake
-          pkgs.openmp
-        ];
-
-        buildPhase = ''
-          export PYTHONPATH=${pythonEnv}/${pythonEnv.sitePackages}
-          ${pythonEnv}/bin/python setup.py build_ext --inplace
-        '';
-
-        installPhase = ''
-          mkdir -p $out
-          cp -r . $out/
-        '';
-      };
-
-    in
+    in rec
     {
-      grimoireEnv = grimoireEnv;
-      pythonEnv = pythonEnv;
-      pytorch-custom-ops = pytorch-custom-ops;
+      # Import the custom PyTorch extension Python package as a separate derivation
+      pytorch-custom-ops = import ./pytorch-custom-ops.nix { inherit pkgs; };
+
       default = pytorch-custom-ops;
+
     });
 
     devShells = forAllSystems (system:
     let
       pkgs = nixpkgs.legacyPackages.${system};
       grimoireEnv = self.lib.getGrimoireEnv system;
-    in
+      pythonEnv = pkgs.python313.withPackages (ps: with ps; [
+        numpy
+        setuptools
+        wheel
+        cmake
+        pytest
+        pytest-benchmark
+        torch
+        torchvision
+        torchaudio
+        # Include the custom ops package in the environment
+        self.packages.${system}.pytorch-custom-ops
+      ]);
+    in rec
     {
       default = pkgs.mkShell (grimoireEnv.env // {
-        buildInputs = [ 
-          self.packages.${system}.pythonEnv
+        buildInputs = [
           grimoireEnv.swipl
-          pkgs.cmake
           pkgs.pkg-config
-          pkgs.openmp
+          pkgs.llvmPackages.openmp
           pkgs.gdb
           pkgs.valgrind
         ];
-        
-        PYTHONPATH = "${self.packages.${system}.pythonEnv}/${self.packages.${system}.pythonEnv.sitePackages}";
-        PYTHON_EXECUTABLE = "${self.packages.${system}.pythonEnv}/bin/python";
-        PATH = "${self.packages.${system}.pythonEnv}/bin:$PATH";
-        
+
+        packages = with pkgs; [
+          pythonEnv
+        ];
+
         # Enable OpenMP for CPU parallelization
         OMP_NUM_THREADS = "4";
-        
+
         shellHook = ''
           echo "PyTorch C++ Extension Development Environment"
-          echo "Python with PyTorch: ${self.packages.${system}.pythonEnv}/bin/python"
+          echo "Python with PyTorch: ${pythonEnv}/bin/python"
           echo "SWI-Prolog: ${grimoireEnv.swipl}/bin/swipl"
           echo ""
-          echo "Build extension: python setup.py build_ext --inplace"
+          echo "Extension is pre-built and available in Python environment"
           echo "Run tests: python -m pytest tests/"
           echo "Run benchmarks: python -m pytest benchmarks/ --benchmark-only"
           echo "Test semantics: grimoire test -- semantics.plt"
@@ -115,6 +80,7 @@
     checks = forAllSystems (system:
     let
       pkgs = nixpkgs.legacyPackages.${system};
+
     in
     {
       # Build and test the extension
@@ -122,7 +88,7 @@
         buildInputs = [
           self.packages.${system}.pythonEnv
           pkgs.cmake
-          pkgs.openmp
+          pkgs.llvmPackages.openmp
         ];
       } ''
         cd ${./.}

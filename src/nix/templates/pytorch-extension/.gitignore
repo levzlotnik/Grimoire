@@ -1,0 +1,42 @@
+# Build artifacts
+build/
+dist/
+*.egg-info/
+__pycache__/
+*.pyc
+*.pyo
+*.so
+*.dylib
+*.dll
+
+# Python virtual environments
+venv/
+env/
+.env
+
+# Development files
+*.swp
+*.swo
+*~
+.pytest_cache/
+
+# Nix
+result
+result-*
+
+# Logs
+*.log
+
+# IDE files
+.vscode/
+.idea/
+*.iml
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Backup files
+*.backup
+*.old
+*.bak

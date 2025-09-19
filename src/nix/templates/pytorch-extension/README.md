@@ -21,26 +21,21 @@ This template provides two custom operations implemented in C++ with OpenMP opti
 ### Using Nix (Recommended)
 
 ```bash
-# Enter development environment
+# Enter development environment with pre-built extension
 nix develop
 
-# Build the extension
-python setup.py build_ext --inplace
-
-# Install for development
-pip install -e .
+# Extension is already built and available
+# Run tests directly:
+python -m pytest tests/
 ```
 
 ### Using pip
 
 ```bash
-# Install PyTorch first
-pip install torch>=1.12.0
+# Install dependencies from requirements
+pip install -r requirements.txt
 
-# Install dependencies
-pip install numpy pytest pytest-benchmark
-
-# Build and install
+# Build and install the extension
 pip install .
 ```
 
@@ -52,8 +47,8 @@ pip install .
 import torch
 from pytorch_custom_ops import parametric_swish, ParametricSwish
 
-# Function interface
-x = torch.randn(4, 8, requires_grad=True)
+# Function interface (use float32 for compatibility)
+x = torch.randn(4, 8, dtype=torch.float32, requires_grad=True)
 output = parametric_swish(x, beta=1.5)
 
 # Module interface
@@ -72,11 +67,11 @@ print(x.grad)  # Gradients computed correctly
 import torch
 from pytorch_custom_ops import fused_attention, FusedAttention
 
-# Function interface
+# Function interface (use float32 for compatibility)
 batch_size, seq_len, d_model = 2, 16, 64
-query = torch.randn(batch_size, seq_len, d_model, requires_grad=True)
-key = torch.randn(batch_size, seq_len, d_model, requires_grad=True)
-value = torch.randn(batch_size, seq_len, d_model, requires_grad=True)
+query = torch.randn(batch_size, seq_len, d_model, dtype=torch.float32, requires_grad=True)
+key = torch.randn(batch_size, seq_len, d_model, dtype=torch.float32, requires_grad=True)
+value = torch.randn(batch_size, seq_len, d_model, dtype=torch.float32, requires_grad=True)
 
 output, attention_weights = fused_attention(query, key, value)
 
@@ -145,6 +140,7 @@ python -m pytest benchmarks/ --benchmark-only --benchmark-save=results
 - **Memory Layout**: Operations preserve tensor contiguity where possible
 - **BLAS Integration**: Matrix operations leverage optimized BLAS routines
 - **In-place Eligible**: Some operations can be computed in-place for memory efficiency
+- **Data Type Support**: Currently supports `torch.float32` tensors only (see limitations below)
 
 ### Autograd Integration
 
@@ -159,6 +155,15 @@ python -m pytest benchmarks/ --benchmark-only --benchmark-save=results
 - **Cross-platform**: Supports Linux and macOS with appropriate compiler flags
 - **Nix Integration**: Reproducible builds with explicit dependencies
 - **CMake Support**: Alternative build system available
+
+### Limitations
+
+- **Data Type Support**: The current C++ implementation only supports `torch.float32` tensors
+  - Operations will fail with `torch.float64` or other dtypes
+  - This is intentional for the template to demonstrate dtype-specific implementations
+  - Production code should typically support multiple dtypes via templating
+- **Device Support**: CPU only - CUDA implementation not included in this template
+- **Memory Layout**: Input tensors must be contiguous for optimal performance
 
 ## File Structure
 
@@ -190,18 +195,18 @@ pytorch-extension/
 
 This template integrates with Grimoire's Entity-Component-System architecture:
 
-```prolog
-% Query operation information
-?- grimoire perceive "operation_info(parametric_swish)".
+```bash
+# Run Prolog tests for the template semantics
+./grimoire test
 
-% Build the extension
-?- grimoire cast "conjure(build_extension)".
+# Build and test the extension through Nix
+nix build
+nix run .#test
 
-% Run tests
-?- grimoire cast "conjure(run_tests)".
-
-% Run benchmarks  
-?- grimoire cast "conjure(run_benchmarks)".
+# Query template information via Grimoire CLI
+./grimoire entities
+./grimoire comp pytorch_extension_template operation
+./grimoire doc pytorch_extension_template
 ```
 
 ## Extending the Template
