@@ -14,8 +14,6 @@ python3Packages.buildPythonPackage rec {
   src = ./.;
   format = "pyproject";
   
-  pyproject = true;
-  
   nativeBuildInputs = with python3Packages; [
     setuptools
     wheel
@@ -42,16 +40,19 @@ python3Packages.buildPythonPackage rec {
     matplotlib
   ];
 
-  # Configure CMake build
-  preConfigure = ''
-    export CMAKE_PREFIX_PATH="${eigen}/include/eigen3:${openblas}"
-  '';
+  # Skip CMake configuration - we're using setuptools
+  dontUseCmakeConfigure = true;
 
   # Enable tests
   doCheck = true;
   
+  # The tests need to run from the source directory with proper PYTHONPATH
   checkPhase = ''
     runHook preCheck
+    # Create a temporary directory for testing
+    cd $TMPDIR
+    cp -r $src/tests .
+    # Import from the installed package
     python -m pytest tests/ -v
     runHook postCheck
   '';

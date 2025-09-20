@@ -10,8 +10,8 @@ import numpy as np
 import sys
 from pathlib import Path
 
-# Add the python package to the path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
+# # Add the python package to the path for imports
+# sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 
 import pybind_demo
 from pybind_demo import functions, numpy_demo
