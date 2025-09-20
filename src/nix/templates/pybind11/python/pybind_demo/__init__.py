@@ -15,11 +15,12 @@ Python extensions using PyBind11 and C++.
 """
 
 # Import the compiled C++ extension
-try:
-    from pybind_demo import *
-except ImportError:
-    # Fall back for development when module isn't built yet
-    pass
+from . import _core
+from ._core import *
+
+# Re-export submodules
+functions = _core.functions
+numpy_demo = _core.numpy_demo
 
 __version__ = "1.0.0"
 __author__ = "Grimoire Template"

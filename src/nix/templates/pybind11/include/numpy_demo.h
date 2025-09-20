@@ -2,6 +2,9 @@
 
 #include <vector>
 #include <string>
+#include <pybind11/numpy.h>
+
+namespace py = pybind11;
 
 namespace pybind_demo {
 namespace numpy_demo {
@@ -11,9 +14,9 @@ namespace numpy_demo {
  */
 
 // Basic array operations
-std::vector<double> square_array(const std::vector<double>& input);
-std::vector<double> add_arrays(const std::vector<double>& a, const std::vector<double>& b);
-double dot_product(const std::vector<double>& a, const std::vector<double>& b);
+py::array_t<double> square_array(py::array_t<double> input);
+py::array_t<double> add_arrays(py::array_t<double> a, py::array_t<double> b);
+double dot_product(py::array_t<double> a, py::array_t<double> b);
 
 // Matrix operations (represented as vectors with width/height)
 struct Matrix {
@@ -49,11 +52,11 @@ std::vector<double> diff(const std::vector<double>& data);
 std::vector<double> cumsum(const std::vector<double>& data);
 
 // Advanced operations that would benefit from NumPy buffer protocol
-std::vector<double> apply_function(const std::vector<double>& input, 
-                                  double (*func)(double));
-std::vector<double> element_wise_operation(const std::vector<double>& a, 
-                                          const std::vector<double>& b,
-                                          double (*op)(double, double));
+py::array_t<double> apply_function(py::array_t<double> input, 
+                                  py::function func);
+py::array_t<double> element_wise_operation(py::array_t<double> a, 
+                                          py::array_t<double> b,
+                                          py::function op);
 
 // Image processing simulation (treating images as 1D arrays)
 struct Image {

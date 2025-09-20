@@ -4,6 +4,9 @@
 #include <vector>
 #include <memory>
 #include <iostream>
+#include <pybind11/pybind11.h>
+
+namespace py = pybind11;
 
 namespace pybind_demo {
 
@@ -194,16 +197,17 @@ public:
  */
 class ResourceManager {
 private:
-    std::shared_ptr<std::vector<double>> shared_data_;
+    std::vector<double> data_;
     std::unique_ptr<std::string> unique_name_;
+    std::shared_ptr<std::vector<double>> shared_data_;
     
 public:
     ResourceManager();
     explicit ResourceManager(const std::string& name);
     
-    // Smart pointer methods
-    std::shared_ptr<std::vector<double>> get_shared_data() const;
-    void set_shared_data(std::shared_ptr<std::vector<double>> data);
+    // Data access methods
+    std::vector<double> get_data() const;
+    void set_data(const std::vector<double>& data);
     
     const std::string& get_name() const;
     void set_name(const std::string& name);
@@ -212,6 +216,10 @@ public:
     void create_shared_resource(size_t size, double default_value = 0.0);
     bool has_shared_resource() const;
     size_t shared_resource_use_count() const;
+    
+    // Shared data access
+    py::object get_shared_data() const;
+    void set_shared_data(const std::vector<double>& data);
 };
 
 } // namespace pybind_demo

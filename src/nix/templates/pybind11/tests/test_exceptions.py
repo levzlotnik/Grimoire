@@ -13,8 +13,9 @@ import pytest
 import sys
 from typing import Any, Callable
 
+import numpy as np
 import pybind_demo
-import pybind_demo.functions as funcs
+from pybind_demo import functions as funcs
 
 
 class TestStandardExceptions:
@@ -497,7 +498,7 @@ class TestExceptionIntegration:
         # Test with incompatible arrays
         arr3 = np.array([1.0, 2.0])  # Different size
         
-        with pytest.raises((ValueError, RuntimeError)):
+        with pytest.raises((ValueError, RuntimeError, pybind_demo.PyBindDemoException)):
             pybind_demo.numpy_demo.add_arrays(arr1, arr3)
     
     def test_exception_state_consistency_across_modules(self):

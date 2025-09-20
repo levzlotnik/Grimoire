@@ -3,8 +3,6 @@ requires = [
     "setuptools>=64",
     "wheel",
     "pybind11>=2.10.1",
-    "cmake>=3.20",
-    "ninja",
 ]
 build-backend = "setuptools.build_meta"
 
@@ -84,15 +82,6 @@ package-dir = {"" = "python"}
 [tool.setuptools.package-data]
 pybind_demo = ["py.typed"]
 
-# CMake configuration for building the C++ extension
-[tool.cmake]
-source-dir = "."
-build-dir = "build"
-build-type = "Release"
-args = [
-    "-DCMAKE_BUILD_TYPE=Release",
-    "-DPYBIND11_FINDPYTHON=ON",
-]
 
 # Testing configuration
 [tool.pytest.ini_options]

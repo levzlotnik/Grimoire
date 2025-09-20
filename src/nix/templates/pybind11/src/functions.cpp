@@ -52,8 +52,8 @@ std::string format_message(const std::string& message,
 }
 
 // Function working with STL containers
-std::vector<int> process_list(const std::vector<int>& input) {
-    std::vector<int> result;
+std::vector<int64_t> process_list(const std::vector<int64_t>& input) {
+    std::vector<int64_t> result;
     result.reserve(input.size());
     
     for (const auto& value : input) {
@@ -123,22 +123,20 @@ complex_computation(const std::vector<double>& data, double threshold) {
 }
 
 // Functions working with smart pointers
-std::shared_ptr<std::vector<double>> create_shared_vector(size_t size, double default_value) {
-    return std::make_shared<std::vector<double>>(size, default_value);
+std::vector<double> create_vector(size_t size, double default_value) {
+    return std::vector<double>(size, default_value);
 }
 
-void modify_shared_vector(std::shared_ptr<std::vector<double>> vec, double multiplier) {
-    if (vec) {
-        for (auto& value : *vec) {
-            value *= multiplier;
-        }
+void modify_vector_inplace(std::vector<double>& vec, double multiplier) {
+    for (auto& value : vec) {
+        value *= multiplier;
     }
 }
 
 // Function with callback
-std::vector<int> process_with_callback(const std::vector<int>& data, 
-                                      std::function<int(int)> callback) {
-    std::vector<int> result;
+std::vector<int64_t> process_with_callback(const std::vector<int64_t>& data, 
+                                          std::function<int64_t(int64_t)> callback) {
+    std::vector<int64_t> result;
     result.reserve(data.size());
     
     for (const auto& value : data) {
@@ -147,6 +145,7 @@ std::vector<int> process_with_callback(const std::vector<int>& data,
     
     return result;
 }
+
 
 } // namespace functions
 } // namespace pybind_demo

@@ -11,7 +11,7 @@
 namespace py = pybind11;
 using namespace pybind_demo;
 
-PYBIND11_MODULE(pybind_demo, m) {
+PYBIND11_MODULE(_core, m) {
     m.doc() = "PyBind11 comprehensive demo module showcasing all major features";
     
     // Custom exception
@@ -60,19 +60,19 @@ PYBIND11_MODULE(pybind_demo, m) {
                         "Perform complex computation returning tuple of (filtered_data, stats)",
                         py::arg("data"), py::arg("threshold"));
     
-    // Functions working with smart pointers
-    functions_module.def("create_shared_vector", &functions::create_shared_vector,
-                        "Create a shared pointer to vector",
-                        py::arg("size"), py::arg("default_value") = 0,
-                        py::return_value_policy::take_ownership);
-    functions_module.def("modify_shared_vector", &functions::modify_shared_vector,
-                        "Modify shared vector in place",
+    // Functions working with vectors
+    functions_module.def("create_vector", &functions::create_vector,
+                        "Create a vector with given size and default value",
+                        py::arg("size"), py::arg("default_value") = 0);
+    functions_module.def("modify_vector_inplace", &functions::modify_vector_inplace,
+                        "Modify vector in place",
                         py::arg("vec"), py::arg("multiplier"));
     
     // Function with callback
     functions_module.def("process_with_callback", &functions::process_with_callback,
                         "Process data with a callback function",
                         py::arg("data"), py::arg("callback"));
+    
     
     // =======================
     // CALCULATOR CLASS
@@ -183,9 +183,10 @@ PYBIND11_MODULE(pybind_demo, m) {
         .def(py::init<>(), "Default constructor")
         .def(py::init<const std::string&>(), "Constructor with name", py::arg("name"))
         
-        .def_property("shared_data", &ResourceManager::get_shared_data, &ResourceManager::set_shared_data,
-                     "Shared data pointer")
+        .def_property("data", &ResourceManager::get_data, &ResourceManager::set_data,
+                     "Vector data")
         .def_property("name", &ResourceManager::get_name, &ResourceManager::set_name, "Manager name")
+        .def_property("shared_data", &ResourceManager::get_shared_data, &ResourceManager::set_shared_data, "Shared data")
         
         .def("create_shared_resource", &ResourceManager::create_shared_resource,
              "Create shared resource", py::arg("size"), py::arg("default_value") = 0.0)
@@ -197,6 +198,38 @@ PYBIND11_MODULE(pybind_demo, m) {
     // NUMPY DEMO MODULE
     // =======================
     py::module_ numpy_module = m.def_submodule("numpy_demo", "NumPy integration demonstrations");
+    
+    // Helper class for pixel indexing
+    class ImagePixelAccessor {
+    public:
+        ImagePixelAccessor(numpy_demo::Image* img) : img_(img) {}
+        
+        unsigned char getitem(py::tuple index) {
+            if (index.size() == 2) {
+                return img_->pixel(index[0].cast<size_t>(), index[1].cast<size_t>());
+            } else if (index.size() == 3) {
+                return img_->pixel(index[0].cast<size_t>(), index[1].cast<size_t>(), index[2].cast<size_t>());
+            }
+            throw std::runtime_error("Pixel access requires 2 or 3 indices");
+        }
+        
+        void setitem(py::tuple index, unsigned char value) {
+            if (index.size() == 2) {
+                img_->pixel(index[0].cast<size_t>(), index[1].cast<size_t>()) = value;
+            } else if (index.size() == 3) {
+                img_->pixel(index[0].cast<size_t>(), index[1].cast<size_t>(), index[2].cast<size_t>()) = value;
+            } else {
+                throw std::runtime_error("Pixel access requires 2 or 3 indices");
+            }
+        }
+        
+    private:
+        numpy_demo::Image* img_;
+    };
+    
+    py::class_<ImagePixelAccessor>(numpy_module, "ImagePixelAccessor")
+        .def("__getitem__", &ImagePixelAccessor::getitem)
+        .def("__setitem__", &ImagePixelAccessor::setitem);
     
     // Basic array operations
     numpy_module.def("square_array", &numpy_demo::square_array, "Square all elements", py::arg("input"));
@@ -214,12 +247,17 @@ PYBIND11_MODULE(pybind_demo, m) {
         .def_readonly("cols", &numpy_demo::Matrix::cols, "Number of columns")
         .def_readonly("data", &numpy_demo::Matrix::data, "Raw data vector")
         
-        .def("__call__", [](numpy_demo::Matrix& m, size_t row, size_t col) -> double& {
-            return m(row, col);
-        }, "Access element", py::arg("row"), py::arg("col"), py::return_value_policy::reference_internal)
-        .def("__call__", [](const numpy_demo::Matrix& m, size_t row, size_t col) -> double {
-            return m(row, col);
-        }, "Access element (const)", py::arg("row"), py::arg("col"))
+        // Python-style indexing with [row, col] - the only way to access elements
+        .def("__getitem__", [](const numpy_demo::Matrix& m, py::tuple index) -> double {
+            if (index.size() != 2)
+                throw std::runtime_error("Matrix requires 2 indices");
+            return m(index[0].cast<size_t>(), index[1].cast<size_t>());
+        }, "Get element with [row, col]")
+        .def("__setitem__", [](numpy_demo::Matrix& m, py::tuple index, double value) {
+            if (index.size() != 2)
+                throw std::runtime_error("Matrix requires 2 indices");
+            m(index[0].cast<size_t>(), index[1].cast<size_t>()) = value;
+        }, "Set element with [row, col] = value")
         
         .def("to_nested_vector", &numpy_demo::Matrix::to_nested_vector, "Convert to nested Python list")
         .def("to_string", &numpy_demo::Matrix::to_string, "String representation")
@@ -265,13 +303,10 @@ PYBIND11_MODULE(pybind_demo, m) {
         .def_readonly("channels", &numpy_demo::Image::channels, "Number of channels")
         .def_readonly("pixels", &numpy_demo::Image::pixels, "Raw pixel data")
         
-        .def("pixel", [](numpy_demo::Image& img, size_t x, size_t y, size_t channel) -> unsigned char& {
-            return img.pixel(x, y, channel);
-        }, "Access pixel", py::arg("x"), py::arg("y"), py::arg("channel") = 0,
-           py::return_value_policy::reference_internal)
-        .def("pixel", [](const numpy_demo::Image& img, size_t x, size_t y, size_t channel) -> unsigned char {
-            return img.pixel(x, y, channel);
-        }, "Access pixel (const)", py::arg("x"), py::arg("y"), py::arg("channel") = 0)
+        // Create a pixel property that returns an indexable accessor
+        .def_property_readonly("pixel", [](numpy_demo::Image& img) {
+            return ImagePixelAccessor(&img);
+        }, py::return_value_policy::reference_internal, "Pixel accessor with [x, y] or [x, y, channel] indexing")
         
         .def("to_double_array", &numpy_demo::Image::to_double_array, "Convert to double array [0,1]")
         .def("from_double_array", &numpy_demo::Image::from_double_array,

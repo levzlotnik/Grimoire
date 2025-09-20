@@ -94,8 +94,9 @@ class TestCalculatorClass:
         # Chain multiple operations
         result = calc.add(5.0).multiply(2.0).subtract(10.0).divide(2.0)
         
-        # Should end up with (10 + 5) * 2 - 10) / 2 = 12.5
-        assert calc.value == 12.5
+        # Compute expected value: ((10 + 5) * 2 - 10) / 2
+        expected = ((10.0 + 5.0) * 2.0 - 10.0) / 2.0
+        assert calc.value == expected
         assert result == calc  # Should return self
     
     def test_divide_by_zero_handling(self):
@@ -436,10 +437,10 @@ class TestDataContainer:
         assert container.data[1] == 10.0
         
         # Test bounds checking
-        with pytest.raises(IndexError):
+        with pytest.raises(pybind_demo.PyBindDemoException):
             _ = container[10]
         
-        with pytest.raises(IndexError):
+        with pytest.raises(pybind_demo.PyBindDemoException):
             container[10] = 1.0
     
     def test_len_and_iteration(self):

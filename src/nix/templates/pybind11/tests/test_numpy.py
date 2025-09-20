@@ -14,7 +14,8 @@ import pytest
 import numpy as np
 from typing import List, Callable
 
-import pybind_demo.numpy_demo as numpy_demo
+import pybind_demo
+from pybind_demo import numpy_demo
 
 
 @pytest.mark.numpy
@@ -89,7 +90,7 @@ class TestBasicArrayOperations:
         arr2 = np.array([4.0, 5.0])
         
         # Should raise an exception for incompatible sizes
-        with pytest.raises((ValueError, RuntimeError)):
+        with pytest.raises(pybind_demo.PyBindDemoException):
             numpy_demo.add_arrays(arr1, arr2)
     
     def test_dot_product(self, float_comparison):
@@ -115,7 +116,7 @@ class TestBasicArrayOperations:
         arr1 = np.array([1.0, 2.0, 3.0])
         arr2 = np.array([4.0, 5.0])
         
-        with pytest.raises((ValueError, RuntimeError)):
+        with pytest.raises(pybind_demo.PyBindDemoException):
             numpy_demo.dot_product(arr1, arr2)
 
 
@@ -159,46 +160,46 @@ class TestMatrixClass:
         matrix = numpy_demo.Matrix(matrix_data)
         
         # Test element access
-        assert matrix(0, 0) == 1.0
-        assert matrix(0, 1) == 2.0
-        assert matrix(0, 2) == 3.0
-        assert matrix(1, 0) == 4.0
-        assert matrix(1, 1) == 5.0
-        assert matrix(1, 2) == 6.0
+        assert matrix[0, 0] == 1.0
+        assert matrix[0, 1] == 2.0
+        assert matrix[0, 2] == 3.0
+        assert matrix[1, 0] == 4.0
+        assert matrix[1, 1] == 5.0
+        assert matrix[1, 2] == 6.0
     
     def test_matrix_element_modification(self):
         """Test matrix element modification."""
         matrix = numpy_demo.Matrix(2, 2, 0.0)
         
         # Modify elements
-        matrix(0, 0) = 10.0
-        matrix(0, 1) = 20.0
-        matrix(1, 0) = 30.0
-        matrix(1, 1) = 40.0
+        matrix[0, 0] = 10.0
+        matrix[0, 1] = 20.0
+        matrix[1, 0] = 30.0
+        matrix[1, 1] = 40.0
         
         # Verify modifications
-        assert matrix(0, 0) == 10.0
-        assert matrix(0, 1) == 20.0
-        assert matrix(1, 0) == 30.0
-        assert matrix(1, 1) == 40.0
+        assert matrix[0, 0] == 10.0
+        assert matrix[0, 1] == 20.0
+        assert matrix[1, 0] == 30.0
+        assert matrix[1, 1] == 40.0
     
     def test_matrix_bounds_checking(self):
         """Test matrix bounds checking."""
         matrix = numpy_demo.Matrix(2, 3, 1.0)
         
         # Valid accesses should work
-        _ = matrix(0, 0)
-        _ = matrix(1, 2)
+        _ = matrix[0, 0]
+        _ = matrix[1, 2]
         
         # Out of bounds should raise exceptions
-        with pytest.raises((IndexError, RuntimeError)):
-            _ = matrix(2, 0)  # Row out of bounds
+        with pytest.raises(pybind_demo.PyBindDemoException):
+            _ = matrix[2, 0]  # Row out of bounds
         
-        with pytest.raises((IndexError, RuntimeError)):
-            _ = matrix(0, 3)  # Column out of bounds
+        with pytest.raises(pybind_demo.PyBindDemoException):
+            _ = matrix[0, 3]  # Column out of bounds
         
-        with pytest.raises((IndexError, RuntimeError)):
-            matrix(2, 0) = 1.0  # Assignment out of bounds
+        with pytest.raises(pybind_demo.PyBindDemoException):
+            matrix[2, 0] = 1.0  # Assignment out of bounds
     
     def test_matrix_to_nested_vector(self):
         """Test conversion to nested vector."""
@@ -263,17 +264,17 @@ class TestMatrixOperations:
         
         # Expected: [[1*7+2*9+3*11, 1*8+2*10+3*12], [4*7+5*9+6*11, 4*8+5*10+6*12]]
         #         = [[58, 64], [139, 154]]
-        assert abs(result(0, 0) - 58.0) < 1e-10
-        assert abs(result(0, 1) - 64.0) < 1e-10
-        assert abs(result(1, 0) - 139.0) < 1e-10
-        assert abs(result(1, 1) - 154.0) < 1e-10
+        assert abs(result[0, 0] - 58.0) < 1e-10
+        assert abs(result[0, 1] - 64.0) < 1e-10
+        assert abs(result[1, 0] - 139.0) < 1e-10
+        assert abs(result[1, 1] - 154.0) < 1e-10
     
     def test_matrix_multiply_incompatible(self):
         """Test matrix multiplication with incompatible dimensions."""
         a = numpy_demo.Matrix(2, 3, 1.0)  # 2x3
         b = numpy_demo.Matrix(2, 2, 1.0)  # 2x2 (incompatible: 3 != 2)
         
-        with pytest.raises((ValueError, RuntimeError)):
+        with pytest.raises(pybind_demo.PyBindDemoException):
             numpy_demo.matrix_multiply(a, b)
     
     def test_matrix_transpose(self):
@@ -287,12 +288,12 @@ class TestMatrixOperations:
         assert result.cols == 2
         
         # Expected transpose: [[1, 4], [2, 5], [3, 6]]
-        assert result(0, 0) == 1.0
-        assert result(0, 1) == 4.0
-        assert result(1, 0) == 2.0
-        assert result(1, 1) == 5.0
-        assert result(2, 0) == 3.0
-        assert result(2, 1) == 6.0
+        assert result[0, 0] == 1.0
+        assert result[0, 1] == 4.0
+        assert result[1, 0] == 2.0
+        assert result[1, 1] == 5.0
+        assert result[2, 0] == 3.0
+        assert result[2, 1] == 6.0
     
     def test_matrix_transpose_square(self):
         """Test transpose of square matrix."""
@@ -332,7 +333,7 @@ class TestMatrixOperations:
         a = numpy_demo.Matrix(2, 3, 1.0)
         b = numpy_demo.Matrix(3, 2, 1.0)
         
-        with pytest.raises((ValueError, RuntimeError)):
+        with pytest.raises(pybind_demo.PyBindDemoException):
             numpy_demo.matrix_add(a, b)
     
     def test_matrix_vector_multiply(self, float_comparison):
@@ -352,7 +353,7 @@ class TestMatrixOperations:
         matrix = numpy_demo.Matrix(2, 3, 1.0)  # 2x3 matrix
         vector = np.array([1.0, 2.0])          # 2-element vector (incompatible)
         
-        with pytest.raises((ValueError, RuntimeError)):
+        with pytest.raises(pybind_demo.PyBindDemoException):
             numpy_demo.matrix_vector_multiply(matrix, vector)
 
 
@@ -447,7 +448,7 @@ class TestSignalProcessing:
         np.testing.assert_allclose(result, expected)
         
         # Window size larger than array
-        with pytest.raises((ValueError, RuntimeError)):
+        with pytest.raises(pybind_demo.PyBindDemoException):
             numpy_demo.moving_average(data, 5)
     
     def test_diff(self, float_comparison):
@@ -551,7 +552,7 @@ class TestAdvancedOperations:
         def dummy_op(x: float, y: float) -> float:
             return x + y
         
-        with pytest.raises((ValueError, RuntimeError)):
+        with pytest.raises(pybind_demo.PyBindDemoException):
             numpy_demo.element_wise_operation(a, b, dummy_op)
 
 
@@ -582,56 +583,56 @@ class TestImageClass:
         img = numpy_demo.Image(3, 2, 1)
         
         # Set some pixel values
-        img.pixel(0, 0, 0) = 100
-        img.pixel(1, 0, 0) = 150
-        img.pixel(2, 1, 0) = 200
+        img.pixel[0, 0, 0] = 100
+        img.pixel[1, 0, 0] = 150
+        img.pixel[2, 1, 0] = 200
         
         # Read back values
-        assert img.pixel(0, 0, 0) == 100
-        assert img.pixel(1, 0, 0) == 150
-        assert img.pixel(2, 1, 0) == 200
+        assert img.pixel[0, 0, 0] == 100
+        assert img.pixel[1, 0, 0] == 150
+        assert img.pixel[2, 1, 0] == 200
     
     def test_image_pixel_access_rgb(self):
         """Test pixel access in RGB images."""
         img = numpy_demo.Image(2, 2, 3)
         
         # Set RGB values for one pixel
-        img.pixel(0, 0, 0) = 255  # Red
-        img.pixel(0, 0, 1) = 128  # Green
-        img.pixel(0, 0, 2) = 64   # Blue
+        img.pixel[0, 0, 0] = 255  # Red
+        img.pixel[0, 0, 1] = 128  # Green
+        img.pixel[0, 0, 2] = 64   # Blue
         
         # Read back
-        assert img.pixel(0, 0, 0) == 255
-        assert img.pixel(0, 0, 1) == 128
-        assert img.pixel(0, 0, 2) == 64
+        assert img.pixel[0, 0, 0] == 255
+        assert img.pixel[0, 0, 1] == 128
+        assert img.pixel[0, 0, 2] == 64
     
     def test_image_pixel_bounds(self):
         """Test pixel access bounds checking."""
         img = numpy_demo.Image(2, 2, 1)
         
         # Valid access
-        img.pixel(0, 0) = 100
-        assert img.pixel(0, 0) == 100
+        img.pixel[0, 0] = 100
+        assert img.pixel[0, 0] == 100
         
         # Out of bounds
-        with pytest.raises((IndexError, RuntimeError)):
-            _ = img.pixel(2, 0)  # x out of bounds
+        with pytest.raises(pybind_demo.PyBindDemoException):
+            _ = img.pixel[2, 0]  # x out of bounds
         
-        with pytest.raises((IndexError, RuntimeError)):
-            _ = img.pixel(0, 2)  # y out of bounds
+        with pytest.raises(pybind_demo.PyBindDemoException):
+            _ = img.pixel[0, 2]  # y out of bounds
         
-        with pytest.raises((IndexError, RuntimeError)):
-            _ = img.pixel(0, 0, 1)  # channel out of bounds for grayscale
+        with pytest.raises(pybind_demo.PyBindDemoException):
+            _ = img.pixel[0, 0, 1]  # channel out of bounds for grayscale
     
     def test_image_to_double_array(self):
         """Test conversion to double array."""
         img = numpy_demo.Image(2, 2, 1)
         
         # Set some values
-        img.pixel(0, 0) = 0
-        img.pixel(1, 0) = 128
-        img.pixel(0, 1) = 255
-        img.pixel(1, 1) = 64
+        img.pixel[0, 0] = 0
+        img.pixel[1, 0] = 128
+        img.pixel[0, 1] = 255
+        img.pixel[1, 1] = 64
         
         # Convert to double array
         double_array = img.to_double_array()
@@ -649,10 +650,10 @@ class TestImageClass:
         img.from_double_array(double_data)
         
         # Check converted values
-        assert img.pixel(0, 0) == 0
-        assert img.pixel(1, 0) == int(0.5 * 255)
-        assert img.pixel(0, 1) == 255
-        assert img.pixel(1, 1) == int(0.25 * 255)
+        assert img.pixel[0, 0] == 0
+        assert img.pixel[1, 0] == int(0.5 * 255)
+        assert img.pixel[0, 1] == 255
+        assert img.pixel[1, 1] == int(0.25 * 255)
 
 
 @pytest.mark.numpy
@@ -665,7 +666,7 @@ class TestImageProcessing:
         img = numpy_demo.Image(5, 5, 1)
         
         # Set center pixel to max value
-        img.pixel(2, 2) = 255
+        img.pixel[2, 2] = 255
         
         # Apply blur
         blurred = numpy_demo.gaussian_blur(img, 1.0)
@@ -676,11 +677,11 @@ class TestImageProcessing:
         assert blurred.channels == img.channels
         
         # Center should still be bright but not necessarily max
-        center_value = blurred.pixel(2, 2)
+        center_value = blurred.pixel[2, 2]
         assert center_value > 0
         
         # Neighbors should have some intensity too
-        neighbor_value = blurred.pixel(1, 2)
+        neighbor_value = blurred.pixel[1, 2]
         assert neighbor_value > 0
         assert neighbor_value < center_value
     
@@ -692,9 +693,9 @@ class TestImageProcessing:
         # Left half black, right half white
         for y in range(4):
             for x in range(2):
-                img.pixel(x, y) = 0
+                img.pixel[x, y] = 0
             for x in range(2, 4):
-                img.pixel(x, y) = 255
+                img.pixel[x, y] = 255
         
         # Apply edge detection
         edges = numpy_demo.edge_detection(img)
@@ -705,8 +706,8 @@ class TestImageProcessing:
         
         # Should detect the vertical edge
         # Edge pixels should have high intensity
-        edge_intensity = edges.pixel(1, 1)  # Near the edge
-        background_intensity = edges.pixel(0, 0)  # Far from edge
+        edge_intensity = edges.pixel[1, 1]  # Near the edge
+        background_intensity = edges.pixel[0, 0]  # Far from edge
         
         # Edge should be more intense than background
         # (exact values depend on implementation)
@@ -720,7 +721,7 @@ class TestImageProcessing:
         # Fill with pattern
         for y in range(4):
             for x in range(4):
-                img.pixel(x, y) = (x + y) * 30
+                img.pixel[x, y] = (x + y) * 30
         
         # Resize to different dimensions
         resized = numpy_demo.resize(img, 2, 6)  # Make it 2x6
@@ -733,7 +734,7 @@ class TestImageProcessing:
         # (exact values depend on interpolation method)
         for y in range(6):
             for x in range(2):
-                value = resized.pixel(x, y)
+                value = resized.pixel[x, y]
                 assert 0 <= value <= 255
 
 
@@ -795,7 +796,7 @@ class TestNumpyIntegration:
         # Fill with gradient pattern
         for y in range(3):
             for x in range(3):
-                img.pixel(x, y) = (x + y) * 30
+                img.pixel[x, y] = (x + y) * 30
         
         # Convert to matrix via double array
         double_data = img.to_double_array()
@@ -810,7 +811,7 @@ class TestNumpyIntegration:
         flat_data = []
         for i in range(3):
             for j in range(3):
-                flat_data.append(transposed(i, j))
+                flat_data.append(transposed[i, j])
         
         result_img.from_double_array(flat_data)
         
@@ -821,6 +822,6 @@ class TestNumpyIntegration:
         # Check that transpose worked
         for x in range(3):
             for y in range(3):
-                original_value = img.pixel(x, y)
-                transposed_value = result_img.pixel(y, x)
+                original_value = img.pixel[x, y]
+                transposed_value = result_img.pixel[y, x]
                 assert abs(original_value - transposed_value) <= 1  # Allow for rounding

@@ -12,6 +12,7 @@ python3Packages.buildPythonPackage rec {
   version = "1.0.0";
   
   src = ./.;
+  format = "pyproject";
   
   pyproject = true;
   

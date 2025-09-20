@@ -101,7 +101,11 @@
       });
     });
 
-    apps = forAllSystems (system: {
+    apps = forAllSystems (system:
+    let
+      pkgs = nixpkgs.legacyPackages.${system};
+    in
+    {
       test-cpp = {
         type = "app";
         program = "${pkgs.writeShellScript "test-cpp" ''

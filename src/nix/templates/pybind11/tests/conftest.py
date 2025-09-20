@@ -13,12 +13,8 @@ from pathlib import Path
 # Add the python package to the path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 
-try:
-    import pybind_demo
-    import pybind_demo.functions
-    import pybind_demo.numpy_demo
-except ImportError as e:
-    pytest.skip(f"Could not import pybind_demo: {e}", allow_module_level=True)
+import pybind_demo
+from pybind_demo import functions, numpy_demo
 
 
 @pytest.fixture

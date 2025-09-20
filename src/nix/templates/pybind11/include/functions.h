@@ -4,6 +4,7 @@
 #include <vector>
 #include <unordered_map>
 #include <memory>
+#include <functional>
 
 namespace pybind_demo {
 
@@ -29,7 +30,7 @@ std::string format_message(const std::string& message,
                           bool uppercase = false);
 
 // Function working with STL containers
-std::vector<int> process_list(const std::vector<int>& input);
+std::vector<int64_t> process_list(const std::vector<int64_t>& input);
 std::unordered_map<std::string, int> process_dict(const std::unordered_map<std::string, int>& input);
 
 // Function that can throw exceptions
@@ -40,12 +41,13 @@ std::pair<std::vector<double>, std::vector<double>>
 complex_computation(const std::vector<double>& data, double threshold);
 
 // Functions working with smart pointers
-std::shared_ptr<std::vector<double>> create_shared_vector(size_t size, double default_value = 0.0);
-void modify_shared_vector(std::shared_ptr<std::vector<double>> vec, double multiplier);
+std::vector<double> create_vector(size_t size, double default_value = 0.0);
+void modify_vector_inplace(std::vector<double>& vec, double multiplier);
 
 // Function with callback
-std::vector<int> process_with_callback(const std::vector<int>& data, 
-                                      std::function<int(int)> callback);
+std::vector<int64_t> process_with_callback(const std::vector<int64_t>& data, 
+                                          std::function<int64_t(int64_t)> callback);
+
 
 } // namespace functions
 } // namespace pybind_demo
