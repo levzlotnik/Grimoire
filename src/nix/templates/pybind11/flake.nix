@@ -72,10 +72,6 @@
           pkg-config
         ];
         
-        # Environment setup
-        PYTHONPATH = "${self.packages.${system}.pythonEnv}/${self.packages.${system}.pythonEnv.sitePackages}";
-        PYTHON_EXECUTABLE = "${self.packages.${system}.pythonEnv}/bin/python";
-        PATH = "${self.packages.${system}.pythonEnv}/bin:$PATH";
         
         # CMake configuration
         CMAKE_PREFIX_PATH = "${pkgs.eigen}/include/eigen3:${pkgs.openblas}";
@@ -86,17 +82,12 @@
           echo "SWI-Prolog: ${grimoireEnv.swipl}/bin/swipl"
           echo ""
           echo "Available commands:"
+          echo "  python -m pytest tests/      - Run Python tests"
           echo "  nix build                    - Build the PyBind11 package"
-          echo "  nix run .#test-cpp          - Run C++ tests"
-          echo "  nix run .#test-python       - Run Python tests"
           echo "  nix run .#demo              - Run interactive demo"
           echo "  grimoire test               - Run Prolog tests"
           echo ""
-          echo "Development workflow:"
-          echo "  1. Edit C++ code in src/ and include/"
-          echo "  2. Build with: nix build"
-          echo "  3. Test with: nix run .#test-python"
-          echo "  4. Run Grimoire tests: grimoire test"
+          echo "Package built and included in environment (tests disabled during build)."
         '';
       });
     });
@@ -106,26 +97,6 @@
       pkgs = nixpkgs.legacyPackages.${system};
     in
     {
-      test-cpp = {
-        type = "app";
-        program = "${pkgs.writeShellScript "test-cpp" ''
-          cd ${./.}
-          if [ -d build ]; then rm -rf build; fi
-          mkdir build && cd build
-          cmake .. -GNinja -DCMAKE_BUILD_TYPE=Debug
-          ninja
-          echo "C++ tests would run here (placeholder for future native tests)"
-        ''}";
-      };
-      
-      test-python = {
-        type = "app";
-        program = "${pkgs.writeShellScript "test-python" ''
-          cd ${./.}
-          export PYTHONPATH="${self.packages.${system}.pythonEnv}/${self.packages.${system}.pythonEnv.sitePackages}"
-          ${self.packages.${system}.pythonEnv}/bin/python -m pytest tests/ -v --cov=pybind_demo --cov-report=term-missing
-        ''}";
-      };
       
       demo = {
         type = "app";

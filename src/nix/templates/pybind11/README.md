@@ -88,14 +88,14 @@ src/nix/templates/pybind11/
    nix develop
    ```
 
-2. **Build the package:**
+2. **Run tests:**
    ```bash
-   nix build
+   python -m pytest tests/
    ```
 
-3. **Run tests:**
+3. **Build the package:**
    ```bash
-   nix run .#test-python
+   nix build
    ```
 
 4. **Try the interactive demo:**

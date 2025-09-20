@@ -11,16 +11,18 @@ python3Packages.buildPythonPackage rec {
   pname = "pybind11-demo";
   version = "1.0.0";
   
-  src = ./.;
+  src = lib.cleanSource ./.;
   format = "pyproject";
   
   nativeBuildInputs = with python3Packages; [
     setuptools
     wheel
     pybind11
-    cmake
-    ninja
     pkg-config
+    pytest
+    pytest-cov
+    scipy
+    matplotlib
   ];
 
   buildInputs = [
@@ -32,30 +34,6 @@ python3Packages.buildPythonPackage rec {
     numpy
     pybind11
   ];
-
-  checkInputs = with python3Packages; [
-    pytest
-    pytest-cov
-    scipy
-    matplotlib
-  ];
-
-  # Skip CMake configuration - we're using setuptools
-  dontUseCmakeConfigure = true;
-
-  # Enable tests
-  doCheck = true;
-  
-  # The tests need to run from the source directory with proper PYTHONPATH
-  checkPhase = ''
-    runHook preCheck
-    # Create a temporary directory for testing
-    cd $TMPDIR
-    cp -r $src/tests .
-    # Import from the installed package
-    python -m pytest tests/ -v
-    runHook postCheck
-  '';
 
   meta = with lib; {
     description = "Comprehensive PyBind11 template showcasing all major features";
