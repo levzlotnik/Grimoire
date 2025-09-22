@@ -20,8 +20,11 @@
     },
     "golems": {
       "inputs": {
-        "grimoire": [],
+        "grimoire": [
+          "grimoire"
+        ],
         "nixpkgs": [
+          "grimoire",
           "nixpkgs"
         ]
       },
@@ -36,13 +39,35 @@
         "type": "path"
       }
     },
+    "grimoire": {
+      "inputs": {
+        "flake-utils": "flake-utils",
+        "golems": "golems",
+        "grimoire-api": "grimoire-api",
+        "nixpkgs": "nixpkgs"
+      },
+      "locked": {
+        "lastModified": 0,
+        "narHash": "sha256-3YQEbOSLDCDfHLx53mfVgNapOEvutE2Al1kC9NJ2b6U=",
+        "path": "../../../..",
+        "type": "path"
+      },
+      "original": {
+        "path": "../../../..",
+        "type": "path"
+      }
+    },
     "grimoire-api": {
       "inputs": {
         "flake-utils": [
+          "grimoire",
           "flake-utils"
         ],
-        "grimoire-flake": [],
+        "grimoire-flake": [
+          "grimoire"
+        ],
         "nixpkgs": [
+          "grimoire",
           "nixpkgs"
         ]
       },
@@ -59,11 +84,27 @@
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1758277210,
-        "narHash": "sha256-iCGWf/LTy+aY0zFu8q12lK8KuZp7yvdhStehhyX1v8w=",
+        "lastModified": 1756787288,
+        "narHash": "sha256-rw/PHa1cqiePdBxhF66V7R+WAP8WekQ0mCDG4CFqT8Y=",
         "owner": "nixos",
         "repo": "nixpkgs",
-        "rev": "8eaee110344796db060382e15d3af0a9fc396e0e",
+        "rev": "d0fc30899600b9b3466ddb260fd83deb486c32f1",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nixos",
+        "ref": "nixos-unstable",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "nixpkgs_2": {
+      "locked": {
+        "lastModified": 1758198701,
+        "narHash": "sha256-7To75JlpekfUmdkUZewnT6MoBANS0XVypW6kjUOXQwc=",
+        "owner": "nixos",
+        "repo": "nixpkgs",
+        "rev": "0147c2f1d54b30b5dd6d4a8c8542e8d7edf93b5d",
         "type": "github"
       },
       "original": {
@@ -75,10 +116,8 @@
     },
     "root": {
       "inputs": {
-        "flake-utils": "flake-utils",
-        "golems": "golems",
-        "grimoire-api": "grimoire-api",
-        "nixpkgs": "nixpkgs"
+        "grimoire": "grimoire",
+        "nixpkgs": "nixpkgs_2"
       }
     },
     "systems": {

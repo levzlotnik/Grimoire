@@ -57,7 +57,7 @@ Base.metadata.create_all(bind=engine)
 # Pydantic Models
 class UserCreate(BaseModel):
     username: str = Field(..., min_length=3, max_length=50)
-    email: str = Field(..., regex=r'^[^@]+@[^@]+\.[^@]+$')
+    email: str = Field(..., pattern=r'^[^@]+@[^@]+\.[^@]+$')
     password: str = Field(..., min_length=6)
 
 class UserResponse(BaseModel):
@@ -337,6 +337,54 @@ async def websocket_endpoint(websocket: WebSocket):
                 }))
     except WebSocketDisconnect:
         manager.disconnect(websocket)
+
+# Dashboard data endpoints
+@app.get("/api/dashboard/stats")
+async def get_dashboard_stats():
+    return {
+        "total_users": 2847,
+        "revenue": 24847,
+        "orders": 847,
+        "conversion": 3.2
+    }
+
+@app.get("/api/dashboard/monthly-data")
+async def get_monthly_data():
+    return [
+        {"name": "Jan", "revenue": 2400, "expenses": 1800},
+        {"name": "Feb", "revenue": 1398, "expenses": 1200},
+        {"name": "Mar", "revenue": 9800, "expenses": 6500},
+        {"name": "Apr", "revenue": 3908, "expenses": 2800},
+        {"name": "May", "revenue": 4800, "expenses": 3200},
+        {"name": "Jun", "revenue": 3800, "expenses": 2900},
+    ]
+
+@app.get("/api/dashboard/device-distribution")
+async def get_device_distribution():
+    return [
+        {"name": "Desktop", "value": 400, "color": "#8884d8"},
+        {"name": "Mobile", "value": 300, "color": "#82ca9d"},
+        {"name": "Tablet", "value": 300, "color": "#ffc658"},
+    ]
+
+@app.get("/api/dashboard/hourly-activity")
+async def get_hourly_activity():
+    return [
+        {"time": "00:00", "value": 20},
+        {"time": "04:00", "value": 27},
+        {"time": "08:00", "value": 35},
+        {"time": "12:00", "value": 45},
+        {"time": "16:00", "value": 38},
+        {"time": "20:00", "value": 30},
+    ]
+
+@app.get("/api/dashboard/transactions")
+async def get_recent_transactions():
+    return [
+        {"id": "#001", "user": "john@example.com", "amount": "$99.00", "status": "Completed"},
+        {"id": "#002", "user": "jane@example.com", "amount": "$149.00", "status": "Pending"},
+        {"id": "#003", "user": "bob@example.com", "amount": "$79.00", "status": "Completed"},
+    ]
 
 # Health check
 @app.get("/api/health")

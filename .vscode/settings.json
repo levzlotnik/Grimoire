@@ -16,7 +16,7 @@
             "overrideName": true
         }
     },
-    "terminal.integrated.defaultProfile.linux": "nix-shell",
+    "terminal.integrated.defaultProfile.linux": "bash",
     "terminal.integrated.defaultProfile.osx": "nix develop",
     "files.associations": {
         "*.pl": "prolog"
