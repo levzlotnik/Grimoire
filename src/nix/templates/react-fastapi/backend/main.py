@@ -343,9 +343,9 @@ async def websocket_endpoint(websocket: WebSocket):
 async def get_dashboard_stats():
     return {
         "total_users": 2847,
-        "revenue": 24847,
-        "orders": 847,
-        "conversion": 3.2
+        "total_revenue": 24847,
+        "total_orders": 847,
+        "growth_rate": 3.2
     }
 
 @app.get("/api/dashboard/monthly-data")
@@ -390,6 +390,100 @@ async def get_recent_transactions():
 @app.get("/api/health")
 async def health_check():
     return {"status": "healthy", "timestamp": datetime.utcnow()}
+
+@app.get("/api/docs/openapi")
+async def get_openapi_schema():
+    """Get the OpenAPI schema with full endpoint details"""
+    return app.openapi()
+
+@app.get("/api/docs/endpoints")
+async def get_api_endpoints():
+    """Get all available API endpoints with their details from OpenAPI schema"""
+    from fastapi.openapi.utils import get_openapi
+    
+    # Get the full OpenAPI schema
+    openapi_schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        routes=app.routes,
+    )
+    
+    endpoints = []
+    
+    # Parse the OpenAPI schema paths
+    for path, methods in openapi_schema.get("paths", {}).items():
+        # Skip non-API routes
+        if not path.startswith('/api/'):
+            continue
+            
+        for method, details in methods.items():
+            if method.upper() in ['HEAD', 'OPTIONS']:
+                continue
+                
+            endpoint_info = {
+                "method": method.upper(),
+                "path": path,
+                "summary": details.get("summary", ""),
+                "description": details.get("description", ""),
+                "tags": details.get("tags", []),
+                "parameters": [],
+                "requestBody": None,
+                "responses": details.get("responses", {}),
+                "security": [sec for sec in details.get("security", []) if sec],
+                "examples": {}
+            }
+            
+            # Parse parameters
+            for param in details.get("parameters", []):
+                endpoint_info["parameters"].append({
+                    "name": param.get("name"),
+                    "in": param.get("in"),
+                    "required": param.get("required", False),
+                    "type": param.get("schema", {}).get("type", "string"),
+                    "description": param.get("description", ""),
+                    "example": param.get("example")
+                })
+            
+            # Parse request body
+            if "requestBody" in details:
+                req_body = details["requestBody"]
+                content = req_body.get("content", {})
+                if "application/json" in content:
+                    endpoint_info["requestBody"] = {
+                        "description": req_body.get("description", ""),
+                        "content": content
+                    }
+            
+            # Generate realistic examples based on path
+            if "/dashboard/stats" in path:
+                endpoint_info["examples"] = {
+                    "response": {
+                        "total_users": 2847,
+                        "total_revenue": 24847,
+                        "total_orders": 847,
+                        "growth_rate": 3.2
+                    }
+                }
+            elif "/dashboard/monthly-data" in path:
+                endpoint_info["examples"] = {
+                    "response": [
+                        {"name": "Jan", "revenue": 2400, "expenses": 1800},
+                        {"name": "Feb", "revenue": 1398, "expenses": 1200}
+                    ]
+                }
+            
+            endpoints.append(endpoint_info)
+    
+    # Sort by path for consistent ordering
+    endpoints.sort(key=lambda x: (x["path"], x["method"]))
+    
+    return {
+        "endpoints": endpoints,
+        "total_count": len(endpoints),
+        "generated_at": datetime.now().isoformat(),
+        "openapi_version": openapi_schema.get("openapi", "3.0.0")
+    }
 
 # Serve React static files in production
 frontend_dist = Path(__file__).parent.parent / "frontend" / "dist"

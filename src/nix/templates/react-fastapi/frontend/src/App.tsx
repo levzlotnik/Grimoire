@@ -4,7 +4,6 @@ import { Landing } from './pages/Landing'
 import { Dashboard } from './pages/Dashboard'
 import { Documentation } from './pages/Documentation'
 import { Showcase } from './pages/Showcase'
-import { Playground } from './pages/Playground'
 
 function App() {
   return (
@@ -17,7 +16,6 @@ function App() {
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/docs" element={<Documentation />} />
             <Route path="/showcase" element={<Showcase />} />
-            <Route path="/playground" element={<Playground />} />
           </Routes>
         </main>
       </div>
