@@ -57,7 +57,19 @@ cast(conjure(react_fastapi_template(test_backend)), RetVal) :-
 cast(conjure(react_fastapi_template(test_frontend)), RetVal) :-
     cast(conjure(nix(run(['.#test-frontend']))), RetVal).
 
-% Define the main components of the fullstack application
+% Define the main subcomponents of the fullstack application
+entity(react_fastapi_template(frontend)).
+entity(react_fastapi_template(backend)).
+
+% Subcomponent relationships
+component(react_fastapi_template, subcomponent, frontend).
+component(react_fastapi_template, subcomponent, backend).
+
+% Load semantic knowledge from subcomponents
+:- load_entity(semantic(folder("frontend"))).
+:- load_entity(semantic(folder("backend"))).
+
+% Legacy entities for backwards compatibility
 entity(frontend_app).
 entity(backend_app).
 entity(database_layer).

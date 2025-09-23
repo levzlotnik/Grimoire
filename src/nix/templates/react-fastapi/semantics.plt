@@ -156,12 +156,27 @@ test(has_build_artifacts) :-
 test(conjure_target_available) :-
     component(conjure, ctor, react_fastapi_template).
 
-% Test command implementations (these would require actual Nix environment to test)
-test(command_implementations_defined, [true]) :-
-    % We can test that the clauses are defined
+% Test command implementations - verify spell clauses are defined
+test(conjure_spells_defined) :-
+    % Test that all conjuration spell clauses are defined
     clause(cast(conjure(react_fastapi_template(run)), _), _),
     clause(cast(conjure(react_fastapi_template(dev)), _), _),
-    clause(cast(conjure(react_fastapi_template(test)), _), _).
+    clause(cast(conjure(react_fastapi_template(test)), _), _),
+    clause(cast(conjure(react_fastapi_template(test_backend)), _), _),
+    clause(cast(conjure(react_fastapi_template(test_frontend)), _), _).
+
+% Test that conjure spells delegate to nix(run(...))
+test(conjure_spells_delegate_to_nix) :-
+    % Test that spell bodies contain nix(run(...)) calls
+    clause(cast(conjure(react_fastapi_template(run)), _), Body),
+    contains_nix_run_call(Body),
+    clause(cast(conjure(react_fastapi_template(dev)), _), Body2),
+    contains_nix_run_call(Body2).
+
+% Helper to check if clause body contains nix(run(...)) call
+contains_nix_run_call(cast(conjure(nix(run(_))), _)) :- !.
+contains_nix_run_call((A, _)) :- contains_nix_run_call(A), !.
+contains_nix_run_call((_, B)) :- contains_nix_run_call(B), !.
 
 % Test completeness - ensure all major components are covered
 test(architecture_completeness) :-
