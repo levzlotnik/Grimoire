@@ -13,10 +13,10 @@ interface CodeBlockWithOutputProps {
   isExampleOutput?: boolean
 }
 
-export function CodeBlockWithOutput({ 
-  code, 
-  language, 
-  expectedOutput, 
+export function CodeBlockWithOutput({
+  code,
+  language,
+  expectedOutput,
   codeType = 'programming',
   filePath,
   isExampleOutput = false
@@ -24,9 +24,9 @@ export function CodeBlockWithOutput({
   const [copied, setCopied] = useState(false)
 
   // Determine if it's a shell-like language
-  const isShellLike = codeType === 'shell' || codeType === 'repl' || 
+  const isShellLike = codeType === 'shell' || codeType === 'repl' ||
                      ['bash', 'shell', 'sh', 'zsh', 'fish', 'powershell', 'cmd'].includes(language.toLowerCase())
-  
+
   // Choose theme based on language type
   const codeTheme = isShellLike ? dark : oneDark
   const showLineNumbers = !isShellLike
@@ -56,20 +56,6 @@ export function CodeBlockWithOutput({
     setTimeout(() => setCopied(false), 2000)
   }
 
-  const getLanguageLabel = (lang: string) => {
-    const labels: Record<string, string> = {
-      'typescript': 'TypeScript',
-      'javascript': 'JavaScript',
-      'python': 'Python',
-      'bash': 'Bash',
-      'shell': 'Shell',
-      'json': 'JSON',
-      'yaml': 'YAML',
-      'sql': 'SQL',
-      'curl': 'cURL'
-    }
-    return labels[lang] || lang.toUpperCase()
-  }
 
   return (
     <div className="space-y-4">
@@ -97,7 +83,7 @@ export function CodeBlockWithOutput({
             )}
           </button>
         </div>
-        
+
         <SyntaxHighlighter
           language={language}
           style={codeTheme}
@@ -119,7 +105,7 @@ export function CodeBlockWithOutput({
           <span className="font-medium">{getOutputTitle()}</span>
           <span className="text-sm text-green-200">✓ Executed</span>
         </div>
-        
+
         <SyntaxHighlighter
           language="json"
           style={oneDark}

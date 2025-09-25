@@ -25,6 +25,7 @@ export interface HourlyActivity {
 
 export interface Transaction {
   id: string
+  user: string
   description: string
   amount: number
   status: 'completed' | 'pending' | 'failed'

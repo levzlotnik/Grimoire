@@ -145,7 +145,7 @@ export function TablesShowcase({
         <div className="mt-4 flex items-center justify-between">
           <div className="flex items-center space-x-2">
             <button
-              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+              onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
               disabled={currentPage === 1}
               className="px-3 py-1 border border-gray-300 rounded-md text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
             >
@@ -155,7 +155,7 @@ export function TablesShowcase({
               Page {currentPage} of 2
             </span>
             <button
-              onClick={() => setCurrentPage(prev => Math.min(2, prev + 1))}
+              onClick={() => setCurrentPage(Math.min(2, currentPage + 1))}
               disabled={currentPage === 2}
               className="px-3 py-1 border border-gray-300 rounded-md text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
             >

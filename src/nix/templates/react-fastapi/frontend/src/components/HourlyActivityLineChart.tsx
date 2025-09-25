@@ -1,5 +1,5 @@
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
-import type { HourlyActivity } from '../types/dashboard'
+import type { HourlyActivity } from '../types/api'
 
 interface HourlyActivityLineChartProps {
   data: HourlyActivity[]
@@ -16,10 +16,10 @@ export function HourlyActivityLineChart({ data, title = "Hourly Activity" }: Hou
           <XAxis dataKey="time" />
           <YAxis />
           <Tooltip />
-          <Line 
-            type="monotone" 
-            dataKey="value" 
-            stroke="#8884d8" 
+          <Line
+            type="monotone"
+            dataKey="value"
+            stroke="#8884d8"
             strokeWidth={2}
             dot={{ r: 4 }}
             activeDot={{ r: 6 }}

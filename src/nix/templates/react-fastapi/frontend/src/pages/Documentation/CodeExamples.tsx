@@ -1,5 +1,4 @@
 import { CodeWithOutputBlock } from '../../components/CodeWithOutputBlock'
-import { CommandWithOutputBlock } from '../../components/CommandWithOutputBlock'
 
 export function CodeExamples() {
   return (
@@ -13,17 +12,17 @@ export function CodeExamples() {
         <div className="space-y-8">
           <div>
             <h3 className="text-xl font-semibold text-gray-900 mb-4">JavaScript/TypeScript Example</h3>
-            
+
             <div className="space-y-6">
               <CodeWithOutputBlock
                 code={`// Complete API client with authentication
 const makeAuthenticatedRequest = async (url, options = {}) => {
   const token = localStorage.getItem('access_token');
-  
+
   if (!token) {
     throw new Error('No authentication token found');
   }
-  
+
   const response = await fetch(url, {
     ...options,
     headers: {
@@ -32,12 +31,12 @@ const makeAuthenticatedRequest = async (url, options = {}) => {
       ...options.headers
     }
   });
-  
+
   if (response.status === 401) {
     localStorage.removeItem('access_token');
     throw new Error('Authentication failed');
   }
-  
+
   return response;
 };
 
@@ -47,15 +46,15 @@ const loginAndCreateTask = async (username, password, taskTitle) => {
   const formData = new FormData();
   formData.append('username', username);
   formData.append('password', password);
-  
+
   const loginResponse = await fetch('http://localhost:8000/api/login', {
     method: 'POST',
     body: formData
   });
-  
+
   const tokenData = await loginResponse.json();
   localStorage.setItem('access_token', tokenData.access_token);
-  
+
   // Create task
   const taskResponse = await makeAuthenticatedRequest('http://localhost:8000/api/tasks', {
     method: 'POST',
@@ -64,7 +63,7 @@ const loginAndCreateTask = async (username, password, taskTitle) => {
       description: "Created via JavaScript client"
     })
   });
-  
+
   return taskResponse.json();
 };
 
@@ -86,14 +85,14 @@ const loginAndCreateTask = async (username, password, taskTitle) => {
       method: 'POST',
       body: formData
     });
-    
+
     if (!loginResponse.ok) {
       throw new Error(\`Login failed: \${loginResponse.status}\`);
     }
-    
+
     const tokenData = await loginResponse.json();
     localStorage.setItem('access_token', tokenData.access_token);
-    
+
     return tokenData;
   } catch (error) {
     console.error('Authentication error:', error);
@@ -120,7 +119,7 @@ Critical: Application cannot continue without valid credentials`}
 
           <div>
             <h3 className="text-xl font-semibold text-gray-900 mb-4">Python</h3>
-            
+
             <div className="space-y-6">
               <CodeWithOutputBlock
                 code={`# Python API client using requests
@@ -133,25 +132,25 @@ class TaskAPIClient:
         self.base_url = base_url
         self.session = requests.Session()
         self.token: Optional[str] = None
-    
+
     def login(self, username: str, password: str) -> Dict[str, Any]:
         """Authenticate user and store token"""
         data = {'username': username, 'password': password}
         response = self.session.post(f"{self.base_url}/api/login", data=data)
         response.raise_for_status()
-        
+
         token_data = response.json()
         self.token = token_data['access_token']
         self.session.headers.update({
             'Authorization': f'Bearer {self.token}'
         })
         return token_data
-    
+
     def create_task(self, title: str, description: str = "") -> Dict[str, Any]:
         """Create a new task"""
         task_data = {"title": title, "description": description}
         response = self.session.post(
-            f"{self.base_url}/api/tasks", 
+            f"{self.base_url}/api/tasks",
             json=task_data
         )
         response.raise_for_status()
@@ -160,11 +159,11 @@ class TaskAPIClient:
 # Example usage
 if __name__ == "__main__":
     client = TaskAPIClient()
-    
+
     # Login
     token_data = client.login("johndoe", "secret123")
     print(f"Logged in! Token expires in {token_data['expires_in']}s")
-    
+
     # Create task
     task = client.create_task("Complete Python integration", "Add Python examples to docs")
     print(f"Created task: {task['title']} (ID: {task['id']})")`}
@@ -191,7 +190,7 @@ def test_connection_failure():
         )
         response.raise_for_status()
         return response.json()
-    
+
     except requests.exceptions.ConnectionError as e:
         print(f"Fatal: Connection failed - {e}")
         raise
@@ -232,7 +231,7 @@ Error: Max retries exceeded for localhost:9999`}
 
           <div>
             <h3 className="text-xl font-semibold text-gray-900 mb-4">C++</h3>
-            
+
             <div className="space-y-6">
               <CodeWithOutputBlock
                 code={`#include <iostream>
@@ -247,12 +246,12 @@ private:
     std::string base_url;
     std::string auth_token;
     CURL* curl;
-    
+
     struct APIResponse {
         std::string data;
         long status_code;
     };
-    
+
     static size_t WriteCallback(void* contents, size_t size, size_t nmemb, APIResponse* response) {
         size_t total_size = size * nmemb;
         response->data.append((char*)contents, total_size);
@@ -263,25 +262,25 @@ public:
     TaskAPIClient(const std::string& url = "http://localhost:8000") : base_url(url) {
         curl = curl_easy_init();
     }
-    
+
     ~TaskAPIClient() {
         if (curl) curl_easy_cleanup(curl);
     }
-    
+
     bool login(const std::string& username, const std::string& password) {
         if (!curl) return false;
-        
+
         APIResponse response;
         std::string form_data = "username=" + username + "&password=" + password;
-        
+
         curl_easy_setopt(curl, CURLOPT_URL, (base_url + "/api/login").c_str());
         curl_easy_setopt(curl, CURLOPT_POSTFIELDS, form_data.c_str());
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
-        
+
         CURLcode res = curl_easy_perform(curl);
         curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response.status_code);
-        
+
         if (res == CURLE_OK && response.status_code == 200) {
             json token_data = json::parse(response.data);
             auth_token = token_data["access_token"];
@@ -289,26 +288,26 @@ public:
         }
         return false;
     }
-    
+
     json create_task(const std::string& title, const std::string& description = "") {
         json task_data = {{"title", title}, {"description", description}};
         std::string json_string = task_data.dump();
-        
+
         APIResponse response;
         struct curl_slist* headers = nullptr;
         std::string auth_header = "Authorization: Bearer " + auth_token;
         headers = curl_slist_append(headers, "Content-Type: application/json");
         headers = curl_slist_append(headers, auth_header.c_str());
-        
+
         curl_easy_setopt(curl, CURLOPT_URL, (base_url + "/api/tasks").c_str());
         curl_easy_setopt(curl, CURLOPT_POSTFIELDS, json_string.c_str());
         curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
-        
+
         curl_easy_perform(curl);
         curl_slist_free_all(headers);
-        
+
         return json::parse(response.data);
     }
 };`}
@@ -324,7 +323,7 @@ Task created: {"id": 43, "title": "C++ integration complete"}`}
 
           <div>
             <h3 className="text-xl font-semibold text-gray-900 mb-4">Rust</h3>
-            
+
             <div className="space-y-6">
               <CodeWithOutputBlock
                 code={`use reqwest;
@@ -347,18 +346,18 @@ impl TaskAPIClient {
             auth_token: None,
         }
     }
-    
+
     pub async fn login(&mut self, username: &str, password: &str) -> Result<Value, Box<dyn std::error::Error>> {
         let mut form_data = HashMap::new();
         form_data.insert("username", username);
         form_data.insert("password", password);
-        
+
         let response = self.client
             .post(&format!("{}/api/login", self.base_url))
             .form(&form_data)
             .send()
             .await?;
-            
+
         if response.status().is_success() {
             let token_data: Value = response.json().await?;
             if let Some(token) = token_data["access_token"].as_str() {
@@ -369,24 +368,24 @@ impl TaskAPIClient {
             Err(format!("Login failed: {}", response.status()).into())
         }
     }
-    
+
     pub async fn create_task(&self, title: &str, description: &str) -> Result<Value, Box<dyn std::error::Error>> {
         let task_data = json!({
             "title": title,
             "description": description
         });
-        
+
         let mut request = self.client.post(&format!("{}/api/tasks", self.base_url));
-        
+
         if let Some(ref token) = self.auth_token {
             request = request.header("Authorization", token);
         }
-        
+
         let response = request
             .json(&task_data)
             .send()
             .await?;
-            
+
         if response.status().is_success() {
             Ok(response.json().await?)
         } else {
@@ -398,15 +397,15 @@ impl TaskAPIClient {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut client = TaskAPIClient::new("http://localhost:8000");
-    
+
     // Login
     let token_data = client.login("johndoe", "secret123").await?;
     println!("Login successful! Token type: {}", token_data["token_type"]);
-    
+
     // Create task
     let task = client.create_task("Rust integration", "Add async Rust examples").await?;
     println!("Created task: {} (ID: {})", task["title"], task["id"]);
-    
+
     Ok(())
 }`}
                 language="rust"
@@ -421,7 +420,7 @@ Created task: Rust integration (ID: 44)`}
 
           <div>
             <h3 className="text-xl font-semibold text-gray-900 mb-4">Haskell</h3>
-            
+
             <div className="space-y-6">
               <CodeWithOutputBlock
                 code={`{-# LANGUAGE OverloadedStrings #-}
@@ -436,7 +435,7 @@ data LoginRequest = LoginRequest
   , password :: String
   } deriving (Show)
 
-data TaskRequest = TaskRequest  
+data TaskRequest = TaskRequest
   { title :: String
   , description :: String
   } deriving (Show, Generic)
@@ -452,7 +451,7 @@ loginUser user pass = do
   let formData = [("username", C8.pack user), ("password", C8.pack pass)]
   request <- parseRequest "POST http://localhost:8000/api/login"
   let request' = setRequestBodyURLEncoded formData request
-  
+
   response <- httpJSON request'
   case getResponseStatusCode response of
     200 -> do
@@ -462,34 +461,34 @@ loginUser user pass = do
         Nothing -> return $ Left "Invalid response format"
     _ -> return $ Left "Authentication failed"
 
--- Pure function composition and higher-order functions  
+-- Pure function composition and higher-order functions
 createTask :: APIToken -> String -> String -> IO (Either String Value)
 createTask token title desc = do
   let taskData = TaskRequest title desc
   request <- parseRequest "POST http://localhost:8000/api/tasks"
-  let request' = setRequestBodyJSON taskData 
+  let request' = setRequestBodyJSON taskData
                $ addRequestHeader "Authorization" (C8.pack $ "Bearer " ++ token)
                $ request
-  
+
   response <- httpJSON request'
   case getResponseStatusCode response of
     200 -> return $ Right (getResponseBody response)
     _ -> return $ Left "Task creation failed"
 
--- Functional pipeline with monadic composition  
+-- Functional pipeline with monadic composition
 apiWorkflow :: String -> String -> String -> String -> IO ()
 apiWorkflow user pass taskTitle taskDesc = do
   result <- loginUser user pass >>= \\case
     Left err -> return $ Left err
     Right token -> createTask token taskTitle taskDesc
-    
+
   case result of
     Left err -> putStrLn $ "Error: " ++ err
     Right task -> putStrLn $ "Task created: " ++ show task
 
 -- Type-safe computation with Maybe and Either
 safeHead :: [a] -> Maybe a
-safeHead [] = Nothing  
+safeHead [] = Nothing
 safeHead (x:_) = Just x
 
 fibonacci :: Integer -> Integer
@@ -511,7 +510,7 @@ main = apiWorkflow "johndoe" "secret123" "Haskell Integration" "Pure functional 
 
           <div>
             <h3 className="text-xl font-semibold text-gray-900 mb-4">Prolog</h3>
-            
+
             <div className="space-y-6">
               <CodeWithOutputBlock
                 code={`% Prolog API client using HTTP library
@@ -529,20 +528,20 @@ init_client :-
 login(Username, Password) :-
     BaseURL = 'http://localhost:8000',
     atom_concat(BaseURL, '/api/login', LoginURL),
-    
+
     % Prepare form data
     FormData = [username=Username, password=Password],
-    
+
     % Make HTTP POST request
     http_post(LoginURL, form_data(FormData), Response, []),
-    
+
     % Parse JSON response
     atom_json_term(Response, TokenData, []),
-    
+
     % Extract and store token
     get_dict(access_token, TokenData, Token),
     assertz(auth_token(Token)),
-    
+
     format('Login successful! Token: ~w~n', [Token]).
 
 % Create a new task
@@ -550,35 +549,35 @@ create_task(Title, Description, TaskId) :-
     auth_token(Token),
     BaseURL = 'http://localhost:8000',
     atom_concat(BaseURL, '/api/tasks', TaskURL),
-    
+
     % Prepare JSON payload
     TaskData = _{title: Title, description: Description},
     atom_json_term(TaskJSON, TaskData, []),
-    
+
     % Prepare headers with authentication
     atom_concat('Bearer ', Token, AuthHeader),
     Headers = ['Authorization'(AuthHeader), 'Content-Type'('application/json')],
-    
+
     % Make authenticated HTTP POST request
     http_post(TaskURL, json(TaskData), Response, [request_header('Authorization'=AuthHeader)]),
-    
+
     % Parse response
     atom_json_term(Response, ResponseData, []),
     get_dict(id, ResponseData, TaskId),
     get_dict(title, ResponseData, ResponseTitle),
-    
+
     format('Task created: ~w (ID: ~w)~n', [ResponseTitle, TaskId]).
 
 % Main execution predicate
 run_example :-
     init_client,
-    
+
     % Login
     login('johndoe', 'secret123'),
-    
+
     % Create task
     create_task('Prolog integration', 'Add logic programming examples', TaskId),
-    
+
     format('✓ Prolog logic programming demonstrated~n'),
     format('✓ Declarative HTTP client implementation~n'),
     format('✓ Pattern matching and unification~n').
@@ -602,18 +601,18 @@ Task created: Prolog integration (ID: 46)
 
           <div>
             <h3 className="text-xl font-semibold text-gray-900 mb-4">Error Handling Examples</h3>
-            
+
             <div className="space-y-6">
               <CodeWithOutputBlock
                 code={`// Comprehensive error handling wrapper
 const apiRequest = async (url, options = {}) => {
   try {
     const response = await makeAuthenticatedRequest(url, options);
-    
+
     // Handle different HTTP status codes
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      
+
       switch (response.status) {
         case 400:
           throw new Error(\`Bad Request: \${errorData.detail || 'Invalid data'}\`);
@@ -631,7 +630,7 @@ const apiRequest = async (url, options = {}) => {
           throw new Error(\`HTTP \${response.status}: \${errorData.detail || 'Unknown error'}\`);
       }
     }
-    
+
     return response.json();
   } catch (error) {
     if (error.name === 'TypeError' && error.message.includes('fetch')) {
@@ -655,11 +654,11 @@ const formatValidationErrors = (errorData) => {
 const TaskForm = () => {
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
-  
+
   const handleSubmit = async (formData) => {
     setLoading(true);
     setError(null);
-    
+
     try {
       await apiRequest('/api/tasks', {
         method: 'POST',
@@ -672,7 +671,7 @@ const TaskForm = () => {
       setLoading(false);
     }
   };
-  
+
   return (
     <form onSubmit={handleSubmit}>
       {error && (

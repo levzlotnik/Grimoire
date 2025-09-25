@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { clsx } from 'clsx'
 import { CodeBlock } from '../../components/CodeBlock'
 import {
-  X,
   AlertCircle,
   Plus,
   Edit,
@@ -173,7 +172,9 @@ export function Showcase() {
           currentBreadcrumb={currentBreadcrumb} 
           setCurrentBreadcrumb={setCurrentBreadcrumb} 
           navTab={navTab} 
-          setNavTab={setNavTab} 
+          setNavTab={setNavTab}
+          currentPage={currentPage}
+          setCurrentPage={setCurrentPage}
         />
       case 'feedback': 
         return <FeedbackShowcase 

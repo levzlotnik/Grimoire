@@ -1,5 +1,5 @@
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
-import type { MonthlyData } from '../types/dashboard'
+import type { MonthlyData } from '../types/api'
 
 interface MonthlyFinanceBarChartProps {
   data: MonthlyData[]
@@ -15,9 +15,9 @@ export function MonthlyFinanceBarChart({ data, title = "Monthly Financial Overvi
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis dataKey="name" />
           <YAxis />
-          <Tooltip 
+          <Tooltip
             formatter={(value: number, name: string) => [
-              `$${value.toLocaleString()}`, 
+              `$${value.toLocaleString()}`,
               name === 'revenue' ? 'Revenue' : 'Expenses'
             ]}
           />

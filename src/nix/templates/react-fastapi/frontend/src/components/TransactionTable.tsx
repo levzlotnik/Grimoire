@@ -1,4 +1,4 @@
-import type { Transaction } from '../types/dashboard'
+import type { Transaction } from '../types/api'
 
 interface TransactionTableProps {
   data: Transaction[]
@@ -36,8 +36,8 @@ export function TransactionTable({ data, title = "Recent Transactions" }: Transa
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{transaction.amount}</td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                      transaction.status === 'Completed' 
-                        ? 'bg-green-100 text-green-800' 
+                      transaction.status === 'completed'
+                        ? 'bg-green-100 text-green-800'
                         : 'bg-yellow-100 text-yellow-800'
                     }`}>
                       {transaction.status}

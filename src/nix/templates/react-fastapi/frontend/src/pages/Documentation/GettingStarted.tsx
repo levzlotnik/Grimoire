@@ -1,4 +1,3 @@
-import { CodeWithOutputBlock } from '../../components/CodeWithOutputBlock'
 import { CommandWithOutputBlock } from '../../components/CommandWithOutputBlock'
 
 export function GettingStarted() {
@@ -7,7 +6,7 @@ export function GettingStarted() {
       <section>
         <h2 className="text-2xl font-bold text-gray-900 mb-4">Getting Started</h2>
         <p className="text-gray-600 mb-6">
-          This guide will help you set up and run the React FastAPI template locally. 
+          This guide will help you set up and run the React FastAPI template locally.
           Choose your preferred development environment from the options below.
         </p>
 
@@ -27,7 +26,7 @@ export function GettingStarted() {
             <p className="text-gray-600 mb-4">
               The fastest way to get started. Nix provides a completely reproducible development environment.
             </p>
-            
+
             <div className="space-y-6">
               <CommandWithOutputBlock
                 command={`# Clone the repository
@@ -41,7 +40,7 @@ nix develop`}
 
 Available commands:
   - nix run .#dev     # Start development servers
-  - nix run .#test    # Run all tests  
+  - nix run .#test    # Run all tests
   - nix run .#build   # Build for production
   - nix run .#check   # Run linting and type checking
 
@@ -119,7 +118,7 @@ Test Files  2 passed (2)
             <p className="text-gray-600 mb-4">
               Great for containerized development and testing deployment configurations.
             </p>
-            
+
             <div className="space-y-6">
               <CommandWithOutputBlock
                 command={`# Clone and navigate to project
@@ -137,9 +136,9 @@ docker-compose up`}
 
 Attaching to react-fastapi-template-backend-1, react-fastapi-template-frontend-1
 react-fastapi-template-backend-1   | INFO:     Uvicorn running on http://0.0.0.0:8000
-react-fastapi-template-frontend-1  | 
+react-fastapi-template-frontend-1  |
 react-fastapi-template-frontend-1  |   VITE v5.0.0  ready in 1.2s
-react-fastapi-template-frontend-1  | 
+react-fastapi-template-frontend-1  |
 react-fastapi-template-frontend-1  |   ➜  Local:   http://localhost:3000/
 react-fastapi-template-frontend-1  |   ➜  Network: http://172.18.0.4:3000/
 
@@ -162,7 +161,7 @@ docker-compose down`}
                 output={`# Starting detached:
 [+] Running 3/3
  ✔ Container react-fastapi-template-db-1       Started
- ✔ Container react-fastapi-template-backend-1  Started  
+ ✔ Container react-fastapi-template-backend-1  Started
  ✔ Container react-fastapi-template-frontend-1 Started
 
 # Viewing logs:
@@ -186,7 +185,7 @@ react-fastapi-template-frontend-1  | ready in 1.2s
             <p className="text-gray-600 mb-4">
               For developers who prefer managing dependencies manually or need custom configurations.
             </p>
-            
+
             <div className="space-y-6">
               <CommandWithOutputBlock
                 command={`# Clone the repository
@@ -208,8 +207,8 @@ Resolving deltas: 100% (45/45), done.
 
 Creating virtual environment...
 Installing dependencies...
-Successfully installed fastapi-0.104.1 uvicorn-0.24.0 sqlalchemy-2.0.23 
-pydantic-2.5.0 python-multipart-0.0.6 passlib-1.7.4 python-jose-3.3.0 
+Successfully installed fastapi-0.104.1 uvicorn-0.24.0 sqlalchemy-2.0.23
+pydantic-2.5.0 python-multipart-0.0.6 passlib-1.7.4 python-jose-3.3.0
 bcrypt-4.0.1 pytest-7.4.3 httpx-0.25.2
 
 ✅ Backend setup complete!`}
@@ -230,7 +229,7 @@ found 0 vulnerabilities
 
 Dependencies installed:
 - react: ^18.2.0
-- typescript: ^5.0.2  
+- typescript: ^5.0.2
 - vite: ^5.0.0
 - tailwindcss: ^3.3.0
 - @types/react: ^18.2.15
@@ -245,7 +244,7 @@ Dependencies installed:
                 command={`# Start backend (from backend directory)
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
 
-# In another terminal, start frontend (from frontend directory)  
+# In another terminal, start frontend (from frontend directory)
 npm run dev`}
                 language="bash"
                 output={`Backend server:
@@ -275,7 +274,7 @@ Frontend server:
             <p className="text-green-800 mb-4">
               Your development environment is now running. Here's what you can access:
             </p>
-            
+
             <div className="grid md:grid-cols-2 gap-4 mb-6">
               <div className="bg-white border border-green-200 rounded p-4">
                 <h4 className="font-semibold text-green-900 mb-2">Frontend</h4>
@@ -286,7 +285,7 @@ Frontend server:
                   <li>⚡ Hot reload enabled</li>
                 </ul>
               </div>
-              
+
               <div className="bg-white border border-green-200 rounded p-4">
                 <h4 className="font-semibold text-green-900 mb-2">Backend</h4>
                 <ul className="text-green-800 text-sm space-y-1">
@@ -313,23 +312,23 @@ Frontend server:
           {/* Troubleshooting */}
           <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6">
             <h3 className="text-lg font-semibold text-yellow-900 mb-3">🔧 Troubleshooting</h3>
-            
+
             <div className="space-y-4 text-yellow-800">
               <div>
                 <h4 className="font-medium mb-1">Port already in use (3000 or 8000)</h4>
                 <p className="text-sm">Kill existing processes: <code className="bg-yellow-100 px-1 rounded">lsof -ti:3000 | xargs kill -9</code></p>
               </div>
-              
+
               <div>
                 <h4 className="font-medium mb-1">Database connection issues</h4>
                 <p className="text-sm">Delete <code className="bg-yellow-100 px-1 rounded">backend/app.db</code> to reset the database</p>
               </div>
-              
+
               <div>
                 <h4 className="font-medium mb-1">Nix flakes not enabled</h4>
                 <p className="text-sm">Add to <code className="bg-yellow-100 px-1 rounded">~/.config/nix/nix.conf</code>: <code className="bg-yellow-100 px-1 rounded">experimental-features = nix-command flakes</code></p>
               </div>
-              
+
               <div>
                 <h4 className="font-medium mb-1">Docker permission denied</h4>
                 <p className="text-sm">Add user to docker group: <code className="bg-yellow-100 px-1 rounded">sudo usermod -aG docker $USER</code> (requires logout/login)</p>

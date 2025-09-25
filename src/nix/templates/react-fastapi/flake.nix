@@ -63,22 +63,20 @@
           mypy
         ]);
         
-        # Frontend build
-        frontendBuild = pkgs.stdenv.mkDerivation {
+        # Frontend build using buildNpmPackage
+        frontendBuild = pkgs.buildNpmPackage {
           pname = "react-fastapi-frontend";
           version = "1.0.0";
           src = ./frontend;
           
-          nativeBuildInputs = [ nodejs pkgs.nodePackages.npm ];
+          # npm dependencies hash
+          npmDepsHash = "sha256-NTnprvHUayp4jawqnO07hvfS/QMVR6DTq/SzVR0dJj4=";
           
-          buildPhase = ''
-            # Create writable node_modules
-            export HOME=$(mktemp -d)
-            npm ci --legacy-peer-deps
-            
-            # Build the frontend
-            npm run build
-          '';
+          # npm flags to avoid hanging
+          npmInstallFlags = [ "--legacy-peer-deps" "--no-audit" "--no-fund" "--loglevel=error" ];
+          
+          # The build script in package.json
+          npmBuildScript = "build";
           
           installPhase = ''
             mkdir -p $out
@@ -92,18 +90,59 @@
           
           echo "🚀 Starting React + FastAPI Application"
           echo ""
-          
-          # Set environment variables
-          export FRONTEND_DIST_PATH="${frontendBuild}"
-          export PYTHONPATH="${./backend}:$PYTHONPATH"
-          
-          # Start the FastAPI server with static file serving
-          echo "Starting FastAPI server on http://localhost:8000"
-          echo "Frontend will be served at http://localhost:8000"
+          echo "Backend API: http://localhost:8000"
+          echo "Frontend: http://localhost:3000"
+          echo ""
+          echo "Press Ctrl+C to stop all services"
           echo ""
           
+          # Function to kill all background processes
+          cleanup() {
+            echo ""
+            echo "Stopping all services..."
+            jobs -p | xargs -r kill 2>/dev/null || true
+            wait 2>/dev/null || true
+            exit 0
+          }
+          
+          # Set up signal handlers
+          trap cleanup INT TERM EXIT
+          
+          # Start backend FastAPI server
+          echo "Starting FastAPI backend..."
+          export PYTHONPATH="${./backend}:$PYTHONPATH"
           cd ${./backend}
-          ${pythonEnv}/bin/uvicorn main:app --host 0.0.0.0 --port 8000
+          ${pythonEnv}/bin/uvicorn main:app --host 0.0.0.0 --port 8000 &
+          BACKEND_PID=$!
+          
+          # Wait for backend to be ready
+          echo "Waiting for backend to start..."
+          for i in {1..30}; do
+            if ${pkgs.curl}/bin/curl -s http://localhost:8000/api/health > /dev/null 2>&1; then
+              echo "Backend is ready!"
+              break
+            fi
+            if [ $i -eq 30 ]; then
+              echo "Backend failed to start in time"
+              exit 1
+            fi
+            sleep 1
+          done
+          
+          # Start frontend using a simple HTTP server
+          echo "Starting frontend server..."
+          cd ${frontendBuild}
+          ${python}/bin/python -m http.server 3000 --bind 0.0.0.0 &
+          FRONTEND_PID=$!
+          
+          echo ""
+          echo "✅ All services started successfully!"
+          echo "   Backend API: http://localhost:8000"
+          echo "   Frontend: http://localhost:3000"
+          echo ""
+          
+          # Wait for background processes
+          wait $BACKEND_PID $FRONTEND_PID
         '';
         
         # Development script that starts both frontend and backend separately
