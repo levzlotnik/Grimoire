@@ -110,19 +110,19 @@ test(perceive_read_file_exists) :-
 test(perceive_read_file_basic, [cleanup(delete_file('/tmp/test_read.txt'))]) :-
     % Test basic file reading with line numbers
     write_file('/tmp/test_read.txt', "Line 1\nLine 2\nLine 3"),
-    perceive(read_file('/tmp/test_read.txt', lines(1, 3), Content)),
+    perceive(read_file('/tmp/test_read.txt', 1, 3, Content)),
     Content = [line(1, "Line 1"), line(2, "Line 2"), line(3, "Line 3")], !.
 
 test(perceive_read_file_range, [cleanup(delete_file('/tmp/test_read.txt'))]) :-
     % Test reading specific line range
     write_file('/tmp/test_read.txt', "Line 1\nLine 2\nLine 3\nLine 4\nLine 5"),
-    perceive(read_file('/tmp/test_read.txt', lines(2, 4), Content)),
+    perceive(read_file('/tmp/test_read.txt', 2, 4, Content)),
     Content = [line(2, "Line 2"), line(3, "Line 3"), line(4, "Line 4")], !.
 
 test(perceive_read_file_start_end, [cleanup(delete_file('/tmp/test_read.txt'))]) :-
-    % Test using start/end atoms
+    % Test reading entire file (1 to -1)
     write_file('/tmp/test_read.txt', "First\nMiddle\nLast"),
-    perceive(read_file('/tmp/test_read.txt', lines(start, end), Content)),
+    perceive(read_file('/tmp/test_read.txt', 1, -1, Content)),
     length(Content, 3),
     Content = [line(1, "First")|_], !.
 
@@ -133,7 +133,7 @@ test(perceive_search_regex_exists) :-
 test(perceive_search_regex_basic, [cleanup(delete_file('/tmp/test_search.txt'))]) :-
     % Test basic regex search
     write_file('/tmp/test_search.txt', "apple\nbanana\napricot\norange"),
-    perceive(read_file('/tmp/test_search.txt', lines(start, end), Content)),
+    perceive(read_file('/tmp/test_search.txt', 1, -1, Content)),
     perceive(search_regex(Content, "^a", Found)),
     length(Found, 2),
     Found = [line(1, "apple"), line(3, "apricot")], !.
@@ -141,7 +141,7 @@ test(perceive_search_regex_basic, [cleanup(delete_file('/tmp/test_search.txt'))]
 test(perceive_search_regex_pattern, [cleanup(delete_file('/tmp/test_search.txt'))]) :-
     % Test more complex regex pattern
     write_file('/tmp/test_search.txt', "test123\nhello\ntest456\nworld"),
-    perceive(read_file('/tmp/test_search.txt', lines(start, end), Content)),
+    perceive(read_file('/tmp/test_search.txt', 1, -1, Content)),
     perceive(search_regex(Content, "test[0-9]+", Found)),
     length(Found, 2),
     Found = [line(1, "test123"), line(3, "test456")], !.

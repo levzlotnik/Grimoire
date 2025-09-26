@@ -286,10 +286,9 @@ cast(conjure(interface(load(EntitySpec))), RetVal) :-
 % Read file command - execute read_file perceive operation
 cast(conjure(interface(read_file(FilePath, Start, End))), RetVal) :-
     ensure_session_state_loaded,
-    % Convert start/end to lines list for the perceive operation
-    findall(LineNum, between(Start, End, LineNum), Lines),
-    (perceive(read_file(FilePath, Lines, ContentWithLineNumbers)) ->
-        RetVal = ok(ContentWithLineNumbers)
+    % Pass start/end directly to the perceive operation
+    (perceive(read_file(FilePath, Start, End, ContentWithLineNumbers)) ->
+        RetVal = ok(lines(ContentWithLineNumbers))
     ;
         RetVal = error(read_file_failed)
     ).

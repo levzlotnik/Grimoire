@@ -3,21 +3,24 @@
 
 :- self_entity(golem(project_manager)).
 
-% Role and LLM configuration
-component(golem(project_manager), role, "Senior project manager responsible for coordinating development tasks and ensuring project quality").
-component(golem(project_manager), llm_config, _{
-    provider: openai,
-    model: 'gpt-4-turbo',
+% Configuration with ProjectAnalysis output type
+component(golem(project_manager), config, _{
+    model: "openai:gpt-4o",
+    temperature: 0.2,
     max_tokens: 4096,
-    temperature: 0.2
+    system_prompt: "Senior project manager responsible for coordinating development tasks and ensuring project quality",
+    output_type: "ProjectAnalysis"
 }).
 
-% Input/Output Schema for project management
-component(golem(project_manager), input, project_description(string)).
-component(golem(project_manager), input, optional(timeline_constraints(dict))).
-component(golem(project_manager), input, optional(team_members(list))).
-component(golem(project_manager), output, project_plan(structured_plan)).
-component(golem(project_manager), output, task_assignments(list)).
+% Structured output parser
+component(golem(project_manager), output_parser, parse_project_analysis).
+
+parse_project_analysis(Dict, project_analysis(Structure, Dependencies, EntryPoints, Config, Recommendations)) :-
+    get_dict(structure, Dict, Structure),
+    get_dict(dependencies, Dict, Dependencies),
+    get_dict(entry_points, Dict, EntryPoints),
+    get_dict(configuration_files, Dict, Config),
+    (get_dict(recommendations, Dict, Recommendations) -> true; Recommendations = []).
 
 % Delegation hierarchy
 component(golem(project_manager), can_delegate_to, golem(code_assistant)).
@@ -28,11 +31,4 @@ component(golem(project_manager), can_delegate_to, golem(documentation)).
 component(golem(project_manager), available_tools, Tools) :-
     get_golem_tools(golem(project_manager), Tools).
 
-% Dynamic docstring
-docstring(golem(project_manager), DocString) :-
-    component(golem(project_manager), role, Role),
-    component(golem(project_manager), llm_config, Config),
-    component(golem(project_manager), available_tools, Tools),
-    findall(input(I), component(golem(project_manager), input, I), Inputs),
-    findall(output(O), component(golem(project_manager), output, O), Outputs),
-    format_golem_docstring(Role, Config, Tools, Inputs, Outputs, DocString).
+% Docstring generated automatically by generic golem docstring rule in semantics.pl

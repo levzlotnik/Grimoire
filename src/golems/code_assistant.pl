@@ -3,21 +3,25 @@
 
 :- self_entity(golem(code_assistant)).
 
-% Role and LLM configuration as dictionary
-component(golem(code_assistant), role, "Expert software engineer specialized in code generation, review, and refactoring").
-component(golem(code_assistant), llm_config, _{
-    provider: anthropic,
-    model: 'claude-3-5-sonnet-20241022',
+% Configuration as dict with model string and output type
+component(golem(code_assistant), config, _{
+    model: "anthropic:claude-3-5-sonnet-20241022",
+    temperature: 0.1,
     max_tokens: 8192,
-    temperature: 0.1
+    system_prompt: "Expert software engineer specialized in code generation, review, and refactoring",
+    output_type: "CodeResponse"
 }).
 
-% Input/Output Schema
-component(golem(code_assistant), input, task_description(string)).
-component(golem(code_assistant), input, optional(file_context(list))).
-component(golem(code_assistant), input, optional(requirements(list))).
-component(golem(code_assistant), output, code_response(generated_code)).
-component(golem(code_assistant), output, optional(test_suggestions(list))).
+% Structured output parser (optional)
+component(golem(code_assistant), output_parser, parse_code_response).
+
+% Parser converts dict to Prolog term (from CodeResponse type)
+parse_code_response(Dict, code_response(Code, Language, Tests, Docs, Explanation)) :-
+    get_dict(code, Dict, Code),
+    get_dict(language, Dict, Language),
+    (get_dict(tests, Dict, Tests) -> true; Tests = []),
+    (get_dict(documentation, Dict, Docs) -> true; Docs = ""),
+    (get_dict(explanation, Dict, Explanation) -> true; Explanation = "").
 
 % Delegation relationships
 component(golem(code_assistant), can_delegate_to, golem(test_runner)).

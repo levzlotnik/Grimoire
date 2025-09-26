@@ -3,22 +3,25 @@
 
 :- self_entity(golem(test_runner)).
 
-% Role and LLM configuration
-component(golem(test_runner), role, "QA engineer focused on testing, test automation, and quality assurance").
-component(golem(test_runner), llm_config, _{
-    provider: ollama,
-    model: 'llama-3.1-70b',
+% Configuration with TestResult output type using local Ollama
+component(golem(test_runner), config, _{
+    model: "llama-3.1:8b",
+    base_url: "http://localhost:11434/v1",
+    temperature: 0.0,
     max_tokens: 4096,
-    temperature: 0.0
+    system_prompt: "QA engineer focused on testing, test automation, and quality assurance",
+    output_type: "TestResult"
 }).
 
-% Input/Output Schema for testing
-component(golem(test_runner), input, test_target(string)).
-component(golem(test_runner), input, optional(test_types(list))).
-component(golem(test_runner), input, optional(coverage_requirements(dict))).
-component(golem(test_runner), output, test_results(test_report)).
-component(golem(test_runner), output, coverage_report(coverage_data)).
-component(golem(test_runner), output, optional(performance_metrics(dict))).
+% Structured output parser
+component(golem(test_runner), output_parser, parse_test_result).
+
+parse_test_result(Dict, test_result(Passed, Failed, Skipped, Failures, Coverage)) :-
+    get_dict(passed, Dict, Passed),
+    get_dict(failed, Dict, Failed),
+    get_dict(skipped, Dict, Skipped),
+    (get_dict(failures, Dict, Failures) -> true; Failures = []),
+    (get_dict(coverage, Dict, Coverage) -> true; Coverage = 0.0).
 
 % Hierarchical relationship
 component(golem(test_runner), supervisor, golem(project_manager)).
@@ -27,11 +30,4 @@ component(golem(test_runner), supervisor, golem(project_manager)).
 component(golem(test_runner), available_tools, Tools) :-
     get_golem_tools(golem(test_runner), Tools).
 
-% Dynamic docstring
-docstring(golem(test_runner), DocString) :-
-    component(golem(test_runner), role, Role),
-    component(golem(test_runner), llm_config, Config),
-    component(golem(test_runner), available_tools, Tools),
-    findall(input(I), component(golem(test_runner), input, I), Inputs),
-    findall(output(O), component(golem(test_runner), output, O), Outputs),
-    format_golem_docstring(Role, Config, Tools, Inputs, Outputs, DocString).
+% Docstring generated automatically by generic golem docstring rule in semantics.pl

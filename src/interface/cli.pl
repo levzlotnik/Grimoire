@@ -400,6 +400,12 @@ format_cli_result(ok(result(Stdout, Stderr))) :-
     (Stdout \= "" -> write(Stdout) ; true),
     (Stderr \= "" -> (write('STDERR: '), write(Stderr)) ; true).
 
+% Format file content results (from read_file)
+format_cli_result(ok(lines(Lines))) :-
+    !,
+    forall(member(line(Num, Content), Lines), 
+           format('~w\t~s~n', [Num, Content])).
+
 % Fallback for unexpected results
 format_cli_result(Result) :-
     format('Unexpected result: ~w~n', [Result]).

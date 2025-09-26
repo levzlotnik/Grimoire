@@ -222,15 +222,16 @@ entity(read_file).
 docstring(read_file,
     {|string(_)||
     Read specific lines from a file with line numbers.
-    Format: perceive(read_file(FilePath, LineNumbers, ContentWithLineNumbers))
+    Format: perceive(read_file(FilePath, Start, End, ContentWithLineNumbers))
     Parameters:
     - FilePath: Path to the file to read
-    - LineNumbers: List of 1-based line numbers to read (negative numbers count from end: -1 = last line)
+    - Start: Starting line number (1-based, negative counts from end: -1 = last line)
+    - End: Ending line number (1-based, negative counts from end)
     - ContentWithLineNumbers: Unifies with list of line(Number, Content) terms
     Examples:
-      read_file('file.txt', [1, 2, 3], Content)     % Read first 3 lines
-      read_file('file.txt', [1, -1], Content)      % Read first and last line
-      read_file('file.txt', [-3, -2, -1], Content) % Read last 3 lines
+      read_file('file.txt', 1, 3, Content)    % Read lines 1-3
+      read_file('file.txt', 1, -1, Content)   % Read entire file (first to last)
+      read_file('file.txt', -3, -1, Content)  % Read last 3 lines
     |}).
 
 % Generic entity and docstring rules for perceive and conjure constructors
@@ -710,40 +711,25 @@ docstring(edit_file, S) :-
 perceive(entities(Entities)) :-
     findall(Entity, entity(Entity), Entities).
 
-% Read file with line numbers using 1-based indexing (-1 means from end)
-perceive(read_file(FilePath, Lines, ContentWithLineNumbers)) :-
+% Read file with line numbers using 1-based indexing
+perceive(read_file(FilePath, Start, End, ContentWithLineNumbers)) :-
     read_file_to_lines(FilePath, AllLines),
     length(AllLines, TotalLines),
-    % Handle different line specification formats
-    resolve_lines_spec(Lines, TotalLines, ResolvedLines),
+    % Resolve negative line numbers
+    resolve_line_number(Start, TotalLines, StartNum),
+    resolve_line_number(End, TotalLines, EndNum),
     % Extract requested lines with numbers
     findall(line(LineNum, Content),
-        (member(LineNum, ResolvedLines),
+        (between(StartNum, EndNum, LineNum),
          nth1(LineNum, AllLines, Content)),
         ContentWithLineNumbers).
 
-% Resolve different line specification formats
-resolve_lines_spec(lines(Start, End), TotalLines, ResolvedLines) :-
-    % Handle lines(start, end) format from tests
-    resolve_line_bound(Start, TotalLines, StartNum),
-    resolve_line_bound(End, TotalLines, EndNum),
-    findall(LineNum, between(StartNum, EndNum, LineNum), ResolvedLines).
-resolve_lines_spec(Lines, TotalLines, ResolvedLines) :-
-    % Handle direct list of line numbers
-    is_list(Lines),
-    maplist(resolve_line_index(TotalLines), Lines, ResolvedLines).
-
-% Resolve line bounds (start/end atoms or numbers)
-resolve_line_bound(start, _, 1) :- !.
-resolve_line_bound(end, TotalLines, TotalLines) :- !.
-resolve_line_bound(Num, _, Num) :- number(Num).
-
-% Helper to resolve line indices (1-based, -1 from end)
-resolve_line_index(Total, Index, Resolved) :-
-    (Index < 0 ->
-        Resolved is Total + Index + 1  % -1 becomes Total, -2 becomes Total-1, etc.
+% Resolve negative line numbers (-1 = last line, -2 = second to last, etc.)
+resolve_line_number(Num, TotalLines, Resolved) :- 
+    (Num < 0 ->
+        Resolved is TotalLines + Num + 1  % -1 becomes TotalLines, -2 becomes TotalLines-1, etc.
     ;
-        Resolved = Index
+        Resolved = Num
     ).
 
 % Helper for extracting lines with numbers

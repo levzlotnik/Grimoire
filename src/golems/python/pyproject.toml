@@ -12,9 +12,7 @@ authors = [
 dependencies = [
     "janus-swi",
     "pydantic",
-    "openai",
-    "anthropic",
-    "groq"
+    "pydantic-ai"
 ]
 
 [project.optional-dependencies]

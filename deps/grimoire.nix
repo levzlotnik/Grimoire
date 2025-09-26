@@ -8,6 +8,9 @@ let
   # Import SWI-Prolog with packs system, using the same Python
   swipl = import ./swipl.nix { inherit pkgs python; };
 
+  # Import pydantic packages
+  pydantic-ai = import ./pydantic/pydantic-ai.nix { inherit python3Packages pkgs; };
+
   # Create SWI-Prolog environment with selected packs
   swiplEnv = swipl.withPacks (p: with p; [
     # No packs needed - using sqlite3 CLI directly
@@ -39,9 +42,7 @@ let
       # Development packages
       black
       # LLM packages
-      openai
-      anthropic
-      groq
+      pydantic-ai
       # Web framework
       flask
       # YAML support
@@ -58,8 +59,9 @@ in
   swipl = swiplEnv;
   python = pythonEnv;
   janus-swi = janus-swi;
+  pydantic-ai = pydantic-ai;
   sqlite = pkgs.sqlite;
-  
+
   # Environment variables
   env = {
     SWIPL_BIN = "${swiplEnv}/bin/swipl";

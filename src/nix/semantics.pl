@@ -472,7 +472,7 @@ nix_templates_expr_id(TemplateId, Expr) :-
     format(string(Expr), "path:~w#~w", [TPath, TId]).
 
 %% memoize the one–time JSON fetch
-% :- table nix_flake_templates/1.
+:- table nix_flake_templates/1.
 nix_flake_templates(Pairs) :-
     nix_templates_expr_base(PathExpr),
     process_create(path(nix),

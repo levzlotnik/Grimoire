@@ -33,19 +33,19 @@
     let
       # First get base pkgs without overlay
       basePkgs = nixpkgs.legacyPackages.${system};
-      
+
       # Then apply overlays to get pkgs with grimoire-golems and grimoire-api available
       pkgs = import nixpkgs {
         inherit system;
-        overlays = [ 
-          golems.overlays.default 
-          grimoire-api.overlays.default 
+        overlays = [
+          golems.overlays.default
+          grimoire-api.overlays.default
         ];
       };
-      
+
       # Create base grimoire environment with overlay-enabled pkgs
       baseGrimoireEnv = import ./deps/grimoire.nix { inherit pkgs; };
-      
+
       # Extend the Python environment to include grimoire-golems and grimoire-api while preserving all base packages
       # We need to extract the packages from the base environment and add our new ones
       extendedPython = pkgs.python313.withPackages (ps: with ps; [
@@ -54,6 +54,7 @@
         python-dotenv
         gitpython
         baseGrimoireEnv.janus-swi
+        baseGrimoireEnv.pydantic-ai
         # API/Server packages
         fastapi
         uvicorn
@@ -65,10 +66,6 @@
         pytest-asyncio
         # Development packages
         black
-        # LLM packages
-        openai
-        anthropic
-        groq
         # Web framework
         flask
         # YAML support (needed by MCP server)
@@ -77,7 +74,7 @@
         grimoire-golems
         grimoire-api
       ]);
-      
+
       # Create extended grimoire environment
       grimoireEnv = baseGrimoireEnv // {
         python = extendedPython;
@@ -87,7 +84,7 @@
     {
       # Expose the extended environment for child flakes
       grimoireEnv = grimoireEnv;
-      
+
       # Main Grimoire executable - include all source files
       grimoire = pkgs.stdenv.mkDerivation {
         name = "grimoire";
@@ -128,16 +125,16 @@ EOF
     {
       default = pkgs.mkShell {
         buildInputs = [ grimoireEnv.swipl grimoireEnv.python grimoireEnv.sqlite self.packages.${system}.grimoire ];
-        
+
         # Set GRIMOIRE_ROOT as a direct environment variable (works with -c)
         GRIMOIRE_ROOT = toString self.packages.${system}.grimoire;
-        
+
         # Set Python executable to our extended environment
         PYTHON_EXECUTABLE = "${grimoireEnv.python}/bin/python";
-        
+
         # Inherit other environment variables from grimoireEnv
         inherit (grimoireEnv.env) SWIPL_BIN LLM_DB_SCHEMA_PATH;
-        
+
         shellHook = ''
           echo "Grimoire development environment loaded"
           echo "GRIMOIRE_ROOT=$GRIMOIRE_ROOT"

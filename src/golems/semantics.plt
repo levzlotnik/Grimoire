@@ -20,39 +20,28 @@ test(golems_self_entity) :-
 % Test that all golems have required components
 test(golems_have_required_components) :-
     forall(entity(golem(GolemId)), (
-        % Every golem must have a role
-        component(golem(GolemId), role, Role),
-        atom_string(Role, _),
-        % Every golem must have LLM configuration
-        component(golem(GolemId), llm_config, Config),
-        is_valid_llm_config(Config),
-        % Every golem must have at least one input and output
-        component(golem(GolemId), input, _),
-        component(golem(GolemId), output, _)
+        % Every golem must have configuration
+        component(golem(GolemId), config, Config),
+        is_valid_config(Config)
     )).
 
-% Test LLM configuration structure
+% Test configuration structure
 test(llm_configs_are_valid) :-
-    forall(component(_GolemId, llm_config, Config), (
+    forall(component(_GolemId, config, Config), (
         % Must be a dictionary with required keys
-        is_valid_llm_config(Config),
-        get_dict(provider, Config, Provider),
+        is_valid_config(Config),
         get_dict(model, Config, Model),
         get_dict(max_tokens, Config, Tokens),
         get_dict(temperature, Config, Temp),
-        atom(Provider),
-        atom(Model),
+        string(Model),
         integer(Tokens),
         number(Temp)
     )).
 
-% Test input/output schemas are well-formed
+% Test output parsers exist (new format)
 test(schemas_are_wellformed) :-
-    forall(component(GolemId, input, Input), (
-        validate_schema_term(Input)
-    )),
-    forall(component(GolemId, output, Output), (
-        validate_schema_term(Output)
+    forall(component(GolemId, output_parser, Parser), (
+        atom(Parser)
     )).
 
 % Test dynamic docstring generation
@@ -61,8 +50,7 @@ test(docstrings_generate_correctly) :-
         docstring(golem(GolemId), DocString),
         atom_string(DocString, DocStr),
         % Docstring should contain key sections
-        sub_atom(DocStr, _, _, _, 'Role:'),
-        sub_atom(DocStr, _, _, _, 'LLM Backend:')
+        sub_atom(DocStr, _, _, _, 'Model:')
     )).
 
 % === CONJURE SPELL TESTS ===
@@ -77,7 +65,7 @@ test(thought_constructor_exists) :-
 
 test(python_bridge_exports) :-
     current_predicate(python_bridge:get_golem_tools/2),
-    current_predicate(python_bridge:execute_golem_task/7),
+    current_predicate(python_bridge:execute_golem_task/3),
     current_predicate(python_bridge:get_golem_python_instance/2),
     current_predicate(python_bridge:log_thought_to_session/2).
 
@@ -96,25 +84,28 @@ test(python_bridge_initialization, [condition(python_available)]) :-
 % === GOLEM CONFIGURATION TESTS ===
 
 test(code_assistant_configuration) :-
-    component(golem(code_assistant), role, Role), !,
-    atom_string(Role, RoleStr),
-    sub_atom(RoleStr, _, _, _, 'software engineer'),
-    component(golem(code_assistant), llm_config, Config), !,
-    get_dict(provider, Config, anthropic).
+    component(golem(code_assistant), config, Config), !,
+    get_dict(system_prompt, Config, Prompt),
+    atom_string(Prompt, PromptStr),
+    sub_atom(PromptStr, _, _, _, 'software engineer'),
+    get_dict(model, Config, Model),
+    sub_atom(Model, _, _, _, 'anthropic').
 
 test(project_manager_configuration) :-
-    component(golem(project_manager), role, Role), !,
-    atom_string(Role, RoleStr),
-    sub_atom(RoleStr, _, _, _, 'project manager'),
-    component(golem(project_manager), llm_config, Config), !,
-    get_dict(provider, Config, openai).
+    component(golem(project_manager), config, Config), !,
+    get_dict(system_prompt, Config, Prompt),
+    atom_string(Prompt, PromptStr),
+    sub_atom(PromptStr, _, _, _, 'project manager'),
+    get_dict(model, Config, Model),
+    sub_atom(Model, _, _, _, 'openai').
 
 test(test_runner_configuration) :-
-    component(golem(test_runner), role, Role), !,
-    atom_string(Role, RoleStr),
-    sub_atom(RoleStr, _, _, _, 'QA engineer'),
-    component(golem(test_runner), llm_config, Config), !,
-    get_dict(provider, Config, ollama).
+    component(golem(test_runner), config, Config), !,
+    get_dict(system_prompt, Config, Prompt),
+    atom_string(Prompt, PromptStr),
+    sub_atom(PromptStr, _, _, _, 'QA engineer'),
+    get_dict(base_url, Config, BaseUrl),
+    sub_atom(BaseUrl, _, _, _, 'localhost').
 
 % === DELEGATION HIERARCHY TESTS ===
 
@@ -129,7 +120,7 @@ test(main_docstring) :-
     docstring(golems, Doc), !,
     atom_string(Doc, DocStr),
     once(sub_atom(DocStr, _, _, _, 'AI Agent Framework')),
-    once(sub_atom(DocStr, _, _, _, 'Entity-Component-System')).
+    once(sub_atom(DocStr, _, _, _, 'Pydantic AI')).
 
 :- end_tests(golems).
 
@@ -141,12 +132,12 @@ validate_schema_term(Term) :-
     atom(Type),
     atom(ArgName).
 
-is_valid_llm_config(Config) :-
+is_valid_config(Config) :-
     is_dict(Config),
-    get_dict(provider, Config, _),
     get_dict(model, Config, _),
     get_dict(max_tokens, Config, _),
-    get_dict(temperature, Config, _).
+    get_dict(temperature, Config, _),
+    get_dict(system_prompt, Config, _).
 
 % Helper for conditional tests
 python_available :-

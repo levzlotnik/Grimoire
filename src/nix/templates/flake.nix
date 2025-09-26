@@ -94,6 +94,19 @@
         - Update python/bridge_domain/ with your Python implementation
       '';
     };
+
+    react-fastapi = {
+      path = ./react-fastapi;
+      description = "A React frontend with FastAPI backend template with Nix support";
+      welcomeText = ''
+        # Getting started
+        - Run `nix develop` to enter the development environment
+        - Run `nix run` to start both frontend and backend simultaneously
+        - Visit http://localhost:5173 for the React frontend
+        - Visit http://localhost:8000 for the FastAPI backend
+        - Visit http://localhost:8000/docs for interactive API documentation
+      '';
+    };
   };
 
   # The default template to use when none is specified with `nix flake new`

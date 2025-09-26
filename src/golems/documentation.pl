@@ -3,22 +3,24 @@
 
 :- self_entity(golem(documentation)).
 
-% Role and LLM configuration as dictionary
-component(golem(documentation), role, "Technical documentation writer specialized in creating clear, comprehensive documentation, API references, and user guides").
-component(golem(documentation), llm_config, _{
-    provider: openai,
-    model: 'gpt-4-turbo',
+% Configuration with Documentation output type
+component(golem(documentation), config, _{
+    model: "openai:gpt-4o",
+    temperature: 0.3,
     max_tokens: 4096,
-    temperature: 0.3
+    system_prompt: "Technical documentation writer specialized in creating clear, comprehensive documentation, API references, and user guides",
+    output_type: "Documentation"
 }).
 
-% Input/Output Schema
-component(golem(documentation), input, code_or_system(string)).
-component(golem(documentation), input, optional(existing_docs(string))).
-component(golem(documentation), input, optional(documentation_style(string))).
-component(golem(documentation), output, documentation(markdown)).
-component(golem(documentation), output, optional(api_reference(structured))).
-component(golem(documentation), output, optional(examples(list))).
+% Structured output parser
+component(golem(documentation), output_parser, parse_documentation).
+
+parse_documentation(Dict, documentation(Summary, Description, Parameters, Returns, Examples)) :-
+    get_dict(summary, Dict, Summary),
+    get_dict(description, Dict, Description),
+    (get_dict(parameters, Dict, Parameters) -> true; Parameters = []),
+    (get_dict(returns, Dict, Returns) -> true; Returns = ""),
+    (get_dict(examples, Dict, Examples) -> true; Examples = []).
 
 % Hierarchical relationship
 component(golem(documentation), supervisor, golem(project_manager)).
