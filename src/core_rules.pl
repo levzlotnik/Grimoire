@@ -308,3 +308,28 @@ docstring(self_entity,
     |}
 ).
 
+% === SEMANTIC ENTITY LOOKUP ===
+
+% Find entity ID associated with a semantic source
+% This is the ONLY place that should query component/3 with unbound first argument
+semantic_entity_id(semantic(Source), EntityId) :-
+    component(EntityId, self, semantic(Source)).
+
+docstring(semantic_entity_id,
+    {|string(_)||
+    Finds the entity ID associated with a semantic source.
+    This is the only predicate that should query component/3 with unbound first argument.
+    
+    Format: semantic_entity_id(semantic(Source), EntityId)
+    - Source: file(Path) or folder(Path)
+    - EntityId: The entity that declared itself with this semantic source
+    
+    Examples:
+        ?- semantic_entity_id(semantic(file("/path/to/git.pl")), Entity).
+        Entity = git.
+        
+        ?- semantic_entity_id(semantic(folder("/path/to/templates/rust")), Entity).
+        Entity = rust_template.
+    |}
+).
+

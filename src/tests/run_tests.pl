@@ -3,6 +3,7 @@
 % Load all test files from their respective locations
 :- grimoire_ensure_loaded('@/src/tests/core_rules.plt').
 :- grimoire_ensure_loaded('@/src/git.plt').
+:- grimoire_ensure_loaded('@/src/utils.plt').
 :- grimoire_ensure_loaded('@/src/nix/semantics.plt').
 :- grimoire_ensure_loaded('@/src/project/semantics.plt').
 :- grimoire_ensure_loaded('@/src/tests/self_entity.plt').
@@ -31,6 +32,7 @@ run_all_tests :-
     run_tests([
         core_ecs,
         git_semantics,
+        utils,
         nix_semantics,
         project_semantics,
         integration_tests,
@@ -111,6 +113,7 @@ list_available_tests :-
     All_Tests = [
         core_ecs,
         git_semantics,
+        utils,
         nix_semantics,
         project_semantics,
         integration_tests,

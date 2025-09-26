@@ -116,6 +116,7 @@ docstring(project,
 % Core subsystem entities - loaded immediately on boot
 % Load core system components - immediate loading for core functionality
 :- load_entity(semantic(file("@/src/git.pl"))).
+:- load_entity(semantic(file("@/src/utils.pl"))).
 :- load_entity(semantic(folder("@/src/nix"))).
 :- load_entity(semantic(file("@/src/fs.pl"))).
 :- load_entity(semantic(folder("@/src/project"))).

@@ -536,24 +536,8 @@ find_first_existing_file(BaseDir, [Pattern|Rest], Result) :-
 
 % Discover source files (git-tracked files)
 discover_sources_artifact(Entity, BaseDir) :-
-    process_create(path(git), ['ls-files'], [
-        stdout(pipe(Out)),
-        cwd(BaseDir)
-    ]),
-    read_lines_from_stream(Out, Lines),
-    close(Out),
-    maplist(assert_source_file(Entity, BaseDir), Lines).
-
-% Read all lines from a stream
-read_lines_from_stream(Stream, Lines) :-
-    read_line_to_codes(Stream, Codes),
-    (Codes == end_of_file ->
-        Lines = []
-    ;
-        atom_codes(Line, Codes),
-        Lines = [Line|RestLines],
-        read_lines_from_stream(Stream, RestLines)
-    ).
+    perceive(git(ls_files(BaseDir, Files))),
+    maplist(assert_source_file(Entity, BaseDir), Files).
 
 % Assert source file component
 assert_source_file(Entity, BaseDir, RelativePath) :-
@@ -571,3 +555,33 @@ discover_custom_artifacts(Entity, [IncludePatterns, ExcludePatterns]) :-
         [include(IncludePatterns), exclude(ExcludePatterns)],
         Components),
     maplist(assertz, Components).
+
+% Discover all semantics.pl files and create child relationships
+discover_semantic_artifacts(Entity, BaseDir) :-
+    perceive(git(ls_files(BaseDir, AllFiles))),
+    include(is_semantics_file, AllFiles, SemanticFiles),
+    process_semantic_hierarchy(Entity, BaseDir, SemanticFiles).
+
+% Use is_semantics_file/1 from utils.pl
+
+% Process each semantics.pl file and build hierarchy
+process_semantic_hierarchy(Entity, BaseDir, Files) :-
+    maplist(assert_semantic_child(Entity, BaseDir), Files).
+
+% Create child component from discovered semantics.pl file
+assert_semantic_child(Entity, BaseDir, FilePath) :-
+    file_directory_name(FilePath, Dir),
+    (Dir \= '.', Dir \= BaseDir ->
+        % Get absolute path of the directory
+        absolute_file_name(Dir, AbsDir, [relative_to(BaseDir)]),
+        % Use core_rules predicate to find entity that has this directory as semantic source
+        semantic_entity_id(semantic(folder(AbsDir)), ChildEntity),
+        % Create child relationship
+        assertz(component(Entity, child, ChildEntity))
+    ; true).
+
+% Subscribe project ctors as children for hierarchy (if they're entities)
+component(Entity, child, EntityCtor) :- 
+    component(Entity, ctor, Ctor),
+    EntityCtor =.. [Entity, Ctor],
+    entity(EntityCtor).

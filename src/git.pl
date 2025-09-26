@@ -18,6 +18,7 @@ entity(git(branch)).
 entity(git(rev_parse)).
 entity(git(reset)).
 entity(git(merge)).
+entity(git(ls_files)).
 
 % Removed legacy command ctor - using perceive/conjure above
 component(git, subcommand, clone).
@@ -53,6 +54,7 @@ component(perceive, ctor, git(diff)).
 component(perceive, ctor, git(log)).
 component(perceive, ctor, git(branch)).
 component(perceive, ctor, git(rev_parse)).
+component(perceive, ctor, git(ls_files)).
 
 % Legacy support - keep git namespace ctors:
 component(git, ctor, C) :- component(git, subcommand, C).
@@ -171,6 +173,15 @@ docstring(git(merge),
     |}
 ).
 
+docstring(git(ls_files),
+    {|string(_)||
+    List all tracked files in a git repository.
+    Format: perceive(git(ls_files(Directory, FileList)))
+      Directory: Path to the git repository
+      FileList: List of all tracked files (relative paths)
+    |}
+).
+
 docstring(git, S) :-
     make_ctors_docstring(git, CtorsDoc),
     S = {|string(CtorsDoc)||
@@ -265,6 +276,18 @@ status_code_to_term([65, 32], File, created(File)).      % "A " - added to index
 status_code_to_term([68, 32], File, deleted(File)).      % "D " - deleted from index
 status_code_to_term([32, 68], File, deleted(File)).      % " D" - deleted in working tree
 status_code_to_term(_, File, unknown(File)).
+
+% Git ls-files perception - list all tracked files
+perceive(git(ls_files(Directory, Files))) :-
+    process_create(path(git), ['ls-files'], [
+        stdout(pipe(Out)),
+        stderr(null),
+        cwd(Directory)
+    ]),
+    read_lines_from_stream(Out, Files),
+    close(Out).
+
+% Use read_lines_from_stream/2 from utils.pl
 
 % Example git subsystem extension for load_entity
 % This could handle git repository cloning and then loading semantics

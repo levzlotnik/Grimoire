@@ -84,7 +84,6 @@ react-fastapi-template/
 │   ├── package.json        # Node.js dependencies
 │   ├── vite.config.ts      # Vite configuration
 │   └── Dockerfile          # Frontend container
-├── shared/                 # Shared TypeScript types
 ├── tests/                  # Backend tests
 ├── flake.nix              # Nix build configuration
 ├── docker-compose.yml     # Container orchestration
