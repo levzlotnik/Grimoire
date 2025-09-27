@@ -5,7 +5,7 @@
 
 % Configuration as dict with model string and output type
 component(golem(code_assistant), config, _{
-    model: "anthropic:claude-3-5-sonnet-20241022",
+    model: "anthropic:claude-sonnet-4-20250514",
     temperature: 0.1,
     max_tokens: 8192,
     system_prompt: "Expert software engineer specialized in code generation, review, and refactoring",

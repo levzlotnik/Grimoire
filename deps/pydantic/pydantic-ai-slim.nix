@@ -5,11 +5,13 @@
 
 let
   logfire-api = import ./logfire-api.nix { inherit python3Packages pkgs; };
+  genai-prices = import ./genai-prices.nix { inherit python3Packages pkgs; };
+  pydantic-graph = import ./pydantic-graph.nix { inherit python3Packages pkgs; };
 in
 
 python3Packages.buildPythonPackage rec {
   pname = "pydantic-ai-slim";
-  version = "0.0.17";
+  version = "1.0.10";
 
   pyproject = true;
 
@@ -21,7 +23,7 @@ python3Packages.buildPythonPackage rec {
   src = pkgs.fetchPypi {
     pname = "pydantic_ai_slim";
     inherit version;
-    sha256 = "sha256-B3YM8AxDMuVybV5RTGYO4ispRLTrYQOAb2utaq9MQJM=";
+    sha256 = "sha256-WSLZREcYrQ1dgU41KESpOii5/KoY0Cegl3YLD7aaPYI=";
   };
 
   build-system = with python3Packages; [
@@ -38,11 +40,18 @@ python3Packages.buildPythonPackage rec {
     typing-extensions  # for exceptiongroup on older Python
     opentelemetry-api
     logfire-api
+    genai-prices
+    pydantic-graph
     eval-type-backport
   ];
 
   # Skip tests for now as they may require API keys
   doCheck = false;
+  
+  # Don't install binaries to avoid conflicts with full pydantic-ai package
+  postInstall = ''
+    rm -rf $out/bin
+  '';
 
   meta = with pkgs.lib; {
     description = "Pydantic AI Slim - Core AI agent framework without optional dependencies";

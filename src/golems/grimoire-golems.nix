@@ -1,4 +1,4 @@
-{ lib, buildPythonPackage, setuptools, pydantic, openai, anthropic, groq, janus-swi }:
+{ lib, buildPythonPackage, setuptools, pydantic, pydantic-ai, openai, anthropic, groq, janus-swi, grimoire-api }:
 
 buildPythonPackage rec {
   pname = "grimoire-golems";
@@ -11,10 +11,12 @@ buildPythonPackage rec {
   
   dependencies = [
     pydantic
+    pydantic-ai
     openai
     anthropic
     groq
     janus-swi
+    grimoire-api
   ];
 
   meta = with lib; {

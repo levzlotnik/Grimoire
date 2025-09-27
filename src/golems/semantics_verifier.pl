@@ -5,7 +5,7 @@
 
 % Configuration with Anthropic Claude and SemanticsVerification output type
 component(golem(semantics_verifier), config, _{
-    model: "anthropic:claude-3-5-sonnet-20241022",
+    model: "anthropic:claude-sonnet-4-20250514",
     temperature: 0.2,
     max_tokens: 4096,
     system_prompt: "You are a code coverage analyzer specializing in verifying that all meaningful source code files within a project are explicitly tested. You analyze directory structures and ensure proper test coverage in semantics.plt files.",

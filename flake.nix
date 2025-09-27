@@ -136,6 +136,14 @@ EOF
         inherit (grimoireEnv.env) SWIPL_BIN LLM_DB_SCHEMA_PATH;
 
         shellHook = ''
+          # Load .env if it exists
+          if [ -f .env ]; then
+            echo "Loading environment variables from .env..."
+            set -a  # automatically export all variables
+            source .env
+            set +a
+          fi
+          
           echo "Grimoire development environment loaded"
           echo "GRIMOIRE_ROOT=$GRIMOIRE_ROOT"
           echo "Python with grimoire-golems: ${grimoireEnv.python}/bin/python"

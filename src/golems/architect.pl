@@ -5,7 +5,7 @@
 
 % Configuration with ArchitectureReview output type
 component(golem(architect), config, _{
-    model: "anthropic:claude-3-5-sonnet-20241022",
+    model: "anthropic:claude-sonnet-4-20250514",
     temperature: 0.5,
     max_tokens: 8192,
     system_prompt: "You are a software architect with expertise in design patterns, system architecture, and best practices. Analyze architectures and provide strategic recommendations.",
@@ -24,7 +24,7 @@ parse_architecture_review(Dict, architecture(Patterns, Strengths, Weaknesses, Re
 
 % Refactoring specialist variant
 component(golem(refactoring_specialist), config, _{
-    model: "anthropic:claude-3-5-sonnet-20241022",
+    model: "anthropic:claude-sonnet-4-20250514",
     temperature: 0.2,
     max_tokens: 6000,
     system_prompt: "You are a refactoring specialist. Identify code that needs refactoring and create detailed refactoring plans with risk assessments.",

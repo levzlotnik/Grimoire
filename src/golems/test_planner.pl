@@ -5,7 +5,7 @@
 
 % Configuration with TestPlan output type
 component(golem(test_planner), config, _{
-    model: "openai:gpt-4o",
+    model: "openai:gpt-5-mini",
     temperature: 0.4,
     max_tokens: 6000,
     system_prompt: "You are a test planning expert. Create comprehensive test plans that cover unit tests, integration tests, and edge cases. Focus on high code coverage and meaningful test scenarios.",

@@ -28,9 +28,9 @@ dev = [
 grimoire-mcp-server = "mcp_server:main"
 grimoire-rest-api = "rest_api:main"
 
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["*"]
+[tool.setuptools]
+py-modules = ["grimoire_interface"]
+packages = []
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

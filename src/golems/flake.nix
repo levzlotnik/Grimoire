@@ -18,6 +18,8 @@
         (python-final: python-prev: {
           grimoire-golems = python-final.callPackage ./grimoire-golems.nix {
             janus-swi = (grimoire.lib.getGrimoireEnv final.system).janus-swi;
+            pydantic-ai = (grimoire.lib.getGrimoireEnv final.system).pydantic-ai;
+            grimoire-api = python-final.grimoire-api;
           };
         })
       ];
@@ -28,7 +30,10 @@
     let
       pkgs = import nixpkgs {
         inherit system;
-        overlays = [ self.overlays.default ];
+        overlays = [ 
+          grimoire.inputs.grimoire-api.overlays.default
+          self.overlays.default 
+        ];
       };
     in
     {
@@ -40,7 +45,10 @@
     let
       pkgs = import nixpkgs {
         inherit system;
-        overlays = [ self.overlays.default ];
+        overlays = [ 
+          grimoire.inputs.grimoire-api.overlays.default
+          self.overlays.default 
+        ];
       };
     in
     {
@@ -60,7 +68,10 @@
     let
       pkgs = import nixpkgs {
         inherit system;
-        overlays = [ self.overlays.default ];
+        overlays = [ 
+          grimoire.inputs.grimoire-api.overlays.default
+          self.overlays.default 
+        ];
       };
     in
     {

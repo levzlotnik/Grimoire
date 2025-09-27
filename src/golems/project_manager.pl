@@ -5,7 +5,7 @@
 
 % Configuration with ProjectAnalysis output type
 component(golem(project_manager), config, _{
-    model: "openai:gpt-4o",
+    model: "openai:gpt-5-mini",
     temperature: 0.2,
     max_tokens: 4096,
     system_prompt: "Senior project manager responsible for coordinating development tasks and ensuring project quality",

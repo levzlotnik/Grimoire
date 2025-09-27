@@ -5,7 +5,7 @@
 
 % Configuration with Documentation output type
 component(golem(documentation), config, _{
-    model: "openai:gpt-4o",
+    model: "openai:gpt-5-mini",
     temperature: 0.3,
     max_tokens: 4096,
     system_prompt: "Technical documentation writer specialized in creating clear, comprehensive documentation, API references, and user guides",

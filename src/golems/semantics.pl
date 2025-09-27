@@ -116,9 +116,12 @@ docstring(golems,
    
    Uses Pydantic AI for unified LLM interface across all providers.
    Configuration is dict-based, supporting model strings like:
-   - "anthropic:claude-3-5-sonnet-20241022" (maps to sonnet-4)
+   - "openai:gpt-5-mini" 
    - "openai:gpt-4o"
    - Custom endpoints via base_url in config dict
+   
+   NOTE: "anthropic:claude-*" syntax is broken in Pydantic AI (issue #2780).
+   Use OpenAI models until they fix their shit.
    
    Key Features:
    - Dict-based configuration and data exchange

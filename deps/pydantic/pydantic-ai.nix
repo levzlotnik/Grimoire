@@ -9,7 +9,7 @@ in
 
 python3Packages.buildPythonPackage rec {
   pname = "pydantic-ai";
-  version = "0.0.17";  # Set a fixed version to avoid dynamic versioning
+  version = "1.0.10";  # Set a fixed version to avoid dynamic versioning
 
   pyproject = true;
 
@@ -21,7 +21,7 @@ python3Packages.buildPythonPackage rec {
   src = pkgs.fetchPypi {
     pname = "pydantic_ai";
     inherit version;
-    sha256 = "sha256-RGMHVuLhLToOsKjLroJsPx8PF9enL2K90yHFtZ/diik=";
+    sha256 = "sha256-uCGDFdFX5DuKBZynTbL1Fbl6IijgmjmFXybSEUJ+QEw=";
   };
 
   build-system = with python3Packages; [

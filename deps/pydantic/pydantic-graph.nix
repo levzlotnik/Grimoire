@@ -9,20 +9,15 @@ in
 
 python3Packages.buildPythonPackage rec {
   pname = "pydantic_graph";
-  version = "0.2.20";
+  version = "1.0.10";
 
   pyproject = true;
 
-  src = pkgs.fetchFromGitHub {
-    owner = "pydantic";
-    repo = "pydantic-ai";
-    rev = "bfcccbab4fdf1949f38df674f07bcbfc1c3d838a";
-    sha256 = "sha256-EtsmOvVtv5+426oAKNUBBgKmxN0BVSGFGFgBcTgnOLc=";
-    leaveDotGit = true;
+  src = pkgs.fetchPypi {
+    pname = "pydantic_graph";
+    inherit version;
+    sha256 = "sha256-/EZeqPKZlAmMQ9RMaVRdWRfiJA0edLcdTvHgbobeoiM=";
   };
-
-  # Build from the pydantic_graph subdirectory
-  sourceRoot = "source/pydantic_graph";
 
   build-system = with python3Packages; [
     hatchling

@@ -5,7 +5,7 @@
 
 % Configuration with CodeReview output type
 component(golem(code_reviewer), config, _{
-    model: "anthropic:claude-3-5-sonnet-20241022",
+    model: "anthropic:claude-sonnet-4-20250514",
     temperature: 0.3,
     max_tokens: 8192,
     system_prompt: "You are an expert code reviewer specializing in identifying issues, security vulnerabilities, and performance optimizations. Provide constructive feedback and actionable suggestions.",

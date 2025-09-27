@@ -6,8 +6,7 @@ Integrates with the existing GrimoireInterface for seamless tool discovery
 and supports multiple LLM providers for flexible AI service integration.
 """
 
-from .core import Golem, GolemManager
-from .providers import BaseLLMProvider, llm_provider_factory
+from .core import Golem
 
 __version__ = "0.1.0"
-__all__ = ["Golem", "GolemManager", "BaseLLMProvider", "llm_provider_factory"]
+__all__ = ["Golem"]
