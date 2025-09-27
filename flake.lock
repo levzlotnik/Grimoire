@@ -27,7 +27,7 @@
       },
       "locked": {
         "lastModified": 1,
-        "narHash": "sha256-pPufVV0CzDZRHq+1WXRU9rhMrEAICqs8ic3imvdPh4A=",
+        "narHash": "sha256-mLqauXVqC3bo4i0GABqSTiAH8F608dz6sDLFdUh6VdE=",
         "path": "./src/golems",
         "type": "path"
       },

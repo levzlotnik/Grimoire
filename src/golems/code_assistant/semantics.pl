@@ -3,14 +3,8 @@
 
 :- self_entity(golem(code_assistant)).
 
-% Configuration as dict with model string and output type
-component(golem(code_assistant), config, _{
-    model: "anthropic:claude-sonnet-4-20250514",
-    temperature: 0.1,
-    max_tokens: 8192,
-    system_prompt: "Expert software engineer specialized in code generation, review, and refactoring",
-    output_type: "CodeResponse"
-}).
+% Configuration now handled in Python __init__.py
+% No longer need config component here since golem is instantiated in Python
 
 % Structured output parser (optional)
 component(golem(code_assistant), output_parser, parse_code_response).

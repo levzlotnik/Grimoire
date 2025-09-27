@@ -37,15 +37,12 @@ ensure_python_grimoire_golems :-
         assertz(grimoire_golems_imported)
     ).
 
-% Get or create a Python Golem instance with config dict
+% Get or create a Python Golem instance from module
 get_golem_python_instance(golem(Id), GolemObj) :-
     ensure_python_grimoire_golems,
-    % Gather config as dict from Prolog components
-    component(golem(Id), config, ConfigDict),
-    % Get current session ID for this execution context
-    get_current_session_id(SessionId),
-    % Create Python Golem instance with config dict
-    py_call('grimoire_golems.core.golem':'Golem'(Id, ConfigDict, SessionId), GolemObj).
+    % Import the golem directly from its module
+    atom_string(Id, IdStr),
+    py_call(IdStr:golem, GolemObj).
 
 % Get current session ID from session system
 get_current_session_id(SessionId) :-

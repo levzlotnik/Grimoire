@@ -7,6 +7,7 @@ and supports multiple LLM providers for flexible AI service integration.
 """
 
 from .core import Golem
+from .core.golem import Config
 
 __version__ = "0.1.0"
-__all__ = ["Golem"]
+__all__ = ["Golem", "Config"]

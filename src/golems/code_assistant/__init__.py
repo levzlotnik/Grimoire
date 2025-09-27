@@ -1,0 +1,43 @@
+"""
+Code Assistant Golem
+
+Expert software engineer specialized in code generation, review, and refactoring.
+"""
+
+import os
+from typing import List, Optional
+from pydantic import BaseModel, Field
+
+from grimoire_golems import Golem, Config
+
+
+class CodeResponse(BaseModel):
+    """Response from code generation tasks."""
+    code: str = Field(description="Generated code")
+    language: str = Field(description="Programming language")
+    tests: Optional[List[str]] = Field(default=None, description="Suggested test cases")
+    documentation: Optional[str] = Field(default=None, description="Code documentation")
+    explanation: Optional[str] = Field(default=None, description="Explanation of the code")
+
+
+def get_readme() -> str:
+    """Read the README.md file for system prompt."""
+    readme_path = os.path.join(os.path.dirname(__file__), "README.md")
+    with open(readme_path, 'r', encoding='utf-8') as f:
+        return f.read()
+
+
+# System prompt from README.md
+system_prompt = get_readme()
+
+# Golem configuration
+config = Config(
+    model="anthropic:claude-sonnet-4-20250514",
+    system_prompt=system_prompt,
+    output_type=CodeResponse,
+    temperature=0.1,
+    max_tokens=8192
+)
+
+# Instantiate the golem
+golem = Golem(id="code_assistant", config=config, session_id="main")

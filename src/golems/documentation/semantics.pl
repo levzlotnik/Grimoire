@@ -3,18 +3,13 @@
 
 :- self_entity(golem(documentation)).
 
-% Configuration with Documentation output type
-component(golem(documentation), config, _{
-    model: "openai:gpt-5-mini",
-    temperature: 0.3,
-    max_tokens: 4096,
-    system_prompt: "Technical documentation writer specialized in creating clear, comprehensive documentation, API references, and user guides",
-    output_type: "Documentation"
-}).
+% Configuration now handled in Python __init__.py
+% No longer need config component here since golem is instantiated in Python
 
-% Structured output parser
+% Structured output parser (optional)
 component(golem(documentation), output_parser, parse_documentation).
 
+% Parser converts dict to Prolog term (from Documentation type)
 parse_documentation(Dict, documentation(Summary, Description, Parameters, Returns, Examples)) :-
     get_dict(summary, Dict, Summary),
     get_dict(description, Dict, Description),
@@ -22,8 +17,9 @@ parse_documentation(Dict, documentation(Summary, Description, Parameters, Return
     (get_dict(returns, Dict, Returns) -> true; Returns = ""),
     (get_dict(examples, Dict, Examples) -> true; Examples = []).
 
-% Hierarchical relationship
-component(golem(documentation), supervisor, golem(project_manager)).
+% Delegation relationships
+component(golem(documentation), can_delegate_to, golem(code_assistant)).
+component(golem(documentation), can_delegate_to, golem(architect)).
 
 % Auto-discovered from Golem(Id).tools() through python_bridge
 component(golem(documentation), available_tools, Tools) :-

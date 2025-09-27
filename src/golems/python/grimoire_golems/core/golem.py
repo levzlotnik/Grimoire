@@ -8,19 +8,23 @@ and uses Pydantic AI's agent framework for all LLM interactions.
 import os
 import sys
 import inspect
-from typing import Dict, List, Any, Optional
-from pydantic import BaseModel
+from typing import Dict, List, Any, Optional, Type
+from pydantic import BaseModel, Field
 from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIModel
-
-# # Add the Grimoire interface path to sys.path
-# grimoire_root = os.getenv('GRIMOIRE_ROOT', '/home/levz/Projects/Grimoire')
-# interface_path = os.path.join(grimoire_root, 'src', 'interface', 'api')
-# if interface_path not in sys.path:
-#     sys.path.insert(0, interface_path)
+from pydantic_ai.result import AgentRunResult
 
 from grimoire_interface import GrimoireInterface
-from ..types import get_type_by_name
+
+
+class Config(BaseModel):
+    """Configuration for Golem instances."""
+    model: str
+    temperature: float = 0.5
+    max_tokens: int = 4096
+    system_prompt: str
+    output_type: Optional[Type[BaseModel]] = None
+    base_url: Optional[str] = None
 
 
 class Golem:
@@ -37,20 +41,22 @@ class Golem:
     def __init__(self, golem_id: str, config: Dict, session_id: str):
         self.golem_id = golem_id
         self.session_id = session_id
-        self.config = config
+        
+        # Convert dict config to Pydantic Config model
+        self.config = Config.model_validate(config)
 
         # Initialize Grimoire interface for tools
         self.grimoire_interface = GrimoireInterface()
 
         # Create Pydantic AI agent based on config
-        self.agent = self._create_agent(config)
+        self.agent = self._create_agent(self.config)
 
-    def _create_agent(self, config: Dict) -> Agent:
-        """Create a Pydantic AI agent from configuration dict."""
-        model = config.get("model", "mock")
+    def _create_agent(self, config: Config) -> Agent:
+        """Create a Pydantic AI agent from configuration model."""
+        model = config.model
 
         # Check if we need custom endpoint (Ollama or OpenAI-compatible)
-        if "base_url" in config:
+        if config.base_url:
             # Use OpenAIModel with custom base URL
             model_name = model  # Model name without provider prefix
             if ":" in model:
@@ -58,27 +64,20 @@ class Golem:
                 model_name = model.split(":", 1)[1]
 
             model_instance = OpenAIModel(
-                model_name=model_name, base_url=config["base_url"]
+                model_name=model_name, base_url=config.base_url
             )
         else:
             # Use standard model string
             model_instance = model
 
-        # Get output type from config if specified
-        output_type = dict  # Default to dict
-        if "output_type" in config:
-            type_class = get_type_by_name(config["output_type"])
-            if type_class:
-                output_type = type_class
-
-        # Get system prompt if specified
-        system_prompt = config.get("system_prompt", None)
+        # Get output type from config (now a direct class reference)
+        output_type = config.output_type if config.output_type else dict
 
         # Create agent with configuration
         agent_kwargs = {"model": model_instance, "output_type": output_type}
 
-        if system_prompt:
-            agent_kwargs["system_prompt"] = system_prompt
+        if config.system_prompt:
+            agent_kwargs["system_prompt"] = config.system_prompt
 
         agent = Agent(**agent_kwargs)
 
@@ -132,15 +131,15 @@ class Golem:
         # Convert result to dict
         output_data = None
 
-        # Handle PydanticAI RunResult
-        if hasattr(result, "data"):
+        # Handle PydanticAI RunResult properly
+        if isinstance(result, AgentRunResult):
             output_data = result.data
         else:
             output_data = result
 
         # Convert Pydantic BaseModel instances to dict
         if isinstance(output_data, BaseModel):
-            return output_data.dict()
+            return output_data.model_dump()
         elif isinstance(output_data, dict):
             return output_data
         else:
