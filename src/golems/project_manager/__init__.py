@@ -40,4 +40,4 @@ config = Config(
 )
 
 # Instantiate the golem
-golem = Golem(id="project_manager", config=config, session_id="main")
+golem = Golem(golem_id="project_manager", config=config, session_id="main")

@@ -9,13 +9,14 @@
 % Structured output parser (optional)
 component(golem(documentation), output_parser, parse_documentation).
 
-% Parser converts dict to Prolog term (from Documentation type)
-parse_documentation(Dict, documentation(Summary, Description, Parameters, Returns, Examples)) :-
-    get_dict(summary, Dict, Summary),
-    get_dict(description, Dict, Description),
-    (get_dict(parameters, Dict, Parameters) -> true; Parameters = []),
-    (get_dict(returns, Dict, Returns) -> true; Returns = ""),
-    (get_dict(examples, Dict, Examples) -> true; Examples = []).
+% Parser converts Documentation Pydantic model to Prolog term
+parse_documentation(DocumentationObj, documentation(Summary, Description, Parameters, Returns, Examples)) :-
+    % Extract fields from Documentation Pydantic model using py_call
+    py_call(DocumentationObj:summary, Summary),
+    py_call(DocumentationObj:description, Description),
+    py_call(DocumentationObj:parameters, Parameters),
+    py_call(DocumentationObj:returns, Returns),
+    py_call(DocumentationObj:examples, Examples).
 
 % Delegation relationships
 component(golem(documentation), can_delegate_to, golem(code_assistant)).

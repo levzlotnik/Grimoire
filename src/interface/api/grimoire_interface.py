@@ -8,13 +8,29 @@ Handles all Prolog integration, query execution, and result formatting.
 import os
 import sys
 from pathlib import Path
-from typing import Dict, List, Any, Optional, Union
+from typing import Dict, List, Any, Optional, Union, Callable
 from pydantic import BaseModel
+from dataclasses import dataclass
 import janus_swi
 
 
 class GrimoireError(RuntimeError):
     """Exception raised when Grimoire operations fail"""
+
+
+@dataclass
+class GrimoireToolset:
+    """
+    Toolset for AI agent frameworks containing Grimoire interface methods.
+    
+    This provides everything an AI agent needs to interact with Grimoire:
+    - Callable tools (methods)
+    - System prompt with instructions
+    - Tool descriptions/documentation
+    """
+    tools: List[Callable]
+    system_prompt: str
+    tool_descriptions: Dict[str, str]
 
 
 class PrologTerm:
@@ -229,7 +245,7 @@ class RootResponse(BaseModel):
 class GrimoireInterface:
     """Interface to Grimoire Prolog system via janus-swi"""
 
-    def __init__(self):
+    def __init__(self, skip_prolog_init: bool = False):
         self.janus = janus_swi
 
         # Get Grimoire root directory from environment variable
@@ -242,7 +258,8 @@ class GrimoireInterface:
 
         self.grimoire_root = Path(grimoire_root_env)
 
-        self.initialize_prolog()
+        if not skip_prolog_init:
+            self.initialize_prolog()
 
     def query_interface_docstrings(self) -> Dict[str, str]:
         """Query all interface command docstrings from Prolog"""
@@ -324,20 +341,17 @@ class GrimoireInterface:
 
     def initialize_prolog(self) -> None:
         """Initialize Prolog and load Grimoire system"""
-        # Set working directory to Grimoire root
-        original_cwd = os.getcwd()
         try:
-            os.chdir(self.grimoire_root)
-
-            # Load the Grimoire system
-            self.janus.query_once("ensure_loaded('src/grimoire.pl')")
-            self.janus.query_once("ensure_loaded('src/interface/semantics.pl')")
+            # Use absolute paths based on GRIMOIRE_ROOT
+            grimoire_pl = self.grimoire_root / "src" / "grimoire.pl"
+            interface_pl = self.grimoire_root / "src" / "interface" / "semantics.pl"
+            
+            # Load the Grimoire system with absolute paths
+            self.janus.query_once(f"ensure_loaded('{grimoire_pl}')")
+            self.janus.query_once(f"ensure_loaded('{interface_pl}')")
 
         except Exception as e:
             raise GrimoireError(f"Failed to initialize Prolog: {e}") from e
-        finally:
-            # Always restore working directory
-            os.chdir(original_cwd)
 
     def call_perceive_query(self, query_str: str) -> PerceiveResponse:
         """Call a perceive query and return all solutions with variable bindings"""
@@ -646,3 +660,57 @@ NOTE: This system operates on Prolog terms. Tools accept Prolog syntax as string
             )
         else:
             raise GrimoireError("Failed to execute edit_file")
+    
+    def perceive(self, query_str: str) -> PerceiveResponse:
+        """Execute a perceive query (read-only observation)"""
+        return self.call_perceive_query(query_str)
+    
+    def conjure(self, spell_str: str) -> ConjureResponse:
+        """Execute a conjure spell (mutable operation)"""
+        return self.call_conjure_spell(spell_str)
+    
+    def get_toolset(self) -> GrimoireToolset:
+        """
+        Return a comprehensive toolset for AI agent frameworks.
+        
+        Returns a GrimoireToolset containing:
+        - tools: List of callable methods with their names
+        - system_prompt: System instructions for the agent
+        - tool_descriptions: Docstrings for each tool
+        """
+        # Core tools to expose
+        tools = [
+            self.compt,
+            self.comp,
+            self.doc,
+            self.status,
+            self.entities,
+            self.test,
+            self.session,
+            self.load,
+            self.read_file,
+            self.edit_file,
+            self.perceive,
+            self.conjure
+        ]
+        
+        # Get docstrings for interface commands
+        docstrings = self.query_interface_docstrings()
+        
+        # Build tool descriptions from docstrings and method __doc__
+        tool_descriptions = {}
+        for tool in tools:
+            name = tool.__name__
+            # Try to get from interface docstrings first, fallback to method __doc__
+            if name in docstrings:
+                tool_descriptions[name] = docstrings[name]
+            elif tool.__doc__:
+                tool_descriptions[name] = tool.__doc__
+            else:
+                tool_descriptions[name] = f"Execute {name} operation"
+        
+        return GrimoireToolset(
+            tools=tools,
+            system_prompt=self.system_instructions(),
+            tool_descriptions=tool_descriptions
+        )

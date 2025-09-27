@@ -7,19 +7,20 @@
 :- use_module('python_bridge.pl', [
     get_golem_tools/2,
     execute_golem_task/3,
+    execute_golem_task_parsed/3,
     get_golem_python_instance/2,
     log_thought_to_session/2
 ]).
 
-% Load all individual golems
-:- load_entity(semantic(file("./code_assistant.pl"))).
-:- load_entity(semantic(file("./project_manager.pl"))).
-:- load_entity(semantic(file("./test_runner.pl"))).
-:- load_entity(semantic(file("./documentation.pl"))).
-:- load_entity(semantic(file("./semantics_verifier.pl"))).
-:- load_entity(semantic(file("./code_reviewer.pl"))).
-:- load_entity(semantic(file("./test_planner.pl"))).
-:- load_entity(semantic(file("./architect.pl"))).
+% Load all individual golems from golems package structure
+:- load_entity(semantic(folder("./code_assistant"))).
+:- load_entity(semantic(folder("./project_manager"))).
+:- load_entity(semantic(folder("./documentation"))).
+:- load_entity(semantic(folder("./semantics_verifier"))).
+:- load_entity(semantic(folder("./code_reviewer"))).
+:- load_entity(semantic(folder("./test_planner"))).
+:- load_entity(semantic(folder("./test_runner"))).
+:- load_entity(semantic(folder("./architect"))).
 
 % Golem task execution system - conjure spells
 entity(golem_task).
@@ -28,23 +29,25 @@ entity(thought).
 component(conjure, ctor, golem_task).
 component(conjure, ctor, thought).
 
-% Execute a golem task - returns dict from Python
-cast(conjure(golem_task(golem(Id), InputDict)), OutputDict) :-
-    % Execute task with input dict, get output dict
-    execute_golem_task(Id, InputDict, OutputDict).
-
-% Execute with structured output parsing
-cast(conjure(golem_task(golem(Id), InputDict, ParsedOutput)), OutputDict) :-
-    % Execute task
-    execute_golem_task(Id, InputDict, RawOutput),
-    % Check for output parser
-    (   component(golem(Id), output_parser, Parser)
-    ->  % Parse the output dict into Prolog term
-        call(Parser, RawOutput, ParsedOutput),
-        OutputDict = _{raw: RawOutput, parsed: ParsedOutput}
-    ;   % No parser, return raw output
-        OutputDict = RawOutput,
-        ParsedOutput = RawOutput
+% Execute a golem task - returns structured golem_response with parsed output
+cast(conjure(golem_task(golem(Id), InputDict)), Result) :-
+    catch(
+        (
+            execute_golem_task_parsed(Id, InputDict, GolemResponse),
+            Result = ok(GolemResponse)
+        ),
+        Error,
+        (
+            Result = error(golem_execution_failed(Id, Error)),
+            (
+                Error = error(python_error(ErrorType, ExceptionObj), Context) ->
+                (
+                    python_bridge:translate_python_error(ErrorType, ExceptionObj, ErrorMessage),
+                    format('DEBUG: Python ~w: ~w~n', [ErrorType, ErrorMessage])
+                ) ;
+                true
+            )
+        )
     ).
 
 % Log thoughts to session during execution
@@ -69,7 +72,7 @@ format_model_section(Model, ModelSection) :-
 
 format_config_section(Config, ConfigSection) :-
     dict_pairs(Config, _, Pairs),
-    findall(Line, 
+    findall(Line,
         (member(Key-Value, Pairs), format(atom(Line), '  ~w: ~w', [Key, Value])),
         Lines),
     atomic_list_concat(['Configuration:' | Lines], '\n', ConfigSection).
@@ -91,38 +94,36 @@ docstring(golem(Id), DocString) :-
 docstring(golem_task,
    {|string(_)||
    Golem task execution constructor for conjure spells.
-   
+
    Executes an AI agent task with input dict, returning output dict.
    Optionally applies structured output parsing if configured.
-   
-   Usage: 
-   - conjure(golem_task(golem(agent_id), InputDict))
-   - conjure(golem_task(golem(agent_id), InputDict, ParsedOutput))
+
+   Usage: conjure(golem_task(golem(agent_id), InputDict))
    |}).
 
 docstring(thought,
    {|string(_)||
    Golem thought logging constructor for conjure spells.
-   
+
    Logs AI agent reasoning and thought processes to session database
    for debugging and audit trails.
-   
-   Usage: conjure(thought(content))
+
+   Usage: conjure(thought(Content))
    |}).
 
 docstring(golems,
    {|string(_)||
    Grimoire Golems AI Agent Framework with Pydantic AI
-   
+
    Uses Pydantic AI for unified LLM interface across all providers.
    Configuration is dict-based, supporting model strings like:
-   - "openai:gpt-5-mini" 
+   - "openai:gpt-5-mini"
    - "openai:gpt-4o"
    - Custom endpoints via base_url in config dict
-   
+
    NOTE: "anthropic:claude-*" syntax is broken in Pydantic AI (issue #2780).
    Use OpenAI models until they fix their shit.
-   
+
    Key Features:
    - Dict-based configuration and data exchange
    - Structured output with optional Prolog parsers

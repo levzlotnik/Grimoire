@@ -9,12 +9,13 @@
 % Structured output parser (optional)
 component(golem(test_planner), output_parser, parse_test_plan).
 
-% Parser converts dict to Prolog term (from TestPlan type)
-parse_test_plan(Dict, test_plan(TestCases, CoverageAreas, EdgeCases, Strategy)) :-
-    get_dict(test_cases, Dict, TestCases),
-    get_dict(coverage_areas, Dict, CoverageAreas),
-    get_dict(edge_cases, Dict, EdgeCases),
-    get_dict(test_strategy, Dict, Strategy).
+% Parser converts TestPlan Pydantic model to Prolog term
+parse_test_plan(TestPlanObj, test_plan(TestCases, CoverageAreas, EdgeCases, Strategy)) :-
+    % Extract fields from TestPlan Pydantic model using py_call
+    py_call(TestPlanObj:test_cases, TestCases),
+    py_call(TestPlanObj:coverage_areas, CoverageAreas),
+    py_call(TestPlanObj:edge_cases, EdgeCases),
+    py_call(TestPlanObj:test_strategy, Strategy).
 
 % Delegation relationships
 component(golem(test_planner), can_delegate_to, golem(code_assistant)).

@@ -39,4 +39,4 @@ config = Config(
 )
 
 # Instantiate the golem
-golem = Golem(id="test_planner", config=config, session_id="main")
+golem = Golem(golem_id="test_planner", config=config, session_id="main")

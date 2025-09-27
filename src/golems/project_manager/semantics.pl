@@ -9,13 +9,14 @@
 % Structured output parser (optional)
 component(golem(project_manager), output_parser, parse_project_analysis).
 
-% Parser converts dict to Prolog term (from ProjectAnalysis type)
-parse_project_analysis(Dict, project_analysis(Structure, Dependencies, EntryPoints, ConfigFiles, Recommendations)) :-
-    get_dict(structure, Dict, Structure),
-    get_dict(dependencies, Dict, Dependencies),
-    get_dict(entry_points, Dict, EntryPoints),
-    get_dict(configuration_files, Dict, ConfigFiles),
-    (get_dict(recommendations, Dict, Recommendations) -> true; Recommendations = []).
+% Parser converts ProjectAnalysis Pydantic model to Prolog term
+parse_project_analysis(ProjectAnalysisObj, project_analysis(Structure, Dependencies, EntryPoints, ConfigFiles, Recommendations)) :-
+    % Extract fields from ProjectAnalysis Pydantic model using py_call
+    py_call(ProjectAnalysisObj:structure, Structure),
+    py_call(ProjectAnalysisObj:dependencies, Dependencies),
+    py_call(ProjectAnalysisObj:entry_points, EntryPoints),
+    py_call(ProjectAnalysisObj:configuration_files, ConfigFiles),
+    py_call(ProjectAnalysisObj:recommendations, Recommendations).
 
 % Delegation relationships
 component(golem(project_manager), can_delegate_to, golem(architect)).

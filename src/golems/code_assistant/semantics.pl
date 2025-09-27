@@ -9,13 +9,14 @@
 % Structured output parser (optional)
 component(golem(code_assistant), output_parser, parse_code_response).
 
-% Parser converts dict to Prolog term (from CodeResponse type)
-parse_code_response(Dict, code_response(Code, Language, Tests, Docs, Explanation)) :-
-    get_dict(code, Dict, Code),
-    get_dict(language, Dict, Language),
-    (get_dict(tests, Dict, Tests) -> true; Tests = []),
-    (get_dict(documentation, Dict, Docs) -> true; Docs = ""),
-    (get_dict(explanation, Dict, Explanation) -> true; Explanation = "").
+% Parser converts CodeResponse Pydantic model to Prolog term
+parse_code_response(CodeResponseObj, code_response(Code, Language, Tests, Docs, Explanation)) :-
+    % Extract fields from CodeResponse Pydantic model using py_call
+    py_call(CodeResponseObj:code, Code),
+    py_call(CodeResponseObj:language, Language),
+    py_call(CodeResponseObj:tests, Tests),
+    py_call(CodeResponseObj:documentation, Docs),
+    py_call(CodeResponseObj:explanation, Explanation).
 
 % Delegation relationships
 component(golem(code_assistant), can_delegate_to, golem(test_runner)).

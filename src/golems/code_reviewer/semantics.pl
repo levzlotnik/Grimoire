@@ -9,13 +9,14 @@
 % Structured output parser (optional)
 component(golem(code_reviewer), output_parser, parse_code_review).
 
-% Parser converts dict to Prolog term (from CodeReview type)
-parse_code_review(Dict, code_review(Issues, Suggestions, Security, Performance, Quality)) :-
-    get_dict(issues, Dict, Issues),
-    get_dict(suggestions, Dict, Suggestions),
-    (get_dict(security_concerns, Dict, Security) -> true; Security = []),
-    (get_dict(performance_notes, Dict, Performance) -> true; Performance = []),
-    get_dict(overall_quality, Dict, Quality).
+% Parser converts CodeReview Pydantic model to Prolog term
+parse_code_review(CodeReviewObj, code_review(Issues, Suggestions, Security, Performance, Quality)) :-
+    % Extract fields from CodeReview Pydantic model using py_call
+    py_call(CodeReviewObj:issues, Issues),
+    py_call(CodeReviewObj:suggestions, Suggestions),
+    py_call(CodeReviewObj:security_concerns, Security),
+    py_call(CodeReviewObj:performance_notes, Performance),
+    py_call(CodeReviewObj:overall_quality, Quality).
 
 % Delegation relationships
 component(golem(code_reviewer), can_delegate_to, golem(architect)).

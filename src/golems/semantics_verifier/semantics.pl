@@ -9,12 +9,13 @@
 % Structured output parser (optional)
 component(golem(semantics_verifier), output_parser, parse_semantics_verification).
 
-% Parser converts dict to Prolog term (from SemanticsVerification type)
-parse_semantics_verification(Dict, semantics_verification(CoveredFiles, MissingFiles, Suggestions, Coverage)) :-
-    get_dict(covered_files, Dict, CoveredFiles),
-    get_dict(missing_files, Dict, MissingFiles),
-    (get_dict(suggestions, Dict, Suggestions) -> true; Suggestions = []),
-    get_dict(coverage_percentage, Dict, Coverage).
+% Parser converts SemanticsVerification Pydantic model to Prolog term
+parse_semantics_verification(SemanticsVerificationObj, semantics_verification(CoveredFiles, MissingFiles, Suggestions, Coverage)) :-
+    % Extract fields from SemanticsVerification Pydantic model using py_call
+    py_call(SemanticsVerificationObj:covered_files, CoveredFiles),
+    py_call(SemanticsVerificationObj:missing_files, MissingFiles),
+    py_call(SemanticsVerificationObj:suggestions, Suggestions),
+    py_call(SemanticsVerificationObj:coverage_percentage, Coverage).
 
 % Delegation relationships
 component(golem(semantics_verifier), can_delegate_to, golem(test_planner)).

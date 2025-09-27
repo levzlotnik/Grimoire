@@ -10,32 +10,22 @@
 test(golem_entities_exist) :-
     entity(golem(code_assistant)),
     entity(golem(project_manager)),
-    entity(golem(test_runner)).
+    entity(golem(test_runner)),
+    entity(golem(documentation)),
+    entity(golem(architect)),
+    entity(golem(code_reviewer)),
+    entity(golem(test_planner)),
+    entity(golem(semantics_verifier)).
 
 test(golems_self_entity) :-
     entity(golems).
 
 % === COMPONENT VALIDATION TESTS ===
 
-% Test that all golems have required components
-test(golems_have_required_components) :-
+% Test basic golem structure
+test(golems_have_output_parsers) :-
     forall(entity(golem(GolemId)), (
-        % Every golem must have configuration
-        component(golem(GolemId), config, Config),
-        is_valid_config(Config)
-    )).
-
-% Test configuration structure
-test(llm_configs_are_valid) :-
-    forall(component(_GolemId, config, Config), (
-        % Must be a dictionary with required keys
-        is_valid_config(Config),
-        get_dict(model, Config, Model),
-        get_dict(max_tokens, Config, Tokens),
-        get_dict(temperature, Config, Temp),
-        string(Model),
-        integer(Tokens),
-        number(Temp)
+        component(golem(GolemId), output_parser, _Parser)
     )).
 
 % Test output parsers exist (new format)
@@ -44,13 +34,10 @@ test(schemas_are_wellformed) :-
         atom(Parser)
     )).
 
-% Test dynamic docstring generation
-test(docstrings_generate_correctly) :-
+% Test basic docstring existence
+test(golems_have_docstrings) :-
     forall(entity(golem(GolemId)), (
-        docstring(golem(GolemId), DocString),
-        atom_string(DocString, DocStr),
-        % Docstring should contain key sections
-        sub_atom(DocStr, _, _, _, 'Model:')
+        docstring(golem(GolemId), _DocString)
     )).
 
 % === CONJURE SPELL TESTS ===
@@ -83,36 +70,17 @@ test(python_bridge_initialization, [condition(python_available)]) :-
 
 % === GOLEM CONFIGURATION TESTS ===
 
-test(code_assistant_configuration) :-
-    component(golem(code_assistant), config, Config), !,
-    get_dict(system_prompt, Config, Prompt),
-    atom_string(Prompt, PromptStr),
-    sub_atom(PromptStr, _, _, _, 'software engineer'),
-    get_dict(model, Config, Model),
-    sub_atom(Model, _, _, _, 'anthropic').
-
-test(project_manager_configuration) :-
-    component(golem(project_manager), config, Config), !,
-    get_dict(system_prompt, Config, Prompt),
-    atom_string(Prompt, PromptStr),
-    sub_atom(PromptStr, _, _, _, 'project manager'),
-    get_dict(model, Config, Model),
-    sub_atom(Model, _, _, _, 'openai').
-
-test(test_runner_configuration) :-
-    component(golem(test_runner), config, Config), !,
-    get_dict(system_prompt, Config, Prompt),
-    atom_string(Prompt, PromptStr),
-    sub_atom(PromptStr, _, _, _, 'QA engineer'),
-    get_dict(base_url, Config, BaseUrl),
-    sub_atom(BaseUrl, _, _, _, 'localhost').
+% Configuration tests removed - configs now handled in Python
+% Individual golem configurations are validated in their respective semantics.plt files
 
 % === DELEGATION HIERARCHY TESTS ===
 
 test(delegation_relationships) :-
-    component(golem(code_assistant), can_delegate_to, golem(test_runner)), !,
-    component(golem(project_manager), can_delegate_to, golem(code_assistant)), !,
-    component(golem(test_runner), supervisor, golem(project_manager)), !.
+    % Test some basic delegation relationships from the new structure
+    component(golem(code_assistant), can_delegate_to, golem(test_runner)),
+    component(golem(code_assistant), can_delegate_to, golem(documentation)),
+    component(golem(architect), can_delegate_to, golem(code_reviewer)),
+    component(golem(architect), can_delegate_to, golem(documentation)).
 
 % === DOCSTRING TESTS ===
 

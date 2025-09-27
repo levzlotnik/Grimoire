@@ -8,7 +8,7 @@ import os
 from typing import List, Optional
 from pydantic import BaseModel, Field
 
-from grimoire_golems import Golem, Config
+from grimoire_golems.core import Golem, Config
 
 
 class CodeResponse(BaseModel):
@@ -40,4 +40,4 @@ config = Config(
 )
 
 # Instantiate the golem
-golem = Golem(id="code_assistant", config=config, session_id="main")
+golem = Golem(golem_id="code_assistant", config=config, session_id="main")

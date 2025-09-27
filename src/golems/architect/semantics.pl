@@ -9,13 +9,14 @@
 % Structured output parser (optional)
 component(golem(architect), output_parser, parse_architectural_plan).
 
-% Parser converts dict to Prolog term (from ArchitecturalPlan type)
-parse_architectural_plan(Dict, architectural_plan(Patterns, Strengths, Weaknesses, Recommendations, Diagram)) :-
-    get_dict(patterns_used, Dict, Patterns),
-    get_dict(strengths, Dict, Strengths),
-    get_dict(weaknesses, Dict, Weaknesses),
-    get_dict(recommendations, Dict, Recommendations),
-    (get_dict(diagram, Dict, Diagram) -> true; Diagram = "").
+% Parser converts ArchitecturalPlan Pydantic model to Prolog term
+parse_architectural_plan(ArchitecturalPlanObj, architectural_plan(Patterns, Strengths, Weaknesses, Recommendations, Diagram)) :-
+    % Extract fields from ArchitecturalPlan Pydantic model using py_call
+    py_call(ArchitecturalPlanObj:patterns_used, Patterns),
+    py_call(ArchitecturalPlanObj:strengths, Strengths),
+    py_call(ArchitecturalPlanObj:weaknesses, Weaknesses),
+    py_call(ArchitecturalPlanObj:recommendations, Recommendations),
+    py_call(ArchitecturalPlanObj:diagram, Diagram).
 
 % Delegation relationships
 component(golem(architect), can_delegate_to, golem(code_reviewer)).

@@ -8,17 +8,32 @@ and uses Pydantic AI's agent framework for all LLM interactions.
 import os
 import sys
 import inspect
-from typing import Dict, List, Any, Optional, Type
+from typing import Dict, List, Any, Optional, Type, Union, TypeVar, Generic
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent
-from pydantic_ai.models.openai import OpenAIModel
+from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.result import AgentRunResult
+from pydantic_ai.messages import ModelMessage
+from pydantic_ai.toolsets import FunctionToolset
 
 from grimoire_interface import GrimoireInterface
+
+# Type variable for generic GolemResponse
+OutputT = TypeVar("OutputT")
+
+
+class GolemResponse(BaseModel, Generic[OutputT]):
+    """Response structure for golem task execution."""
+
+    output: OutputT
+    messages: List[ModelMessage]
+    golem_id: str
+    session_id: str
 
 
 class Config(BaseModel):
     """Configuration for Golem instances."""
+
     model: str
     temperature: float = 0.5
     max_tokens: int = 4096
@@ -38,15 +53,18 @@ class Golem:
     - max_tokens: Optional max tokens setting
     """
 
-    def __init__(self, golem_id: str, config: Dict, session_id: str):
+    def __init__(self, golem_id: str, config: Union[Config, Dict], session_id: str):
         self.golem_id = golem_id
         self.session_id = session_id
-        
-        # Convert dict config to Pydantic Config model
-        self.config = Config.model_validate(config)
 
-        # Initialize Grimoire interface for tools
-        self.grimoire_interface = GrimoireInterface()
+        # Convert config to Pydantic Config model if needed
+        if isinstance(config, Config):
+            self.config = config
+        else:
+            self.config = Config.model_validate(config)
+
+        # Initialize Grimoire interface for tools, skipping Prolog init since janus-swi shares the session
+        self.grimoire_interface = GrimoireInterface(skip_prolog_init=False)
 
         # Create Pydantic AI agent based on config
         self.agent = self._create_agent(self.config)
@@ -57,15 +75,18 @@ class Golem:
 
         # Check if we need custom endpoint (Ollama or OpenAI-compatible)
         if config.base_url:
-            # Use OpenAIModel with custom base URL
+            # Use OpenAIChatModel with custom base URL
             model_name = model  # Model name without provider prefix
             if ":" in model:
                 # Strip provider prefix if present
                 model_name = model.split(":", 1)[1]
 
-            model_instance = OpenAIModel(
-                model_name=model_name, base_url=config.base_url
-            )
+            if config.base_url:
+                from pydantic_ai.providers.openai import OpenAIProvider
+                provider = OpenAIProvider(base_url=config.base_url)
+                model_instance = OpenAIChatModel(model_name, provider=provider)
+            else:
+                model_instance = OpenAIChatModel(model_name)
         else:
             # Use standard model string
             model_instance = model
@@ -73,46 +94,32 @@ class Golem:
         # Get output type from config (now a direct class reference)
         output_type = config.output_type if config.output_type else dict
 
-        # Create agent with configuration
-        agent_kwargs = {"model": model_instance, "output_type": output_type}
+        # Get the toolset from GrimoireInterface
+        grimoire_toolset = self.grimoire_interface.get_toolset()
+        
+        # Create FunctionToolset from the Grimoire tools
+        function_toolset = FunctionToolset(grimoire_toolset.tools)
+        
+        # Create agent with configuration and toolsets
+        agent_kwargs = {
+            "model": model_instance, 
+            "output_type": output_type,
+            "toolsets": [function_toolset]  # Pass as a list of toolsets
+        }
 
+        # Combine system prompts - config prompt + Grimoire system prompt
         if config.system_prompt:
-            agent_kwargs["system_prompt"] = config.system_prompt
+            combined_prompt = f"{grimoire_toolset.system_prompt}\n\n{config.system_prompt}"
+            agent_kwargs["system_prompt"] = combined_prompt
+        else:
+            agent_kwargs["system_prompt"] = grimoire_toolset.system_prompt
 
         agent = Agent(**agent_kwargs)
 
-        # Register Grimoire tools with the agent
-        self._register_tools(agent)
-
         return agent
 
-    def _register_tools(self, agent: Agent):
-        """Register GrimoireInterface methods as tools for the agent."""
-        for name, method in inspect.getmembers(
-            self.grimoire_interface, predicate=inspect.ismethod
-        ):
-            if name.startswith("_"):
-                continue
 
-            # Create tool wrapper that calls the GrimoireInterface method
-            def make_tool_wrapper(method_name, method_obj):
-                async def tool_wrapper(**kwargs):
-                    """Dynamically generated tool wrapper."""
-                    return method_obj(**kwargs)
-
-                # Set proper name and docstring
-                tool_wrapper.__name__ = f"grimoire_{method_name}"
-                tool_wrapper.__doc__ = (
-                    inspect.getdoc(method_obj) or f"Execute {method_name}"
-                )
-
-                return tool_wrapper
-
-            # Register the tool with the agent
-            tool_fn = make_tool_wrapper(name, method)
-            agent.tool(tool_fn)
-
-    async def execute_task(self, inputs: Dict) -> Dict:
+    async def execute_task(self, inputs: Dict) -> GolemResponse[Any]:
         """
         Execute a task with the agent.
 
@@ -120,7 +127,7 @@ class Golem:
             inputs: Dict of inputs from Prolog
 
         Returns:
-            Dict containing the execution result
+            GolemResponse containing the execution result
         """
         # Build prompt from inputs
         prompt = self._build_prompt(inputs)
@@ -128,29 +135,34 @@ class Golem:
         # Run the agent
         result = await self.agent.run(prompt)
 
-        # Convert result to dict
-        output_data = None
-
-        # Handle PydanticAI RunResult properly
+        # Convert result to GolemResponse with both output and messages
         if isinstance(result, AgentRunResult):
-            output_data = result.data
-        else:
-            output_data = result
+            output_data = result.output
+            all_messages = result.new_messages()
+            
+            # Filter out system prompt and user message to avoid bloat
+            filtered_messages = []
+            for msg in all_messages:
+                # Only include model responses and tool interactions, skip system/user prompts
+                if msg.kind == 'response':
+                    filtered_messages.append(msg)
 
-        # Convert Pydantic BaseModel instances to dict
-        if isinstance(output_data, BaseModel):
-            return output_data.model_dump()
-        elif isinstance(output_data, dict):
-            return output_data
+            return GolemResponse(
+                output=output_data,
+                messages=filtered_messages,
+                golem_id=self.golem_id,
+                session_id=self.session_id,
+            )
         else:
-            # Wrap simple types in a dict
-            return {
-                "output": output_data,
-                "golem_id": self.golem_id,
-                "session_id": self.session_id,
-            }
+            # Non-AgentRunResult case (fallback)
+            return GolemResponse(
+                output=result,
+                messages=[],
+                golem_id=self.golem_id,
+                session_id=self.session_id,
+            )
 
-    def execute_task_sync(self, inputs: Dict) -> Dict:
+    def execute_task_sync(self, inputs: Dict) -> GolemResponse[Any]:
         """
         Synchronous version of execute_task for Prolog bridge compatibility.
 
@@ -158,8 +170,9 @@ class Golem:
             inputs: Dict of inputs from Prolog
 
         Returns:
-            Dict containing the execution result
+            GolemResponse containing the execution result
         """
+        print(f"DEBUG: PYTHON: Executing task synchronously with inputs: {inputs}")
         import asyncio
 
         # Get or create event loop
