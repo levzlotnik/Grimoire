@@ -82,6 +82,35 @@ docstring(ctor,
     |}
 ).
 
+% Fact schema infrastructure
+component(component, relation_pattern, fact_schema).
+entity(fact_schema).
+docstring(fact_schema,
+    {|string(_)||
+    A fact schema defines domain-specific declarative patterns that users
+    can use in their semantics.pl files. These patterns expand into rich
+    ECS structures through domain-provided rules.
+
+    Format: component(Entity, has(Domain(Type)), DomainData)
+
+    The domain provides:
+    - ECS expansion rules in semantics.pl (generative/covariant)
+    - Verification predicates in semantics.plt (discriminative/contravariant)
+
+    Example:
+        % User writes in their semantics.pl:
+        component(my_app, has(nix(flake)), nix(flake(ref("./")))).
+
+        % Domain's semantics.pl expands to:
+        component(my_app, nix_flake_ref, "./").
+        component(my_app, nix_package, "hello").  % auto-discovered
+
+        % Domain's semantics.plt verifies:
+        verify(component(my_app, has(nix(flake)), nix(flake(ref("./"))))).
+    |}
+).
+
+
 component(component, relation_pattern, option).
 entity(option).
 docstring(option,

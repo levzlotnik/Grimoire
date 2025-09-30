@@ -30,7 +30,7 @@ test(golems_have_output_parsers) :-
 
 % Test output parsers exist (new format)
 test(schemas_are_wellformed) :-
-    forall(component(GolemId, output_parser, Parser), (
+    forall(component(golem(_GolemId), output_parser, Parser), (
         atom(Parser)
     )).
 
@@ -80,7 +80,7 @@ test(delegation_relationships) :-
     component(golem(code_assistant), can_delegate_to, golem(test_runner)),
     component(golem(code_assistant), can_delegate_to, golem(documentation)),
     component(golem(architect), can_delegate_to, golem(code_reviewer)),
-    component(golem(architect), can_delegate_to, golem(documentation)).
+    component(golem(architect), can_delegate_to, golem(documentation)), !.
 
 % === DOCSTRING TESTS ===
 

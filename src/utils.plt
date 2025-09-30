@@ -10,7 +10,7 @@ test(entity_exists) :-
 
 % Test entity_hierarchy perceive constructor exists
 test(entity_hierarchy_constructor) :-
-    component(perceive, ctor, entity_hierarchy).
+    component(perceive, ctor, entity_hierarchy), !.
 
 % Test basic entity hierarchy building
 test(simple_hierarchy) :-
@@ -20,15 +20,15 @@ test(simple_hierarchy) :-
     assertz(component(test_child1, child, test_grandchild)),
     
     % Build hierarchy
-    perceive(entity_hierarchy(test_root, Tree)),
+    perceive(entity_hierarchy(test_root, Tree)), !,
     
     % Verify structure
     Tree = tree(test_root, Children),
     length(Children, 2),
-    member(tree(test_child1, GrandChildren), Children),
-    member(tree(test_child2, []), Children),
+    member(tree(test_child1, GrandChildren), Children), !,
+    member(tree(test_child2, []), Children), !,
     length(GrandChildren, 1),
-    member(tree(test_grandchild, []), GrandChildren),
+    member(tree(test_grandchild, []), GrandChildren), !,
     
     % Cleanup
     retractall(component(test_root, child, _)),
@@ -36,7 +36,7 @@ test(simple_hierarchy) :-
 
 % Test is_semantics_file predicate
 test(is_semantics_file_pl) :-
-    is_semantics_file('some/path/semantics.pl').
+    is_semantics_file('some/path/semantics.pl'), !.
 
 test(is_semantics_file_plt) :-
     is_semantics_file('test/semantics.plt').

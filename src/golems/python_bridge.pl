@@ -28,22 +28,16 @@ ensure_python_grimoire_golems :-
     (   grimoire_golems_imported
     ->  true  % Already imported
     ;   % Check Python environment (sys is already available in janus)
-        % format('DEBUG: Starting Python setup~n'),
-        py_call(sys:version, Version),
-        % format('DEBUG: Python version: ~w~n', [Version]),
-        py_call(sys:executable, Executable),
-        % format('DEBUG: Got Python executable: ~w~n', [Executable]),
         % Add current directory to Python path for golems module
         grimoire_resolve_path('./', GolemsPath),
-        % format('DEBUG: Resolved golems path: ~w~n', [GolemsPath]),
         py_add_lib_dir(GolemsPath, first),
-        % format('DEBUG: Added lib dir: ~w~n', [GolemsPath]),
-        py_call(sys:path, Path),
-        % format('DEBUG: Got sys.path: ~w~n', [Path]),
+        % py_call(sys:version, Version),
+        % py_call(sys:executable, Executable),
+        % py_call(sys:path, Path),
+        % format('DEBUG: Using Python ~w at ~w~n', [Version, Executable]),
+        % format('DEBUG: Python sys.path: ~w~n', [Path]),
         % Import grimoire_golems and golems module
-        % format('DEBUG: About to import golems module~n'),
         py_import(golems, []),
-        % format('DEBUG: Successfully imported golems module~n'),
         % Mark as imported
         assertz(grimoire_golems_imported)
     ).
@@ -93,7 +87,7 @@ translate_python_error(ErrorType, ExceptionObj, ErrorMessage) :-
     catch(
         py_call(str(ExceptionObj), ErrorMessage),
         _,
-        ErrorMessage = 'Could not extract error message'
+        ErrorMessage = ErrorType
     ).
 
 % Log thoughts to session database using existing think command
