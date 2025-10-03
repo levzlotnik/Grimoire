@@ -330,4 +330,16 @@ cleanup_mock_dev_env :-
         retract(user:component(test_dev_entity, C, V))
     ).
 
+% === TEMPLATE SYSTEM TESTS ===
+
+% Test listing templates
+test(nix_list_templates) :-
+    magic_cast(perceive(nix(templates)), Result),
+    assertion((Result = ok(templates(TemplateList)), is_list(TemplateList))).
+
+% Test template spell registration
+test(nix_template_spells_registered) :-
+    register_spell(perceive(nix(templates)), input(_), output(_), _),
+    register_spell(conjure(nix(template(init))), input(_), output(_), _).
+
 :- end_tests(nix).

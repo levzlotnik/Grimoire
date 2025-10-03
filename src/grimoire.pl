@@ -308,8 +308,11 @@ component(SpellType, ctor, Spell) :-
     SpellTerm =.. [SpellType, Spell].
 
 % Derive docstrings from spell registrations
-docstring(Entity, S) :-
-    register_spell(Entity, input(InputFormat), output(OutputFormat), docstring(Explanation)),
+docstring(E, S) :-
+    register_spell(E, input(InputFormat), output(OutputFormat), docstring(Explanation)),
+    E =.. [SpellCtor, SpellType],
+    component(spell, ctor, SpellCtor),
+    component(SpellCtor, ctor, SpellType),
     format(string(S), "~w~n~nInput Format: ~w~nOutput Format: ~w", [Explanation, InputFormat, OutputFormat]).
 
 % Grimoire-level spell registrations

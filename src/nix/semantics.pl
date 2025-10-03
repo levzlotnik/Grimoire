@@ -677,3 +677,63 @@ partition_flake_targets([Target|Rest], Apps, Packages, DevShells) :-
         Packages = RestPackages,
         DevShells = RestDevShells
     ).
+
+% === TEMPLATE SYSTEM ===
+
+docstring(nix(templates),
+    "Grimoire project templates from grimoire-templates flake. Use perceive(nix(templates)) to list available templates.").
+
+docstring(nix(template(init)),
+    "Initialize a new project from a Grimoire template. Use conjure(nix(template(init(TemplateId, ProjectDir)))) to create a project.").
+
+% List available Grimoire templates
+register_spell(
+    perceive(nix(templates)),
+    input(nix(templates)),
+    output(either(
+        ok(templates('TemplateList')),
+        error(nix_error('Reason'))
+    )),
+    docstring("List available Grimoire project templates from grimoire-templates flake.")
+).
+
+cast(perceive(nix(templates)), Result) :-
+    catch(
+        (magic_cast(conjure(shell(["getGrimoireTemplates"])), ShellResult),
+         (ShellResult = ok(result(JsonOutput, _)) ->
+             atom_json_dict(JsonOutput, Dict, []),
+             get_dict(templates, Dict, TemplatesDict),
+             dict_keys(TemplatesDict, TemplateList),
+             Result = ok(templates(TemplateList))
+         ;
+             Result = error(nix_error(failed_to_get_templates))
+         )),
+        Error,
+        Result = error(nix_error(Error))
+    ).
+
+% Initialize project from template
+register_spell(
+    conjure(nix(template(init))),
+    input(nix(template(init(template_id('TemplateId'), project_dir('ProjectDir'))))),
+    output(either(
+        ok(template_initialized('ProjectDir')),
+        error(nix_error('Reason'))
+    )),
+    docstring("Initialize a new project from a Grimoire template. TemplateId: template name, ProjectDir: target directory.")
+).
+
+cast(conjure(nix(template(init(TemplateId, ProjectDir)))), Result) :-
+    catch(
+        (atom(TemplateId), atom(ProjectDir),
+         format(atom(TemplateIdStr), '~w', [TemplateId]),
+         format(atom(ProjectDirStr), '~w', [ProjectDir]),
+         magic_cast(conjure(shell(["initGrimoireTemplate", TemplateIdStr, ProjectDirStr])), ShellResult),
+         (ShellResult = ok(result(_, 0)) ->
+             Result = ok(template_initialized(ProjectDir))
+         ;
+             Result = error(nix_error(template_init_failed))
+         )),
+        Error,
+        Result = error(nix_error(Error))
+    ).
