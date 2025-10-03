@@ -51,7 +51,7 @@ test(session_start_without_id) :-
 test(session_start_with_id, [cleanup(reset_to_main)]) :-
     % Session start with specific ID should create named session
     cast(conjure(session(start('test-session-1'))), Result),
-    assertion(Result = ok(session_started('test-session-1'))),
+    assertion(Result == ok(session_started('test-session-1'))),
     
     % Verify workspace was created
     session_workspace_path('test-session-1', WorkspacePath),
@@ -71,12 +71,12 @@ reset_to_main :-
 test(session_history_main_session) :-
     % Main session should return empty history
     perceive(session(history(Commands))),
-    assertion(Commands = []), !.
+    assertion(Commands == []), !.
 
 test(commit_accumulated_placeholder) :-
     % Commit accumulated should work as placeholder
     cast(conjure(session(commit_accumulated("Test commit"))), Result),
-    assertion(Result = ok(commit_placeholder("Test commit"))).
+    assertion(Result == ok(commit_placeholder("Test commit"))).
 
 % === THINK COMMAND TESTS ===
 
@@ -88,7 +88,7 @@ test(think_command_string) :-
 test(think_command_atom) :-
     % Think command should convert atoms to strings
     cast(conjure(think(test_atom)), Result),
-    assertion(Result = ok(thought_recorded("test_atom"))).
+    assertion(Result == ok(thought_recorded("test_atom"))).
 
 % === DATABASE FUNCTIONALITY ===
 
@@ -122,7 +122,7 @@ test(command_logging, [cleanup(cleanup_session('test-logging'))]) :-
     sqlite3_query(DbPath, 'SELECT COUNT(*) AS count FROM commands WHERE command_type = \'action\'', Results),
     Results = [CountDict|_],
     get_dict(count, CountDict, Count),
-    assertion(Count = 1), !.
+    assertion(Count == 1), !.
 
 test(session_history_retrieval, [cleanup(cleanup_session('test-history'))]) :-
     % Test retrieving command history from database
@@ -139,8 +139,8 @@ test(session_history_retrieval, [cleanup(cleanup_session('test-history'))]) :-
     % Should have 2 commands (in reverse chronological order)
     length(Commands, 2),
     Commands = [command_entry(_, CT1, _, _, _), command_entry(_, CT2, _, _, _)],
-    assertion(CT1 = "action"),
-    assertion(CT2 = "think"), !.
+    assertion(CT1 == "action"),
+    assertion(CT2 == "think"), !.
 
 % === PATH RESOLUTION TESTS ===
 
@@ -148,19 +148,19 @@ test(workspace_path_resolution) :-
     session_workspace_path('test-session', WorkspacePath),
     grimoire_data_directory(DataDir),
     format(atom(ExpectedPath), '~w/sessions/test-session', [DataDir]),
-    assertion(WorkspacePath = ExpectedPath).
+    assertion(WorkspacePath == ExpectedPath).
 
 test(database_path_resolution) :-
     session_commands_db_path('test-session', DbPath),
     session_workspace_path('test-session', WorkspacePath),
     format(atom(ExpectedPath), '~w/commands.db', [WorkspacePath]),
-    assertion(DbPath = ExpectedPath).
+    assertion(DbPath == ExpectedPath).
 
 test(state_file_path_resolution) :-
     session_state_file_path('test-session', StatePath),
     session_workspace_path('test-session', WorkspacePath),
     format(atom(ExpectedPath), '~w/state.pl', [WorkspacePath]),
-    assertion(StatePath = ExpectedPath).
+    assertion(StatePath == ExpectedPath).
 
 % === SESSION STATE TESTS ===
 

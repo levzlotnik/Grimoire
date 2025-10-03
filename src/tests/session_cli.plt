@@ -45,7 +45,7 @@ test(session_list_command, [setup(setup), cleanup(teardown)]) :-
 test(session_switch_nonexistent, [setup(setup), cleanup(teardown)]) :-
     % Test switching to non-existent session
     switch_to_session('nonexistent-session', Result),
-    assertion(Result = error(session_not_found('nonexistent-session'))).
+    assertion(Result == error(session_not_found('nonexistent-session'))).
 
 test(session_status_command, [setup(setup), cleanup(teardown)]) :-
     % Test that session status can be called

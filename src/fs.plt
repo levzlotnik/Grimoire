@@ -212,9 +212,9 @@ test(fs_edit_file_insert_spell, [
     cleanup(cleanup_edit_test_file)
 ]) :-
     cast(conjure(fs(edit_file(file('edit_test.txt'), [insert(2, "inserted line")]))), Result), !,
-    assertion(Result = ok(file_modified('edit_test.txt'))),
+    assertion(Result == ok(file_modified('edit_test.txt'))),
     read_file_to_lines('edit_test.txt', Lines),
-    assertion(Lines = ["original line 1", "inserted line", "original line 2", "original line 3"]).
+    assertion(Lines == ["original line 1", "inserted line", "original line 2", "original line 3"]).
 
 % Test edit_file spell - append operation
 test(fs_edit_file_append_spell, [
@@ -222,7 +222,7 @@ test(fs_edit_file_append_spell, [
     cleanup(cleanup_edit_test_file)
 ]) :-
     cast(conjure(fs(edit_file(file('edit_test.txt'), [append("appended line")]))), Result), !,
-    assertion(Result = ok(file_modified('edit_test.txt'))),
+    assertion(Result == ok(file_modified('edit_test.txt'))),
     read_file_to_lines('edit_test.txt', Lines),
     assertion(nth1(4, Lines, "appended line")).
 
@@ -232,9 +232,9 @@ test(fs_edit_file_delete_spell, [
     cleanup(cleanup_edit_test_file)
 ]) :-
     cast(conjure(fs(edit_file(file('edit_test.txt'), [delete(2, 2)]))), Result), !,
-    assertion(Result = ok(file_modified('edit_test.txt'))),
+    assertion(Result == ok(file_modified('edit_test.txt'))),
     read_file_to_lines('edit_test.txt', Lines),
-    assertion(Lines = ["original line 1", "original line 3"]).
+    assertion(Lines == ["original line 1", "original line 3"]).
 
 % Test edit_file spell - replace operation
 test(fs_edit_file_replace_spell, [
@@ -242,20 +242,20 @@ test(fs_edit_file_replace_spell, [
     cleanup(cleanup_edit_test_file)
 ]) :-
     cast(conjure(fs(edit_file(file('edit_test.txt'), [replace(2, 2, "replaced line")]))), Result), !,
-    assertion(Result = ok(file_modified('edit_test.txt'))),
+    assertion(Result == ok(file_modified('edit_test.txt'))),
     read_file_to_lines('edit_test.txt', Lines),
-    assertion(Lines = ["original line 1", "replaced line", "original line 3"]).
+    assertion(Lines == ["original line 1", "replaced line", "original line 3"]).
 
 % Test mkdir spell
 test(fs_mkdir_spell, [cleanup(cleanup_mkdir_test)]) :-
     cast(conjure(fs(mkdir('test_mkdir_dir'))), Result), !,
-    assertion(Result = ok(directory_created('test_mkdir_dir'))),
+    assertion(Result == ok(directory_created('test_mkdir_dir'))),
     assertion(exists_directory('test_mkdir_dir')).
 
 % Test mkfile spell
 test(fs_mkfile_spell, [cleanup(cleanup_mkfile_test)]) :-
     cast(conjure(fs(mkfile('test_mkfile.txt'))), Result), !,
-    assertion(Result = ok(file_created('test_mkfile.txt'))),
+    assertion(Result == ok(file_created('test_mkfile.txt'))),
     assertion(exists_file('test_mkfile.txt')).
 
 % === ASSERTZ→PLEASE_VERIFY→RETRACTALL PATTERN TESTS ===

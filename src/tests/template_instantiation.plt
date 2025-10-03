@@ -162,7 +162,7 @@ test(mkproject_existing_project, [cleanup(cleanup_test_project)]) :-
     cast(conjure(mkproject(TmpDir, TestProjectName, [git(false)])), Result), !,
 
     % Should fail with appropriate error
-    assertion(Result = error(project_already_exists(ProjectPath))),
+    assertion(Result == error(project_already_exists(ProjectPath))),
 
     % Store project path for cleanup
     nb_setval(test_project_path, ProjectPath).

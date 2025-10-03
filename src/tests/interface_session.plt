@@ -65,7 +65,7 @@ test(session_state_persistence_in_workspace, [setup(setup), cleanup(teardown)]) 
     % Start session and load entity
     start_session('test-persistence-switch', _),
     cast(conjure(interface(load('system'))), LoadResult1),
-    assertion(LoadResult1 = ok(entity_loaded(system))),
+    assertion(LoadResult1 == ok(entity_loaded(system))),
     
     % Verify session state was persisted to file
     session_state_file_path('test-persistence-switch', StatePath),
@@ -114,11 +114,11 @@ test(load_command_existing_entity_handling, [setup(setup), cleanup(teardown)]) :
 
     % Loading existing entity should succeed
     cast(conjure(interface(load('system'))), SystemResult),
-    assertion(SystemResult = ok(entity_loaded(system))),
+    assertion(SystemResult == ok(entity_loaded(system))),
 
     % Loading interface entity should succeed
     cast(conjure(interface(load('interface'))), InterfaceResult),
-    assertion(InterfaceResult = ok(entity_loaded(interface))), !.
+    assertion(InterfaceResult == ok(entity_loaded(interface))), !.
 
 test(load_command_error_types, [setup(setup), cleanup(teardown)]) :-
     start_session('test-error-types', _),
@@ -190,11 +190,11 @@ test(session_state_file_cleanup_on_closure, [setup(setup), cleanup(teardown)]) :
 test(main_session_no_persistence, [setup(setup), cleanup(teardown)]) :-
     % Main session is the default
     get_current_session_id(SessionId),
-    assertion(SessionId = main),
+    assertion(SessionId == main),
 
     % Load in main session should succeed but not create files
     cast(conjure(interface(load('system'))), MainResult),
-    assertion(MainResult = ok(entity_loaded(system))),
+    assertion(MainResult == ok(entity_loaded(system))),
 
     % No session state file should be created for main
     session_state_file_path('main', MainPath),

@@ -173,7 +173,7 @@ test(simple_hierarchy) :-
 test(validate_spell_success, [setup(setup_validate_entity), cleanup(cleanup_validate_entity)]) :-
     % Entity exists and should validate
     cast(conjure(utils(validate(validate_test_entity, [check_existence, check_format]))), Result),
-    assertion(Result = ok(validation_passed)), !.
+    assertion(Result == ok(validation_passed)), !.
 
 test(validate_spell_failure) :-
     % Nonexistent entity should fail validation
@@ -183,7 +183,7 @@ test(validate_spell_failure) :-
 % Test transform spell
 test(transform_spell_map) :-
     cast(conjure(utils(transform([1, 2, 3], map(succ)))), Result),
-    assertion(Result = ok(transformed([2, 3, 4]))), !.
+    assertion(Result == ok(transformed([2, 3, 4]))), !.
 
 % === UTILITY FUNCTION TESTS ===
 
