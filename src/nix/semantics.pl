@@ -24,18 +24,18 @@ entity(nix(package)).
 entity(nix(target)).
 
 % Nix command entities
-entity(nix(build)).
-entity(nix(develop)).
-entity(nix(run)).
-entity(nix(flake(new))).
-entity(nix(flake(show))).
-entity(nix(store(gc))).
-entity(nix(store(repair))).
-entity(nix(store(optimise))).
+% Removed: entity(nix(build)) - auto-derived from register_spell/4
+% Removed: entity(nix(develop)) - auto-derived from register_spell/4
+% Removed: entity(nix(run)) - auto-derived from register_spell/4
+% Removed: entity(nix(flake(new))) - auto-derived from register_spell/4
+% Removed: entity(nix(flake(show))) - auto-derived from register_spell/4
+% Removed: entity(nix(store(gc))) - auto-derived from register_spell/4
+% Removed: entity(nix(store(repair))) - auto-derived from register_spell/4
+% Removed: entity(nix(store(optimise))) - auto-derived from register_spell/4
 entity(nix(store(query))).
-entity(nix(search)).
-entity(nix(log)).
-entity(nix(why_depends)).
+% Removed: entity(nix(search)) - auto-derived from register_spell/4
+% Removed: entity(nix(log)) - auto-derived from register_spell/4
+% Removed: entity(nix(why_depends)) - auto-derived from register_spell/4
 
 % Spell constructors auto-derived from register_spell/4 declarations
 % (No manual ctor declarations needed for spells with register_spell)

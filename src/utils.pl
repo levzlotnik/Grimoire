@@ -2,7 +2,6 @@
 :- self_entity(utils).
 
 % === ENTITY DECLARATIONS ===
-entity(entity_hierarchy).
 entity(utils(file_processor)).
 entity(utils(tree_builder)).
 entity(utils(validator)).

@@ -154,7 +154,7 @@ verify(component(Entity, nix_dev_env_available, true)) :-
 % === BASIC EXISTENCE TESTS ===
 
 test(nix_entity_exists, [true]) :-
-    user:please_verify(component(nix, defined, true)).
+    user:please_verify(component(nix, defined, true)), !.
 
 test(nix_command_constructors, [true]) :-
     user:please_verify(component(conjure, ctor, nix(build))),

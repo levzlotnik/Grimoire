@@ -3,7 +3,8 @@
 % Git entity declaration with automatic self-location
 :- self_entity(git).
 
-% Git command entities
+% Git command entities (manual declarations for commands without register_spell/4)
+% Note: git(status), git(ls_files), git(current_branch) entities auto-generated from register_spell/4
 entity(git(clone)).
 entity(git(init)).
 entity(git(add)).
@@ -11,14 +12,12 @@ entity(git(commit)).
 entity(git(push)).
 entity(git(pull)).
 entity(git(checkout)).
-entity(git(status)).
+entity(git(reset)).
+entity(git(merge)).
 entity(git(diff)).
 entity(git(log)).
 entity(git(branch)).
 entity(git(rev_parse)).
-entity(git(reset)).
-entity(git(merge)).
-entity(git(ls_files)).
 entity(git(remote)).
 
 % Removed legacy command ctor - using perceive/conjure above
@@ -38,7 +37,9 @@ component(git, subcommand, reset).
 component(git, subcommand, merge).
 component(git, subcommand, remote).
 
-% Spell constructors - both manual and those with register_spell declarations
+% Spell constructors (manual declarations for commands without register_spell/4)
+% Note: perceive(git(status)), perceive(git(ls_files)), perceive(git(current_branch))
+%       are auto-generated from register_spell/4
 component(conjure, ctor, git(clone)).
 component(conjure, ctor, git(init)).
 component(conjure, ctor, git(add)).
@@ -48,12 +49,10 @@ component(conjure, ctor, git(pull)).
 component(conjure, ctor, git(checkout)).
 component(conjure, ctor, git(reset)).
 component(conjure, ctor, git(merge)).
-component(perceive, ctor, git(status)).
 component(perceive, ctor, git(diff)).
 component(perceive, ctor, git(log)).
 component(perceive, ctor, git(branch)).
 component(perceive, ctor, git(rev_parse)).
-component(perceive, ctor, git(ls_files)).
 
 % Legacy support - keep git namespace ctors:
 component(git, ctor, C) :- component(git, subcommand, C).

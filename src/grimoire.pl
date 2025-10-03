@@ -181,52 +181,16 @@ entity(conjure).
 % Spell constructors (manual, for spells without register_spell yet)
 component(conjure, ctor, session).
 
-% Core conjure command entities
-entity(shell).
-entity(executable_program).
-
-% Core conjure command docstrings
-docstring(shell,
-    {|string(_)||
-    Execute shell commands with argument escaping.
-    Runs shell commands safely with proper argument handling.
-    Format: shell(Args) or shell(Args, interactive).
-        Args - list of command arguments to execute
-        interactive - optional flag for interactive mode
-    |}
-).
-
-docstring(executable_program,
-    {|string(_)||
-    Execute external programs with process management.
-    Runs external programs with output capture and error handling.
-    Format: executable_program(Program, Args) or executable_program(Program, Args, interactive).
-        Program - executable path or name
-        Args - list of program arguments
-        interactive - optional flag for interactive mode
-    |}
-).
-
 % Perceive entity for query operations
 entity(perceive).
 % Core perceive constructors
 % search_regex doesn't have register_spell yet
 component(perceive, ctor, search_regex).
 
-% Core perceive command entities
-entity(entities).
+% Core perceive command entities (manual, for spells without register_spell yet)
 entity(search_regex).
 
-% Core perceive docstrings
-docstring(entities,
-    {|string(_)||
-    List all entities in the system.
-    Returns all entities currently loaded in the knowledge base.
-    Format: perceive(entities(EntityList)).
-        EntityList - unifies with list of all entities
-    |}
-).
-
+% Core perceive docstrings (manual, for spells without register_spell yet)
 docstring(search_regex,
     {|string(_)||
     Search content using regular expressions.
@@ -238,32 +202,6 @@ docstring(search_regex,
     |}
 ).
 
-% Generic entity and docstring rules for perceive and conjure constructors
-entity(perceive(Ctor)) :- component(perceive, ctor, Ctor), entity(Ctor).
-entity(conjure(Ctor)) :- component(conjure, ctor, Ctor), entity(Ctor).
-
-% Enhanced contextual docstrings for perceive/conjure constructors
-docstring(perceive(Ctor), S) :-
-    component(perceive, ctor, Ctor),
-    docstring(Ctor, CtorDoc),
-    term_to_atom(Ctor, SCtorAtom),
-    S = {|string(SCtorAtom, CtorDoc)||
-    Perceives the `{SCtorAtom}` state.
-
-    `{SCtorAtom}` documentation:
-    {CtorDoc}
-    |}.
-
-docstring(conjure(Ctor), S) :-
-    component(conjure, ctor, Ctor),
-    docstring(Ctor, CtorDoc),
-    term_to_atom(Ctor, SCtorAtom),
-    S = {|string(SCtorAtom, CtorDoc)||
-    Modifies the system state by conjuring `{SCtorAtom}`.
-
-    `{SCtorAtom}` documentation:
-    {CtorDoc}
-    |}.
 
 % Spell system docstrings
 docstring(spell,
@@ -304,13 +242,40 @@ docstring(perceive,
 % Derive spell constructors from spell registrations
 % This automatically creates component(perceive/conjure, ctor, Spell) from register_spell declarations
 component(SpellType, ctor, Spell) :-
+    atom(SpellType),  % Guard: only derive for atomic spell types
+    SpellTerm =.. [SpellType, Spell],
+    register_spell(SpellTerm, _, _, _).
+
+% Make registered spells entities automatically:
+entity(Spell) :-
+    ground(Spell),
     register_spell(SpellTerm, _, _, _),
-    SpellTerm =.. [SpellType, Spell].
+    SpellTerm =.. [SpellType, Spell],
+    atom(SpellType),  % Guard: ensure SpellType is atomic
+    component(spell, ctor, SpellType),
+    component(SpellType, ctor, Spell).
+
+entity(perceive(Spell)) :-
+    ground(Spell),
+    register_spell(perceive(Spell), _, _, _).
+
+entity(conjure(Spell)) :-
+    ground(Spell),
+    register_spell(conjure(Spell), _, _, _).
+
+component(perceive, ctor, Spell) :-
+    ground(Spell),
+    register_spell(perceive(Spell), _, _, _).
+
+component(conjure, ctor, Spell) :-
+    ground(Spell),
+    register_spell(conjure(Spell), _, _, _).
 
 % Derive docstrings from spell registrations
 docstring(E, S) :-
     register_spell(E, input(InputFormat), output(OutputFormat), docstring(Explanation)),
     E =.. [SpellCtor, SpellType],
+    atom(SpellCtor),  % Guard: ensure SpellCtor is atomic
     component(spell, ctor, SpellCtor),
     component(SpellCtor, ctor, SpellType),
     format(string(S), "~w~n~nInput Format: ~w~nOutput Format: ~w", [Explanation, InputFormat, OutputFormat]).
@@ -342,67 +307,6 @@ register_spell(
     output(entity_list('Entities')),
     docstring("List all entities in the system. Returns a list of all registered entities.")
 ).
-
-% Note: File operations (read_file, edit_file, mkdir, mkfile) have been migrated to fs domain
-
-% Concept docstrings
-docstring(transaction,
-    {|string(_)||
-    Atomic units of change with rollback capability in the Grimoire system.
-    Transactions ensure consistency through git-backed session management,
-    allowing multiple operations to succeed or fail as a unit.
-    Provides the foundation for safe system mutation with undo capabilities.
-    |}).
-
-docstring(hardware,
-    {|string(_)||
-    Hardware abstraction layer and system resource management.
-    Represents physical and virtual hardware resources available to the system,
-    including CPU, memory, storage, and device interfaces.
-    Provides semantic representation of computing resources.
-    |}).
-
-docstring(execute,
-    {|string(_)||
-    Execution contexts and runtime environments within Grimoire.
-    Manages the evaluation of operations, command execution, and process lifecycles.
-    Bridges the semantic knowledge layer with actual system operations,
-    ensuring proper context and environment for code execution.
-    |}).
-
-docstring(interface,
-    {|string(_)||
-    Command interfaces for system interaction.
-    Provides structured access points to Grimoire functionality through
-    CLI, REST API, MCP protocols, and REPL interfaces.
-    Each interface maintains consistency while adapting to its medium's conventions.
-    |}).
-
-docstring(git,
-    {|string(_)||
-    Knowledge evolution tracking and version control subsystem.
-    Manages version history, branching, and transactional rollback through git.
-    Provides session management where each session is a git branch,
-    enabling atomic changes and experimental workflows with easy rollback.
-    Core to Grimoire's immutable knowledge architecture.
-    |}).
-
-docstring(nix,
-    {|string(_)||
-    Symbolic configuration, package management, and build subsystem.
-    Provides reproducible environments and declarative system configuration through Nix flakes.
-    Manages dependencies, build processes, and development shells with perfect reproducibility.
-    Enables functional package management where builds are pure functions of their inputs.
-    |}).
-
-docstring(session,
-    {|string(_)||
-    Transaction and workspace management subsystem.
-    Coordinates git branches with operational contexts for atomic system changes.
-    Each session maintains its own workspace with SQLite command logs and state files.
-    Provides commit, rollback, and history tracking for all operations within a session.
-    |}).
-
 
 
 cast(conjure(executable_program(Program, Args)), RetVal) :-
