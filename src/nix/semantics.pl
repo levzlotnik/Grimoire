@@ -4,7 +4,12 @@
 :- discontiguous run/2.
 
 % Core Nix entity with automatic self-location
-:- self_entity(nix).
+:- self_entity(nix, {|string(_)||
+    Symbolic configuration, package management, and build subsystem.
+    Provides reproducible environments and declarative system configuration through Nix flakes.
+    Manages dependencies, build processes, and development shells with perfect reproducibility.
+    Enables functional package management where builds are pure functions of their inputs.
+    |}).
 
 % Main Nix command categories from nix --help
 component(nix, concept, nix(store)).

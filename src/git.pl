@@ -1,7 +1,13 @@
 :- use_module(library(strings)).
 
 % Git entity declaration with automatic self-location
-:- self_entity(git).
+:- self_entity(git, {|string(_)||
+    Knowledge evolution tracking and version control subsystem.
+    Manages version history, branching, and transactional rollback through git.
+    Provides session management where each session is a git branch,
+    enabling atomic changes and experimental workflows with easy rollback.
+    Core to Grimoire's immutable knowledge architecture.
+    |}).
 
 % Git command entities (manual declarations for commands without register_spell/4)
 % Note: git(status), git(ls_files), git(current_branch) entities auto-generated from register_spell/4

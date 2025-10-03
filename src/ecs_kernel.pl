@@ -327,6 +327,13 @@ self_entity(Entity) :-
         assertz(component(Entity, self, semantic(file(FilePath))))
     ).
 
+% Variant with explicit docstring
+self_entity(Entity, Docstring) :-
+    % First do everything self_entity/1 does
+    self_entity(Entity),
+    % Then assert the provided docstring (overrides README if it exists)
+    assertz(docstring(Entity, Docstring)).
+
 docstring(self_entity,
     {|string(_)||
     Declares an entity and automatically assigns its semantic source as a self component.
