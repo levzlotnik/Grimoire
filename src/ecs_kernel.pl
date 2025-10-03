@@ -4,6 +4,17 @@
 :- use_module(library(strings)).
 :- use_module(library(filesex)).
 
+% Core ECS predicates - allow extension across files
+:- dynamic([
+    entity/1,
+    component/3,
+    docstring/2,
+    load_entity/2          % Allow subsystems to extend entity loading
+], [
+    discontiguous(true),
+    multifile(true)
+]).
+
 % === GRIMOIRE_ROOT PATH RESOLUTION ===
 % Provides @/ prefix convention for GRIMOIRE_ROOT-relative paths
 
@@ -41,17 +52,6 @@ grimoire_calling_file_directory(Dir) :-
 grimoire_ensure_loaded(File) :-
     grimoire_resolve_path(File, Resolved),
     ensure_loaded(Resolved).
-
-% Core ECS predicates - allow extension across files
-:- dynamic([
-    entity/1,
-    component/3,
-    docstring/2,
-    load_entity/2          % Allow subsystems to extend entity loading
-], [
-    discontiguous(true),
-    multifile(true)
-]).
 
 % Passive loading system - entities exist but need explicit loading
 passive_load(Entity, semantic(Source)) :-

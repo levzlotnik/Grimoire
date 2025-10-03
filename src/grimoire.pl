@@ -11,21 +11,13 @@
 
 % Core ECS predicates - must match ecs_kernel.pl
 
-% Dynamic declarations for spell system
-:- dynamic([cast/2], [discontiguous(true), multifile(true)]).      % cast(Spell, RetVal)
-
-% Hook infrastructure for extensible spell casting behavior
+% Dynamic declarations for spell system and hooks
 :- dynamic([
-    cast_pre_hook/2,
+    cast/2,               % cast(Spell, RetVal)
+    magic_cast/2,         % Composable spell casting primitive
+    register_spell/4,     % register_spell(SpellCtor, input(Format), output(Format), docstring(Doc))
+    cast_pre_hook/2,      % Hook infrastructure for extensible spell casting behavior
     cast_post_hook/2
-], [
-    discontiguous(true),
-    multifile(true)
-]).
-
-% magic_cast/2 is the composable spell casting primitive
-:- dynamic([
-    magic_cast/2
 ], [
     discontiguous(true),
     multifile(true)
@@ -308,13 +300,6 @@ docstring(perceive,
 
 % === SPELL REGISTRATION SYSTEM ===
 % Declarative interface documentation for spells
-
-:- dynamic([
-    register_spell/4  % register_spell(SpellCtor, input(Format), output(Format), docstring(Doc))
-], [
-    discontiguous(true),
-    multifile(true)
-]).
 
 % Derive spell constructors from spell registrations
 % This automatically creates component(perceive/conjure, ctor, Spell) from register_spell declarations

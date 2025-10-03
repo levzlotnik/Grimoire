@@ -4,17 +4,10 @@
 % This is the .plt (test/verification) side of the dual ECS kernel.
 % Here we define please_verify/1 and the verify/1 extension point.
 
-% Verification predicates - defined here
+% Verification predicates and hook infrastructure
 :- dynamic([
     verify/1,
-    please_verify/1
-], [
-    discontiguous(true),
-    multifile(true)
-]).
-
-% Hook infrastructure for extensible verification behavior
-:- dynamic([
+    please_verify/1,
     verify_pre_hook/2,
     verify_post_hook/2
 ], [
