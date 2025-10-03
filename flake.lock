@@ -27,7 +27,7 @@
       },
       "locked": {
         "lastModified": 1,
-        "narHash": "sha256-4GcM5Rm3k2N3akshNJDRD2yREDQFYDdmu8BJdb0sAhY=",
+        "narHash": "sha256-8md4BYSnBYEiJoBMi/Ag+fgVPSNKGccgZAHj8zNuRtE=",
         "path": "./src/golems",
         "type": "path"
       },
@@ -57,13 +57,28 @@
         "type": "path"
       }
     },
+    "grimoire-templates": {
+      "locked": {
+        "lastModified": 1759450877,
+        "narHash": "sha256-cpQGLJFNI9O6z6sbw7I88mRtCkd4LJktJooDI1+I1Ts=",
+        "owner": "levzlotnik",
+        "repo": "grimoire-templates",
+        "rev": "53eb13332d4f579f7cc07e93512943fddf00b5bd",
+        "type": "github"
+      },
+      "original": {
+        "owner": "levzlotnik",
+        "repo": "grimoire-templates",
+        "type": "github"
+      }
+    },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1758690382,
-        "narHash": "sha256-NY3kSorgqE5LMm1LqNwGne3ZLMF2/ILgLpFr1fS4X3o=",
+        "lastModified": 1759381078,
+        "narHash": "sha256-gTrEEp5gEspIcCOx9PD8kMaF1iEmfBcTbO0Jag2QhQs=",
         "owner": "nixos",
         "repo": "nixpkgs",
-        "rev": "e643668fd71b949c53f8626614b21ff71a07379d",
+        "rev": "7df7ff7d8e00218376575f0acdcc5d66741351ee",
         "type": "github"
       },
       "original": {
@@ -78,6 +93,7 @@
         "flake-utils": "flake-utils",
         "golems": "golems",
         "grimoire-api": "grimoire-api",
+        "grimoire-templates": "grimoire-templates",
         "nixpkgs": "nixpkgs"
       }
     },

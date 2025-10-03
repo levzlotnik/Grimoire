@@ -1,22 +1,76 @@
-% Load core rules first - bootstrap with direct ensure_loaded
-% We need core_rules.pl to get grimoire_ensure_loaded, so we load it directly
+% Load ECS kernel first - bootstrap with direct ensure_loaded
+% We need ecs_kernel.pl to get grimoire_ensure_loaded, so we load it directly
 :- (getenv('GRIMOIRE_ROOT', Root) ->
-    atomic_list_concat([Root, '/src/core_rules.pl'], CoreRules),
-    ensure_loaded(CoreRules)
+    atomic_list_concat([Root, '/src/ecs_kernel.pl'], EcsKernel),
+    ensure_loaded(EcsKernel)
    ;
-    ensure_loaded("./core_rules.pl")
+    ensure_loaded("./ecs_kernel.pl")
    ).
 :- use_module(library(filesex)).
 :- use_module(library(http/json)).
 
-% Dynamic declarations specific to core_rules
-:- dynamic execute/2.   % execute(Transaction, Status)
-:- dynamic([run/2], [discontiguous(true), multifile(true)]).       % run(Command, RetVal)
-:- dynamic([perceive/1], [discontiguous(true), multifile(true)]).  % perceive(Query)
+% Core ECS predicates - must match ecs_kernel.pl
+
+% Dynamic declarations for spell system
 :- dynamic([cast/2], [discontiguous(true), multifile(true)]).      % cast(Spell, RetVal)
+
+% Hook infrastructure for extensible spell casting behavior
+:- dynamic([
+    cast_pre_hook/2,
+    cast_post_hook/2
+], [
+    discontiguous(true),
+    multifile(true)
+]).
+
+% magic_cast/2 is the composable spell casting primitive
+:- dynamic([
+    magic_cast/2
+], [
+    discontiguous(true),
+    multifile(true)
+]).
+
+% === MAGIC_CAST/2: COMPOSABLE SPELL CASTING PRIMITIVE ===
+% Like PyTorch: define .forward() but call submodules via __call__()
+% Within cast/2, use magic_cast/2 to invoke other spells
+
+% magic_cast ensures grounding and executes hooks
+magic_cast(SpellTerm, Result) :-
+    ground(SpellTerm),                  % Ensure spell is fully grounded
+    cast_pre_hooks(SpellTerm),          % Execute pre-cast hooks
+    catch(
+        cast(SpellTerm, Result),        % Execute the spell
+        Error,
+        Result = error(cast_failed(Error))
+    ),
+    cast_post_hooks(SpellTerm).         % Execute post-cast hooks
+
+% Hook execution helpers
+cast_pre_hooks(Term) :-
+    forall(cast_pre_hook(Term, Goal), call(Goal)).
+
+cast_post_hooks(Term) :-
+    forall(cast_post_hook(Term, Goal), call(Goal)).
 
 % The most fundamental entity
 :- self_entity(system).
+
+% GRIMOIRE_DATA path - defaults to $HOME/.grimoire
+grimoire_data_path(Path) :-
+    (getenv('GRIMOIRE_DATA', Path) ->
+        true
+    ;
+        (getenv('HOME', Home) ->
+            atomic_list_concat([Home, '/.grimoire'], Path)
+        ;
+            Path = '.grimoire'
+        )
+    ).
+
+% Templates tools path (must be set by nix devShell)
+grimoire_templates_tools_path(Path) :-
+    getenv('GRIMOIRE_TEMPLATES_TOOLS', Path).
 
 docstring(system, S) :-
     grimoire_resolve_path('@/src/GRIMOIRE.md', GrimoirePath),
@@ -99,6 +153,7 @@ component(system, subsystem, nix).
 component(system, subsystem, fs).
 component(system, subsystem, project).
 component(system, subsystem, session).
+component(system, subsystem, golems).
 
 entity(project).
 component(project, source, source(semantic(folder("project")))).
@@ -119,6 +174,7 @@ docstring(project,
 :- load_entity(semantic(file("@/src/utils.pl"))).
 :- load_entity(semantic(folder("@/src/nix"))).
 :- load_entity(semantic(file("@/src/fs.pl"))).
+:- load_entity(semantic(folder("@/src/db"))).
 :- load_entity(semantic(folder("@/src/project"))).
 :- load_entity(semantic(file("@/src/session.pl"))).
 :- load_entity(semantic(folder("@/src/golems"))).
@@ -130,17 +186,11 @@ component(spell, ctor, perceive).
 
 % Conjure entity for mutable operations
 entity(conjure).
-component(conjure, ctor, shell).
-component(conjure, ctor, mkdir).
-component(conjure, ctor, mkfile).
-component(conjure, ctor, edit_file).
-component(conjure, ctor, executable_program).
+% Spell constructors (manual, for spells without register_spell yet)
 component(conjure, ctor, session).
 
 % Core conjure command entities
 entity(shell).
-entity(mkdir).
-entity(mkfile).
 entity(executable_program).
 
 % Core conjure command docstrings
@@ -151,26 +201,6 @@ docstring(shell,
     Format: shell(Args) or shell(Args, interactive).
         Args - list of command arguments to execute
         interactive - optional flag for interactive mode
-    |}
-).
-
-docstring(mkdir,
-    {|string(_)||
-    Create directory with semantic tracking.
-    Creates directory and initializes semantic relationships.
-    Format: mkdir(Path) or mkdir(Path, Options).
-        Path - directory path to create
-        Options - optional list of creation options
-    |}
-).
-
-docstring(mkfile,
-    {|string(_)||
-    Create file with semantic tracking.
-    Creates file and updates parent semantic relationships.
-    Format: mkfile(Path) or mkfile(Path, Options).
-        Path - file path to create
-        Options - optional list of creation options
     |}
 ).
 
@@ -188,8 +218,7 @@ docstring(executable_program,
 % Perceive entity for query operations
 entity(perceive).
 % Core perceive constructors
-component(perceive, ctor, entities).
-component(perceive, ctor, read_file).
+% search_regex doesn't have register_spell yet
 component(perceive, ctor, search_regex).
 
 % Core perceive command entities
@@ -216,23 +245,6 @@ docstring(search_regex,
         FoundContent - unifies with matching content
     |}
 ).
-
-% Read file entity and docstring
-entity(read_file).
-docstring(read_file,
-    {|string(_)||
-    Read specific lines from a file with line numbers.
-    Format: perceive(read_file(FilePath, Start, End, ContentWithLineNumbers))
-    Parameters:
-    - FilePath: Path to the file to read
-    - Start: Starting line number (1-based, negative counts from end: -1 = last line)
-    - End: Ending line number (1-based, negative counts from end)
-    - ContentWithLineNumbers: Unifies with list of line(Number, Content) terms
-    Examples:
-      read_file('file.txt', 1, 3, Content)    % Read lines 1-3
-      read_file('file.txt', 1, -1, Content)   % Read entire file (first to last)
-      read_file('file.txt', -3, -1, Content)  % Read last 3 lines
-    |}).
 
 % Generic entity and docstring rules for perceive and conjure constructors
 entity(perceive(Ctor)) :- component(perceive, ctor, Ctor), entity(Ctor).
@@ -293,6 +305,57 @@ docstring(perceive,
       - perceive(git(status(Branch, Ahead, Files)))
       - perceive(nix(flake(show(Apps, Packages, DevShells))))
     |}).
+
+% === SPELL REGISTRATION SYSTEM ===
+% Declarative interface documentation for spells
+
+:- dynamic([
+    register_spell/4  % register_spell(SpellCtor, input(Format), output(Format), docstring(Doc))
+], [
+    discontiguous(true),
+    multifile(true)
+]).
+
+% Derive spell constructors from spell registrations
+% This automatically creates component(perceive/conjure, ctor, Spell) from register_spell declarations
+component(SpellType, ctor, Spell) :-
+    register_spell(SpellTerm, _, _, _),
+    SpellTerm =.. [SpellType, Spell].
+
+% Derive docstrings from spell registrations
+docstring(Entity, S) :-
+    register_spell(Entity, input(InputFormat), output(OutputFormat), docstring(Explanation)),
+    format(string(S), "~w~n~nInput Format: ~w~nOutput Format: ~w", [Explanation, InputFormat, OutputFormat]).
+
+% Grimoire-level spell registrations
+register_spell(
+    conjure(shell),
+    input(shell(args('Args'))),
+    output(either(
+        ok(result(stdout('StdOut'), stderr('StdErr'))),
+        error(shell_error(args('Args'), exit('ExitCode'), stdout('StdOut'), stderr('StdErr')))
+    )),
+    docstring("Execute shell command with arguments. Returns stdout and stderr on success or error details on failure.")
+).
+
+register_spell(
+    conjure(executable_program),
+    input(executable_program(program('Program'), args('Args'))),
+    output(either(
+        ok(result(stdout('StdOut'), stderr('StdErr'))),
+        error(process_error(program('Program'), exit('ExitCode'), stdout('StdOut'), stderr('StdErr')))
+    )),
+    docstring("Execute a program with arguments. Returns stdout and stderr on success or error details on failure.")
+).
+
+register_spell(
+    perceive(entities),
+    input(entities),
+    output(entity_list('Entities')),
+    docstring("List all entities in the system. Returns a list of all registered entities.")
+).
+
+% Note: File operations (read_file, edit_file, mkdir, mkfile) have been migrated to fs domain
 
 % Concept docstrings
 docstring(transaction,
@@ -413,125 +476,6 @@ shell_quote(Arg, Quoted) :-
     format(string(Quoted), "'~w'", [Arg]).
 
 
-cast(conjure(mkdir(Path)), RetVal) :-
-    % Create directory
-    cast(conjure(shell({|string(Path)||mkdir -p '{Path}'|})), RetVal),
-    % Initialize semantics.pl with proper module
-    directory_file_path(Path, "semantics.pl", SemanticsFile),
-    InitContent = {|string(Path)||
-    :- module(semantic_{Path}, [entity/1, component/3]).
-
-    % Dynamic declarations for this module
-    :- dynamic entity/1.
-    :- dynamic component/3.
-
-    % This directory's entity
-    entity(folder('{Path}')).
-    |},
-    write_file(SemanticsFile, InitContent),
-    % Rest same as before
-    directory_file_path(Parent, _, Path),
-    directory_file_path(Parent, "semantics.pl", ParentSemantic),
-    (exists_file(ParentSemantic) ->
-        cast(conjure(edit_file(file(ParentSemantic), [
-            append({|string(Path)||
-            entity(folder('{Parent}')).
-            component(folder('{Parent}'), subfolder, folder('{Path}')).
-            |})
-        ])), _)
-    ; true).
-
-
-cast(conjure(mkfile(Path)), RetVal) :-
-    % Create empty file
-    write_file(Path, ""),
-    % Update parent semantics if exists
-    directory_file_path(Parent, Name, Path),
-    directory_file_path(Parent, "semantics.pl", ParentSemantic),
-    (exists_file(ParentSemantic) ->
-        cast(conjure(edit_file(file(ParentSemantic), [
-            append({|string(Parent,Name)||
-            entity(folder('{Parent}')).
-            component(folder('{Parent}'), file, file('{Name}')).
-            |})
-        ])), _)
-    ; true),
-    RetVal = ok("").
-
-
-cast(conjure(edit_file(file(Path), Edits)), RetVal) :-
-    % Handle both existing and non-existing files
-    (exists_file(Path) ->
-        read_file_to_lines(Path, Lines)
-    ;
-        Lines = []
-    ),
-    maplist(validate_edit, Edits),
-    apply_edits(Edits, Lines, NewLines),
-    write_lines_to_file(Path, NewLines),
-    RetVal = ok("").
-
-validate_edit(Edit) :-
-    functor(Edit, Type, _),
-    component(edit_file, ctor, Type).
-
-% File editing helpers
-apply_edits([], Lines, Lines).
-apply_edits([Edit|Rest], Lines, Final) :-
-    apply_edit(Edit, Lines, Intermediate),
-    apply_edits(Rest, Intermediate, Final).
-
-apply_edit(insert(N, Content), Lines, Result) :-
-    length(Lines, Len),
-    N > 0, N =< Len + 1,  % Allow insert at end
-    % Split lines at insertion point
-    NSplit is N - 1,
-    split_at(NSplit, Lines, Before, After),
-    % Split new content into lines
-    string_lines(Content, NewLines),
-    % Combine parts
-    append([Before, NewLines, After], Result).
-
-apply_edit(delete(Start, End), Lines, Result) :-
-    length(Lines, Len),
-    Start > 0, Start =< Len,
-    End >= Start, End =< Len,
-    % Split into before, [to_delete], after
-    NSplit is Start - 1,
-    split_at(NSplit, Lines, Before, Rest),
-    NDel is End - Start + 1,
-    split_at(NDel, Rest, _, After),
-    % Combine before and after
-    append(Before, After, Result).
-
-apply_edit(replace(Start, End, Content), Lines, Result) :-
-    length(Lines, Len),
-    Start > 0, Start =< Len,
-    End >= Start, End =< Len,
-    % Split lines into before, to_replace, and after
-    NSplit is Start - 1,
-    split_at(NSplit, Lines, Before, Rest),
-    NDel is End - Start + 1,
-    split_at(NDel, Rest, _, After),
-    % Split new content into lines
-    string_lines(Content, NewLines),
-    % Combine parts
-    append([Before, NewLines, After], Result).
-
-apply_edit(append(Content), Lines, Result) :-
-    string_lines(Content, NewLines),
-    append(Lines, NewLines, Result).
-
-% List splitting helper with proper implementation
-% split_at(+N, +List, -Before, -After)
-% Splits List at position N, Before gets first N elements, After gets rest
-split_at(0, List, [], List) :- !.  % Cut for efficiency when N=0
-split_at(N, [H|T], [H|Before], After) :-
-    N > 0,
-    N1 is N - 1,
-    split_at(N1, T, Before, After).
-
-
 % Spell casting system - replaces run/2 for mutable operations
 docstring(cast,
     {|string(_)||
@@ -564,50 +508,8 @@ execute_commands([Cmd|Rest], [Res|Results]) :-
         execute_commands(Rest, Results)
     ).
 
-docstring(write_file,
-    {|string(_)||
-    Writes content to a file.
-    Format: write_file(Path, Content).
-    Creates parent directories if they don't exist.
-    |}
-).
-
-% Add directory existence checks to file operations
-write_file(Path, Content) :-
-    directory_file_path(Dir, _, Path),
-    make_directory_path(Dir),
-    setup_call_cleanup(
-        open(Path, write, Stream),
-        write(Stream, Content),
-        close(Stream)
-    ).
-
-docstring(read_file_to_lines,
-    {|string(_)||
-    Reads a file into a list of lines.
-    Format: read_file_to_lines(Path, Lines).
-    |}
-).
-
-read_file_to_lines(Path, Lines) :-
-    exists_file(Path),
-    setup_call_cleanup(
-        open(Path, read, Stream),
-        read_string(Stream, _, String),
-        close(Stream)
-    ),
-    string_lines(String, Lines).
-
-docstring(write_lines_to_file,
-    {|string(_)||
-    Writes a list of lines to a file.
-    Format: write_lines_to_file(Path, Lines).
-    |}
-).
-
-write_lines_to_file(Path, Lines) :-
-    atomic_list_concat(Lines, '\n', Content),
-    write_file(Path, Content).
+% NOTE: write_file/2, read_file_to_lines/2, and write_lines_to_file/2
+% have been migrated to fs.pl (filesystem domain)
 
 % Add list_mounted_semantics predicate
 docstring(list_mounted_semantics,
@@ -618,137 +520,28 @@ docstring(list_mounted_semantics,
     |}
 ).
 
-% Update mkdir/mkfile to support options
-cast(conjure(mkdir(Path, Options)), RetVal) :-
-    cast(conjure(mkdir(Path)), RetVal),
-    % Auto git-add if we're in a repo and not disabled
-    (option(git(false), Options) ->
-        true
-    ;
-        is_git_directory(Path) ->
-            cast(conjure(git(add([Path]))), _)
-        ;
-        true
-    ).
-
-cast(conjure(mkfile(Path, Options)), RetVal) :-
-    cast(conjure(mkfile(Path)), RetVal),
-    % Auto git-add if we're in a repo and not disabled
-    (option(git(false), Options) ->
-        true
-    ;
-        is_git_directory(Path) ->
-            cast(conjure(git(add([Path]))), _)
-        ;
-        true
-    ).
-
-% Edit file is now an entity with subcommands
-entity(edit_file).
-component(edit_file, ctor, insert).
-component(edit_file, ctor, delete).
-component(edit_file, ctor, replace).
-component(edit_file, ctor, append).
-
-% Edit file constructor entities with docstrings
-entity(edit_file(insert)).
-docstring(edit_file(insert),
-    {|string(_)||
-    Insert text at a specific line number.
-    Format: insert(LineNumber, Text)
-    - LineNumber: Line number where text will be inserted (1-indexed)
-    - Text: String to insert as a new line
-    Example: insert(5, "new line content")
-    |}).
-
-entity(edit_file(delete)).
-docstring(edit_file(delete),
-    {|string(_)||
-    Delete lines from a file.
-    Format: delete(StartLine, EndLine)
-    - StartLine: First line to delete (1-indexed)
-    - EndLine: Last line to delete (inclusive)
-    Example: delete(3, 5)  % Deletes lines 3, 4, and 5
-    |}).
-
-entity(edit_file(replace)).
-docstring(edit_file(replace),
-    {|string(_)||
-    Replace a range of lines with new text.
-    Format: replace(StartLine, EndLine, NewText)
-    - StartLine: First line to replace (1-indexed)
-    - EndLine: Last line to replace (inclusive)
-    - NewText: Text to replace the lines with
-    Example: replace(2, 4, "replacement text")
-    |}).
-
-entity(edit_file(append)).
-docstring(edit_file(append),
-    {|string(_)||
-    Append text to the end of the file.
-    Format: append(Text)
-    - Text: String to append as a new line at the end of file
-    Example: append("new last line")
-    |}).
-
-docstring(edit_file, S) :-
-    make_ctors_docstring(edit_file, CtorsDoc),
-    S = {|string(CtorsDoc)||
-    File editing term structure for specifying file operations.
-    Format: edit_file(file(Path), [Edit1, Edit2, ...])
-    - Path: File path to edit
-    - Edits: List of edit operations
-
-    Available edit operations:
-    {CtorsDoc}
-    |}.
-
 % ========================================================================
 % CORE PERCEIVE SPELLS
 % ========================================================================
 
 % Perceive all entities in the system
-perceive(entities(Entities)) :-
-    findall(Entity, entity(Entity), Entities).
-
-% Read file with line numbers using 1-based indexing
-perceive(read_file(FilePath, Start, End, ContentWithLineNumbers)) :-
-    read_file_to_lines(FilePath, AllLines),
-    length(AllLines, TotalLines),
-    % Resolve negative line numbers
-    resolve_line_number(Start, TotalLines, StartNum),
-    resolve_line_number(End, TotalLines, EndNum),
-    % Extract requested lines with numbers
-    findall(line(LineNum, Content),
-        (between(StartNum, EndNum, LineNum),
-         nth1(LineNum, AllLines, Content)),
-        ContentWithLineNumbers).
-
-% Resolve negative line numbers (-1 = last line, -2 = second to last, etc.)
-resolve_line_number(Num, TotalLines, Resolved) :- 
-    (Num < 0 ->
-        Resolved is TotalLines + Num + 1  % -1 becomes TotalLines, -2 becomes TotalLines-1, etc.
-    ;
-        Resolved = Num
+cast(perceive(entities), Result) :-
+    catch(
+        (findall(Entity, entity(Entity), Entities),
+         Result = ok(entity_list(Entities))),
+        Error,
+        Result = error(grimoire_error(Error))
     ).
 
-% Helper for extracting lines with numbers
-extract_lines_with_numbers([], _, _, _, []) :- !.
-extract_lines_with_numbers(_, EndLine, EndLine, Current, []) :-
-    Current > EndLine, !.
-extract_lines_with_numbers([Line|Rest], StartLine, EndLine, Current, Result) :-
-    (Current >= StartLine, Current =< EndLine ->
-        Result = [line(Current, Line)|RestResult]
-    ;
-        Result = RestResult
-    ),
-    Next is Current + 1,
-    extract_lines_with_numbers(Rest, StartLine, EndLine, Next, RestResult).
-
 % Search for regex pattern in content with line numbers
-perceive(search_regex(ContentWithLineNumbers, Pattern, FoundContent)) :-
-    findall(line(Num, Line),
-        (member(line(Num, Line), ContentWithLineNumbers),
-         re_match(Pattern, Line)),
-        FoundContent).
+cast(perceive(search_regex(ContentWithLineNumbers, Pattern)), Result) :-
+    catch(
+        (findall(line(Num, Line),
+            (member(line(Num, Line), ContentWithLineNumbers),
+             re_match(Pattern, Line)),
+            FoundContent),
+         Result = ok(search_results(FoundContent))),
+        Error,
+        Result = error(grimoire_error(Error))
+    ).
 

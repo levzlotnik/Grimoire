@@ -19,6 +19,7 @@ entity(git(rev_parse)).
 entity(git(reset)).
 entity(git(merge)).
 entity(git(ls_files)).
+entity(git(remote)).
 
 % Removed legacy command ctor - using perceive/conjure above
 component(git, subcommand, clone).
@@ -35,9 +36,9 @@ component(git, subcommand, log).
 component(git, subcommand, rev_parse).
 component(git, subcommand, reset).
 component(git, subcommand, merge).
+component(git, subcommand, remote).
 
-% Separate mutable vs query operations
-% Conjure constructors (state-changing operations)
+% Spell constructors - both manual and those with register_spell declarations
 component(conjure, ctor, git(clone)).
 component(conjure, ctor, git(init)).
 component(conjure, ctor, git(add)).
@@ -47,8 +48,6 @@ component(conjure, ctor, git(pull)).
 component(conjure, ctor, git(checkout)).
 component(conjure, ctor, git(reset)).
 component(conjure, ctor, git(merge)).
-
-% Perceive constructors (query operations)
 component(perceive, ctor, git(status)).
 component(perceive, ctor, git(diff)).
 component(perceive, ctor, git(log)).
@@ -59,6 +58,68 @@ component(perceive, ctor, git(ls_files)).
 % Legacy support - keep git namespace ctors:
 component(git, ctor, C) :- component(git, subcommand, C).
 % Removed command ctor compatibility - using perceive/conjure above
+
+% === DSL PATTERNS - has(git(...)) fact schemas ===
+
+% Repository remote expansion
+component(Entity, git_repository_remote_name, RemoteName) :-
+    component(Entity, has(git(repository)), git(repository(Spec))),
+    member(remote(RemoteName, _), Spec).
+
+component(Entity, git_repository_remote_url, RemoteURL) :-
+    component(Entity, has(git(repository)), git(repository(Spec))),
+    member(remote(_, RemoteURL), Spec).
+
+% Repository branch expansion
+component(Entity, git_repository_branch, Branch) :-
+    component(Entity, has(git(repository)), git(repository(Spec))),
+    member(branch(Branch), Spec).
+
+% Repository working tree status expansion
+component(Entity, git_repository_clean, Clean) :-
+    component(Entity, has(git(repository)), git(repository(Spec))),
+    member(clean(Clean), Spec).
+
+% Repository root path expansion
+component(Entity, git_repository_root, Root) :-
+    component(Entity, has(git(repository)), _),
+    component(Entity, self, semantic(folder(Root))).
+
+component(Entity, git_repository_root, Root) :-
+    component(Entity, has(git(repository)), _),
+    component(Entity, self, semantic(file(FilePath))),
+    file_directory_name(FilePath, Root).
+
+% Auto-detect repository properties from filesystem
+component(Entity, git_repository_current_branch, CurrentBranch) :-
+    component(Entity, git_repository_root, Root),
+    cast(perceive(git(current_branch(Root, CurrentBranch))), ok(_)).
+
+component(Entity, git_repository_working_status, WorkingStatus) :-
+    component(Entity, git_repository_root, _Root),
+    cast(perceive(git(status(_, WorkingStatus, _))), ok(_)).
+
+% Repository verification flag
+component(Entity, git_repository_verified, true) :-
+    component(Entity, has(git(repository)), git(repository(_))),
+    component(Entity, git_repository_root, Root),
+    exists_directory(Root),
+    atomic_list_concat([Root, '/.git'], GitDir),
+    exists_directory(GitDir).
+
+% Repository state synchronization
+component(Entity, git_repository_sync_status, Status) :-
+    component(Entity, has(git(repository)), git(repository(_Spec))),
+    component(Entity, git_repository_current_branch, CurrentBranch),
+    component(Entity, git_repository_branch, ExpectedBranch),
+    (CurrentBranch = ExpectedBranch ->
+        Status = synchronized
+    ;
+        Status = desynchronized(expected(ExpectedBranch), actual(CurrentBranch))
+    ).
+
+% === SPELL IMPLEMENTATIONS ===
+% Each register_spell is placed right above its cast implementation
 
 % Git command docstrings
 docstring(git(clone),
@@ -182,6 +243,18 @@ docstring(git(ls_files),
     |}
 ).
 
+docstring(git(remote),
+    {|string(_)||
+    Manage set of tracked repositories.
+    Format: git(remote(Args))
+      Args: List of arguments to pass to git remote
+      Examples:
+        git(remote([]))           - List all remotes
+        git(remote(['show', 'origin'])) - Show details for origin
+        git(remote(['get-url', 'origin'])) - Get URL for origin
+    |}
+).
+
 docstring(git, S) :-
     make_ctors_docstring(git, CtorsDoc),
     S = {|string(CtorsDoc)||
@@ -216,6 +289,7 @@ git_args(rev_parse(Args)) --> ["rev-parse" | Args].
 git_args(reset(Args)) --> ["reset" | Args].
 git_args(merge(Args)) --> ["merge" | Args].
 git_args(commit(Args)) --> ["commit" | Args].  % Handle commit with args list
+git_args(remote(Args)) --> ["remote" | Args].  % Handle remote with args list
 
 
 % Git conjure implementations
@@ -230,29 +304,42 @@ cast(conjure(git(Term)), RetVal) :-
 
 % === PERCEIVE PREDICATES - Structured Git Queries ===
 
-% Git status perception - parse status into structured data
-perceive(git(status(Branch, WorkingStatus, Files))) :-
-    % Get current branch
-    cast(conjure(git(branch(['--show-current']))), BranchResult),
-    (BranchResult = ok(result(BranchOutput, _)) ->
-        string_concat(BranchStr, "\n", BranchOutput),
-        atom_string(Branch, BranchStr)
-    ;
-        Branch = unknown
-    ),
-    % Get working tree status
-    cast(conjure(git(status(['--porcelain']))), StatusResult),
-    (StatusResult = ok(result(StatusOutput, _)) ->
-        (StatusOutput = "" ->
-            WorkingStatus = clean,
-            Files = []
-        ;
-            WorkingStatus = dirty,
-            parse_git_status_output(StatusOutput, Files)
-        )
-    ;
-        WorkingStatus = unknown,
-        Files = []
+% Status perception spell
+register_spell(
+    perceive(git(status)),
+    input(git(status)),
+    output(ok(repository_status(branch('Branch'), working_status('Status'), files('Files')))),
+    docstring("Query git repository status including current branch, working tree status, and file changes.")
+).
+
+cast(perceive(git(status)), Result) :-
+    catch(
+        (% Get current branch
+         cast(conjure(git(branch(['--show-current']))), BranchResult),
+         (BranchResult = ok(result(BranchOutput, _)) ->
+             string_concat(BranchStr, "\n", BranchOutput),
+             atom_string(Branch, BranchStr)
+         ;
+             Branch = unknown
+         ),
+         % Get working tree status
+         cast(conjure(git(status(['--porcelain']))), StatusResult),
+         (StatusResult = ok(result(StatusOutput, _)) ->
+             (StatusOutput = "" ->
+                 WorkingStatus = clean,
+                 Files = []
+             ;
+                 WorkingStatus = dirty,
+                 parse_git_status_output(StatusOutput, Files)
+             )
+         ;
+             WorkingStatus = unknown,
+             Files = []
+         ),
+         Result = ok(status_info(branch(Branch), working_status(WorkingStatus), files(Files)))
+        ),
+        Error,
+        Result = error(git_error(Error))
     ).
 
 % Parse git status --porcelain output into structured file list
@@ -277,15 +364,51 @@ status_code_to_term([68, 32], File, deleted(File)).      % "D " - deleted from i
 status_code_to_term([32, 68], File, deleted(File)).      % " D" - deleted in working tree
 status_code_to_term(_, File, unknown(File)).
 
-% Git ls-files perception - list all tracked files
-perceive(git(ls_files(Directory, Files))) :-
-    process_create(path(git), ['ls-files'], [
-        stdout(pipe(Out)),
-        stderr(null),
-        cwd(Directory)
-    ]),
-    read_lines_from_stream(Out, Files),
-    close(Out).
+% Ls-files perception spell
+register_spell(
+    perceive(git(ls_files)),
+    input(git(ls_files(directory('Directory')))),
+    output(ok(tracked_files('Files'))),
+    docstring("List all files tracked by git in the specified directory.")
+).
+
+cast(perceive(git(ls_files(Directory))), Result) :-
+    catch(
+        (process_create(path(git), ['ls-files'], [
+             stdout(pipe(Out)),
+             stderr(null),
+             cwd(Directory)
+         ]),
+         read_lines_from_stream(Out, Files),
+         close(Out),
+         Result = ok(file_list(Files))
+        ),
+        Error,
+        Result = error(git_error(Error))
+    ).
+
+% Current branch perception spell
+register_spell(
+    perceive(git(current_branch)),
+    input(git(current_branch(root('Root')))),
+    output(ok(branch('Branch'))),
+    docstring("Get the current git branch name for the repository at the specified root.")
+).
+
+cast(perceive(git(current_branch(_Root))), Result) :-
+    catch(
+        (cast(conjure(git(branch(['--show-current']))), BranchResult),
+         (BranchResult = ok(result(Output, _)) ->
+             string_concat(BranchStr, "\n", Output),
+             atom_string(Branch, BranchStr)
+         ;
+             Branch = unknown
+         ),
+         Result = ok(current_branch(Branch))
+        ),
+        Error,
+        Result = error(git_error(Error))
+    ).
 
 % Use read_lines_from_stream/2 from utils.pl
 
@@ -298,3 +421,4 @@ perceive(git(ls_files(Directory, Files))) :-
 %     % Load the cloned semantics
 %     atomic_list_concat([LocalPath, '/semantics.pl'], SemanticFile),
 %     load_entity(Entity, semantic(file(SemanticFile))).
+

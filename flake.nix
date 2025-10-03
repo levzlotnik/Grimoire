@@ -4,6 +4,7 @@
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
+    grimoire-templates.url = "github:levzlotnik/grimoire-templates";
     golems = {
       url = "path:./src/golems";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -17,7 +18,7 @@
     };
   };
 
-  outputs = { self, nixpkgs, flake-utils, golems, grimoire-api, ... }@inputs:
+  outputs = { self, nixpkgs, flake-utils, golems, grimoire-api, grimoire-templates, ... }@inputs:
   let
     systems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
     forAllSystems = nixpkgs.lib.genAttrs systems;
@@ -85,6 +86,35 @@
       # Expose the extended environment for child flakes
       grimoireEnv = grimoireEnv;
 
+      # Grimoire templates wrapper scripts
+      grimoire-templates-tools = pkgs.stdenv.mkDerivation {
+        name = "grimoire-templates-tools";
+
+        getGrimoireTemplates = pkgs.writeShellScript "getGrimoireTemplates" ''
+          ${pkgs.nix}/bin/nix flake show ${grimoire-templates} --json
+        '';
+
+        initGrimoireTemplate = pkgs.writeShellScript "initGrimoireTemplate" ''
+          TEMPLATE_ID="$1"
+          PROJECT_DIR="$2"
+
+          if [ -z "$TEMPLATE_ID" ] || [ -z "$PROJECT_DIR" ]; then
+            echo "Usage: initGrimoireTemplate <TEMPLATE_ID> <PROJECT_DIR>" >&2
+            exit 1
+          fi
+
+          ${pkgs.nix}/bin/nix flake new -t ${grimoire-templates}#"$TEMPLATE_ID" "$PROJECT_DIR"
+        '';
+
+        buildCommand = ''
+          mkdir -p $out/bin
+          cp $getGrimoireTemplates $out/bin/getGrimoireTemplates
+          cp $initGrimoireTemplate $out/bin/initGrimoireTemplate
+          chmod +x $out/bin/getGrimoireTemplates
+          chmod +x $out/bin/initGrimoireTemplate
+        '';
+      };
+
       # Main Grimoire executable - include all source files
       grimoire = pkgs.stdenv.mkDerivation {
         name = "grimoire";
@@ -124,10 +154,19 @@ EOF
     in
     {
       default = pkgs.mkShell {
-        buildInputs = [ grimoireEnv.swipl grimoireEnv.python grimoireEnv.sqlite self.packages.${system}.grimoire ];
+        buildInputs = [
+          grimoireEnv.swipl
+          grimoireEnv.python
+          grimoireEnv.sqlite
+          self.packages.${system}.grimoire
+          self.packages.${system}.grimoire-templates-tools
+        ];
 
         # Set GRIMOIRE_ROOT as a direct environment variable (works with -c)
         GRIMOIRE_ROOT = toString self.packages.${system}.grimoire;
+
+        # Set templates tools path
+        GRIMOIRE_TEMPLATES_TOOLS = "${self.packages.${system}.grimoire-templates-tools}/bin";
 
         # Set Python executable to our extended environment
         PYTHON_EXECUTABLE = "${grimoireEnv.python}/bin/python";

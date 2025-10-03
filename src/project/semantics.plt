@@ -1,5 +1,7 @@
 :- use_module(library(plunit)).
-:- grimoire_ensure_loaded('@/src/project/semantics.pl').
+
+% Note: project/semantics.pl already loaded by grimoire.pl
+% ECS predicates (entity/1, component/3, etc.) are multifile and globally available
 
 :- begin_tests(project_semantics).
 
