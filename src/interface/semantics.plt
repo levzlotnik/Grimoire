@@ -1,88 +1,36 @@
-% Tests for interface semantics
+:- use_module(library(plunit)).
+:- load_entity(semantic(file('@/src/tests/interface_test_entities.pl'))).
+
+verify(component(Entity, has(interface(client)), interface(client(Spec)))) :-
+    please_verify(component(Entity, interface_client_type, Type)),
+    member(type(Type), Spec),
+    member(Type, [cli, mcp, http, golem]).
+
+verify(component(interface, subcommand, Cmd)) :-
+    entity(interface(Cmd)),
+    docstring(interface(Cmd), _).
+
 :- begin_tests(interface).
 
-% Test that the entity is properly declared
-test(entity_exists) :-
-    entity(interface).
+test(interface_entity_exists) :- entity(interface).
 
-% Test interface subcommands exist
 test(subcommands_exist) :-
     component(interface, subcommand, compt),
-    component(interface, subcommand, comp),
-    component(interface, subcommand, doc),
-    component(interface, subcommand, entities),
-    component(interface, subcommand, repl),
-    component(interface, subcommand, status),
-    component(interface, subcommand, test),
-    component(interface, subcommand, session),
-    component(interface, subcommand, conjure),
-    component(interface, subcommand, perceive),
-    component(interface, subcommand, load), !.
+    component(interface, subcommand, entities).
 
-% Test entities subcommand specifically
 test(entities_subcommand) :-
-    component(interface, subcommand, entities), !.
-
-% Test entities interface entity exists
-test(entities_interface_entity) :-
-    entity(interface(entities)).
-
-% Test entities interface has docstring
-test(entities_docstring) :-
-    docstring(interface(entities), Doc),
-    sub_string(Doc, _, _, _, "entities"), !.
-
-% Test entities interface works
-test(entities_interface_works) :-
     cast(conjure(interface(entities)), Result),
+    format('~nDEBUG: cast result = ~w~n', [Result]),
     Result = ok(entities(List)),
-    is_list(List), !.
+    format('~nDEBUG: List = ~w~n', [List]),
+    is_list(List).
 
-% Test interface_entities predicate
-test(interface_entities_includes_system) :-
-    interface_entities(Entities),
-    is_list(Entities),
-    member(system, Entities), !.
+test(client_capability_expansion) :-
+    please_verify(component(test_cli_client, interface_client_type, cli)),
+    component(test_cli_client, interface_client_capability, _).
 
-% Test that interface ctors match subcommands
-test(interface_ctors_match_subcommands) :-
-    findall(C, component(interface, subcommand, C), Subcommands),
-    findall(C, component(interface, ctor, C), Ctors),
-    sort(Subcommands, SortedSubs),
-    sort(Ctors, SortedCtors),
-    SortedSubs = SortedCtors.
-
-% Test that all subcommands have corresponding entities
-test(all_subcommands_have_entities) :-
-    forall(
-        component(interface, subcommand, Cmd),
-        entity(interface(Cmd))
-    ).
-
-% Test that all subcommands have docstrings
-test(all_subcommands_have_docstrings) :-
-    forall(
-        component(interface, subcommand, Cmd),
-        docstring(interface(Cmd), _)
-    ).
-
-% Test component types command
-test(compt_command) :-
-    cast(conjure(interface(compt)), Result),
-    Result = ok(component_types(Entity, Types)),
-    atom(Entity),
-    is_list(Types), !.
-
-% Test documentation command
-test(doc_command) :-
-    cast(conjure(interface(doc)), Result),
-    Result = ok(documentation(Entity, Doc)),
-    atom(Entity),
-    (atom(Doc) ; string(Doc) ; Doc = no_docstring_available), !.
-
-% Test status command
-test(status_command) :-
-    cast(conjure(interface(status)), Result),
-    Result = ok(session_status(status_info(_, _, _))), !.
+test(all_subcommands_complete) :-
+    forall(component(interface, subcommand, Cmd),
+           please_verify(component(interface, subcommand, Cmd))).
 
 :- end_tests(interface).

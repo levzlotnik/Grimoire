@@ -11,6 +11,10 @@ entity(runtime).
 entity(test).
 entity(mkproject).
 entity(conjure(mkproject)).
+entity(project(app)).
+entity(project(context(build))).
+entity(project(context(runtime))).
+entity(project(context(test))).
 
 component(project, concept, application).
 component(project, concept, context).
@@ -227,30 +231,88 @@ docstring(test,
     - System tests (complete application)
     |}).
 
-% Template discovery and conjure integration
+% === PURE DSL EXPANSION RULES (NO assertz) ===
+
+% Extract project type from app DSL
+component(Entity, project_type, Type) :-
+    component(Entity, has(project(app)), project(app(Options))),
+    member(type(Type), Options).
+
+% Extract git origin from app DSL
+component(Entity, project_git_origin, Origin) :-
+    component(Entity, has(project(app)), project(app(Options))),
+    member(git(repository(origin(Origin))), Options).
+
+% Extract nix flake ref from app DSL
+component(Entity, project_nix_ref, Ref) :-
+    component(Entity, has(project(app)), project(app(Options))),
+    member(nix(flake(ref(Ref))), Options).
+
+% Extract fs structure from app DSL
+component(Entity, project_fs_structure, Structure) :-
+    component(Entity, has(project(app)), project(app(Options))),
+    member(fs(structure(Structure)), Options).
+
+% Extract context outputs
+component(Entity, project_context_outputs, Outputs) :-
+    component(Entity, has(project(context(build))), project(context(build(Options)))),
+    member(outputs(Outputs), Options).
+
+% === CROSS-DOMAIN TRIGGERING (Level 2 composition) ===
+
+% Project git origin triggers git repository component
+component(Entity, has(git(repository)), git(repository(origin(Origin)))) :-
+    component(Entity, project_git_origin, Origin).
+
+% Project nix ref triggers nix flake component
+component(Entity, has(nix(flake)), nix(flake(ref(Ref)))) :-
+    component(Entity, project_nix_ref, Ref).
+
+% Project fs structure triggers fs structure component
+component(Entity, has(fs(structure)), fs(structure(Patterns))) :-
+    component(Entity, project_fs_structure, Patterns).
+
+% === SPELL CONSTRUCTORS ===
 component(conjure, ctor, mkproject).
+component(perceive, ctor, project(validate)).
+component(perceive, ctor, project(structure)).
 
-% Template discovery - query nix domain for available templates
-discover_available_templates(Templates) :-
-    findall(TemplateId,
-            component(nix(flake(template)), instance, nix(flake(template(TemplateId)))),
-            Templates).
+% === SPELL REGISTRATIONS WITH DOCSTRINGS ===
 
-docstring(mkproject,
-    {|string(_)||
-    Creates a new project directory with full initialization.
-    Format: cast(conjure(mkproject(FolderPath, ProjectName, Options))).
-    Parameters:
-    - FolderPath: Base path where to create the project
-    - ProjectName: Name of the project and entity ID for semantics.pl
-    - Options: List of options:
-      - git(bool): Initialize git repo (default: true)
-      - template(Template): Flake template to use (default: none)
-    |}).
+register_spell(
+    conjure(mkproject),
+    input(mkproject(folder_path('FolderPath'), project_name('ProjectName'), options('Options'))),
+    output(either(
+        ok(project_created(path('ProjectPath'), name('ProjectName'))),
+        error(project_error('Reason'))
+    )),
+    docstring("Creates a new project directory with full initialization. Options: git(bool), template(TemplateId).")
+).
 
-docstring(conjure(mkproject), S) :- docstring(mkproject, S).
+register_spell(
+    perceive(project(validate)),
+    input(project(validate(entity('Entity')))),
+    output(either(
+        ok(valid),
+        error(validation_failed(domain('Domain'), reason('Reason')))
+    )),
+    docstring("Validates a project entity against its declared components and cross-domain requirements.")
+).
 
-% Unified mkproject implementation
+register_spell(
+    perceive(project(structure)),
+    input(project(structure(entity('Entity')))),
+    output(ok(project_info(
+        type('Type'),
+        sources('Sources'),
+        contexts('Contexts')
+    ))),
+    docstring("Queries project structure, including type, source patterns, and available contexts.")
+).
+
+% === SPELL IMPLEMENTATIONS ===
+
+% mkproject spell - create new project from template or basic structure
 cast(conjure(mkproject(FolderPath, ProjectName, Options)), RetVal) :-
     catch(
         (
@@ -307,6 +369,48 @@ cast(conjure(mkproject(FolderPath, ProjectName, Options)), RetVal) :-
         Error,
         RetVal = error(conjure_failed(Error))
     ).
+
+% project validate spell - verify project entity composition
+cast(perceive(project(validate(Entity))), Result) :-
+    catch(
+        (please_verify(component(Entity, has(project(app)), _)),
+         please_verify(component(Entity, project_type, _)),
+         % Optionally verify git if specified
+         (component(Entity, project_git_origin, _) ->
+             please_verify(component(Entity, has(git(repository)), _))
+         ; true),
+         % Optionally verify nix if specified
+         (component(Entity, project_nix_ref, _) ->
+             please_verify(component(Entity, has(nix(flake)), _))
+         ; true),
+         Result = ok(valid)),
+        verification_error(Domain, Reason),
+        Result = error(validation_failed(Domain, Reason))
+    ).
+
+% project structure spell - query project structure information
+cast(perceive(project(structure(Entity))), Result) :-
+    catch(
+        (please_verify(component(Entity, project_type, Type)),
+         findall(Source, component(Entity, project_fs_structure, Source), Sources),
+         findall(Context, component(Entity, has(project(context(Context))), _), Contexts),
+         Result = ok(project_info(type(Type), sources(Sources), contexts(Contexts)))),
+        Error,
+        Result = error(structure_query_failed(Error))
+    ).
+
+% === MAGIC_CAST/4 INTEGRATION ===
+
+magic_cast(project, create, [FolderPath, ProjectName|Options], Result) :-
+    cast(conjure(mkproject(FolderPath, ProjectName, Options)), Result).
+
+magic_cast(project, validate, [Entity], Result) :-
+    cast(perceive(project(validate(Entity))), Result).
+
+magic_cast(project, structure, [Entity], Result) :-
+    cast(perceive(project(structure(Entity))), Result).
+
+% === HELPER PREDICATES ===
 
 % Create basic semantics.pl file when no template is used
 create_basic_semantics_file(ProjectPath, ProjectName) :-
@@ -408,180 +512,28 @@ discover_template_entity_name(FilePath, EntityName) :-
         fail
     ).
 
-% Project artifact discovery utilities
-:- use_module(library(filesex)).
-:- use_module(library(strings)).
+% Template discovery - query nix domain for available templates
+discover_available_templates(Templates) :-
+    findall(TemplateId,
+            component(nix(flake(template)), instance, nix(flake(template(TemplateId)))),
+            Templates).
 
-% Project utility commands
-component(project, utility, discover_project_artifacts).
-component(project, utility, discover_core_artifacts).
-component(project, utility, discover_nix_targets).
-component(project, utility, validate_project_structure).
+docstring(mkproject,
+    {|string(_)||
+    Creates a new project directory with full initialization.
+    Format: cast(conjure(mkproject(FolderPath, ProjectName, Options))).
+    Parameters:
+    - FolderPath: Base path where to create the project
+    - ProjectName: Name of the project and entity ID for semantics.pl
+    - Options: List of options:
+      - git(bool): Initialize git repo (default: true)
+      - template(Template): Flake template to use (default: none)
+    |}).
 
-% Core project artifact types (non-negotiable)
-component(project, core_artifact, nix(flake)).
-component(project, core_artifact, git).
-component(project, core_artifact, readme).
-component(project, core_artifact, sources).
-
-% Main project discovery predicate with options
-discover_project_artifacts(Entity, Options) :-
-    % Discover core artifacts first (always included)
-    discover_core_artifacts(Entity),
-    % Discover Nix targets and expose them as components
-    discover_nix_targets(Entity),
-    % Then discover custom filesystem patterns
-    (member(fs_patterns(IncludePatterns, ExcludePatterns), Options) ->
-        Patterns = [IncludePatterns, ExcludePatterns]
-    ;
-        Patterns = []
-    ),
-    (Patterns \= [] ->
-        discover_custom_artifacts(Entity, Patterns)
-    ;
-        true
-    ).
-
-% Default discovery without custom patterns
-discover_project_artifacts(Entity) :-
-    discover_core_artifacts(Entity),
-    discover_nix_targets(Entity).
-
-% Discover core project artifacts (non-negotiable)
-discover_core_artifacts(Entity) :-
-    working_directory(CurrentDir, CurrentDir),
-    % Discover flake.nix (every project must have one)
-    discover_flake_artifact(Entity, CurrentDir),
-    % Discover git repository (every project must be in git)
-    discover_git_artifact(Entity, CurrentDir),
-    % Discover README (every project must have documentation)
-    discover_readme_artifact(Entity, CurrentDir),
-    % Discover source files (inferred from git)
-    discover_sources_artifact(Entity, CurrentDir).
-
-% Discover Nix targets and expose them as project components
-discover_nix_targets(Entity) :-
-    working_directory(CurrentDir, CurrentDir),
-    FlakePath = 'flake.nix',
-    directory_file_path(CurrentDir, FlakePath, FlakeFullPath),
-    (exists_file(FlakeFullPath) ->
-        % Use nix flake show to get available targets
-        process_create(path(nix), ['flake', 'show', '--json'], [
-            stdout(pipe(Out)),
-            cwd(CurrentDir)
-        ]),
-        read_string(Out, _, JsonString),
-        close(Out),
-        atom_string(JsonAtom, JsonString),
-        atom_json_term(JsonAtom, JsonDict, []),
-        % Extract apps and expose as nix_target components
-        extract_nix_apps(Entity, JsonDict, CurrentDir)
-    ;
-        true  % No flake, skip Nix target discovery
-    ).
-
-% Extract Nix apps from flake show JSON and create components
-extract_nix_apps(Entity, JsonDict, FlakeRef) :-
-    (get_dict(apps, JsonDict, Apps) ->
-        dict_pairs(Apps, _, SystemPairs),
-        member(System-SystemApps, SystemPairs),
-        dict_pairs(SystemApps, _, AppPairs),
-        member(AppName-_, AppPairs),
-        format(atom(AttrPath), 'apps.~w.~w', [System, AppName]),
-        assertz(component(Entity, nix_target, app(FlakeRef, AttrPath, AppName)))
-    ;
-        true  % No apps section
-    ).
-
-
-% Discover flake.nix artifact
-discover_flake_artifact(Entity, BaseDir) :-
-    FlakePath = 'flake.nix',
-    directory_file_path(BaseDir, FlakePath, FlakeFullPath),
-    (exists_file(FlakeFullPath) ->
-        assertz(component(Entity, core_artifact, nix(flake(FlakeFullPath))))
-    ;
-        assertz(component(Entity, missing_core_artifact, nix(flake)))
-    ).
-
-% Discover git repository artifact
-discover_git_artifact(Entity, BaseDir) :-
-    GitDir = '.git',
-    directory_file_path(BaseDir, GitDir, GitFullPath),
-    (exists_directory(GitFullPath) ->
-        assertz(component(Entity, core_artifact, git(repository(BaseDir))))
-    ;
-        assertz(component(Entity, missing_core_artifact, git))
-    ).
-
-% Discover README artifact
-discover_readme_artifact(Entity, BaseDir) :-
-    ReadmePatterns = ['README.md', 'README.rst', 'README.txt', 'README'],
-    find_first_existing_file(BaseDir, ReadmePatterns, ReadmePath),
-    (ReadmePath \= none ->
-        assertz(component(Entity, core_artifact, readme(ReadmePath)))
-    ;
-        assertz(component(Entity, missing_core_artifact, readme))
-    ).
-
-% Find first existing file from pattern list
-find_first_existing_file(_, [], none).
-find_first_existing_file(BaseDir, [Pattern|Rest], Result) :-
-    directory_file_path(BaseDir, Pattern, FullPath),
-    (exists_file(FullPath) ->
-        Result = FullPath
-    ;
-        find_first_existing_file(BaseDir, Rest, Result)
-    ).
-
-% Discover source files (git-tracked files)
-discover_sources_artifact(Entity, BaseDir) :-
-    perceive(git(ls_files(BaseDir, Files))),
-    maplist(assert_source_file(Entity, BaseDir), Files).
-
-% Assert source file component
-assert_source_file(Entity, BaseDir, RelativePath) :-
-    directory_file_path(BaseDir, RelativePath, FullPath),
-    (exists_file(FullPath) ->
-        assertz(component(Entity, source_file, file(RelativePath)))
-    ;
-        true  % Skip non-existent files
-    ).
-
-% Discover custom filesystem artifacts based on patterns
-discover_custom_artifacts(Entity, [IncludePatterns, ExcludePatterns]) :-
-    working_directory(CurrentDir, CurrentDir),
-    discover_fs_components(Entity, CurrentDir,
-        [include(IncludePatterns), exclude(ExcludePatterns)],
-        Components),
-    maplist(assertz, Components).
-
-% Discover all semantics.pl files and create child relationships
-discover_semantic_artifacts(Entity, BaseDir) :-
-    perceive(git(ls_files(BaseDir, AllFiles))),
-    include(is_semantics_file, AllFiles, SemanticFiles),
-    process_semantic_hierarchy(Entity, BaseDir, SemanticFiles).
-
-% Use is_semantics_file/1 from utils.pl
-
-% Process each semantics.pl file and build hierarchy
-process_semantic_hierarchy(Entity, BaseDir, Files) :-
-    maplist(assert_semantic_child(Entity, BaseDir), Files).
-
-% Create child component from discovered semantics.pl file
-assert_semantic_child(Entity, BaseDir, FilePath) :-
-    file_directory_name(FilePath, Dir),
-    (Dir \= '.', Dir \= BaseDir ->
-        % Get absolute path of the directory
-        absolute_file_name(Dir, AbsDir, [relative_to(BaseDir)]),
-        % Use core_rules predicate to find entity that has this directory as semantic source
-        semantic_entity_id(semantic(folder(AbsDir)), ChildEntity),
-        % Create child relationship
-        assertz(component(Entity, child, ChildEntity))
-    ; true).
+docstring(conjure(mkproject), S) :- docstring(mkproject, S).
 
 % Subscribe project ctors as children for hierarchy (if they're entities)
-component(Entity, child, EntityCtor) :- 
+component(Entity, child, EntityCtor) :-
     component(Entity, ctor, Ctor),
     EntityCtor =.. [Entity, Ctor],
     entity(EntityCtor).

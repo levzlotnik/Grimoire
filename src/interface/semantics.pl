@@ -61,6 +61,116 @@ docstring(interface, S) :-
     make_ctors_docstring(interface, CtorsDoc),
     S = {|string(CtorsDoc)||\n    Interface commands for ECS exploration and system interaction.\n    Format: interface(subcommand(...))\n\n    Available subcommands:\n    {CtorsDoc}\n    |}.
 
+% === DSL PATTERNS: CLIENT CAPABILITIES ===
+
+% Expand client capabilities to queryable components
+component(Entity, interface_client_type, Type) :-
+    component(Entity, has(interface(client)), interface(client(Spec))),
+    member(type(Type), Spec).
+
+component(Entity, interface_client_capability, Cap) :-
+    component(Entity, has(interface(client)), interface(client(Spec))),
+    member(capabilities(Caps), Spec),
+    member(Cap, Caps).
+
+% Expand spell access permissions
+component(Entity, interface_can_access_domain, Domain) :-
+    component(Entity, has(interface(spell_access)), interface(spell_access(Spec))),
+    member(domain(Domain), Spec).
+
+component(Entity, interface_can_cast_spell, Spell) :-
+    component(Entity, has(interface(spell_access)), interface(spell_access(Spec))),
+    member(spells(Spells), Spec),
+    member(Spell, Spells).
+
+% Subcommand availability
+component(interface, available_subcommands, Subcommands) :-
+    findall(Cmd, component(interface, subcommand, Cmd), Subcommands).
+
+% === SPELL REGISTRATIONS ===
+
+register_spell(conjure(interface(entities)), input(interface(entities)), output(ok(entities('EntityList'))), "List all entities").
+register_spell(conjure(interface(compt)), input(interface(compt)), output(ok(component_types('Entity', 'TypeList'))), "Query component types").
+register_spell(conjure(interface(comp('E','T'))), input(interface(comp('E','T'))), output(ok(components('E','T','List'))), "Query components").
+register_spell(conjure(interface(doc)), input(interface(doc)), output(ok(documentation('Entity', 'Doc'))), "Get documentation").
+
+register_spell(
+    conjure(interface(conjure('SpellTerm'))),
+    input(interface(conjure('SpellTerm'))),
+    output('DomainDependentResult'),
+    docstring("Delegate conjure spell to appropriate domain")
+).
+
+register_spell(
+    conjure(interface(perceive('QueryTerm'))),
+    input(interface(perceive('QueryTerm'))),
+    output(either(ok(query_succeeded), error(query_failed))),
+    docstring("Delegate perceive query to appropriate domain")
+).
+
+register_spell(
+    conjure(interface(test)),
+    input(interface(test)),
+    output(either(ok(tests_passed), error(tests_failed('Reason')))),
+    docstring("Run all tests")
+).
+
+register_spell(
+    conjure(interface(test('TestArgs'))),
+    input(interface(test('TestArgs'))),
+    output(either(ok(tests_passed), error(tests_failed('Reason')))),
+    docstring("Run tests with optional filtering arguments")
+).
+
+register_spell(
+    conjure(interface(test_files('TestNames', 'FilePaths'))),
+    input(interface(test_files('TestNames', 'FilePaths'))),
+    output(either(ok(tests_passed), error(tests_failed('Reason')))),
+    docstring("Run tests from specific .plt files")
+).
+
+register_spell(
+    conjure(interface(load('EntitySpec'))),
+    input(interface(load('EntitySpec'))),
+    output(either(ok(entity_loaded('Entity')), error(entity_load_failed('Entity', 'Spec', 'Msg')))),
+    docstring("Load entity from semantic source (file or folder)")
+).
+
+register_spell(
+    conjure(interface(read_file('FilePath', 'Start', 'End'))),
+    input(interface(read_file('FilePath', 'Start', 'End'))),
+    output(either(ok(lines('ContentWithLineNumbers')), error(read_file_failed))),
+    docstring("Read lines from a file with 1-based indexing (delegated to fs domain)")
+).
+
+register_spell(
+    conjure(interface(edit_file('FilePath', 'Edits'))),
+    input(interface(edit_file('FilePath', 'Edits'))),
+    output('FsDomainResult'),
+    docstring("Edit file with specified operations (delegated to fs domain)")
+).
+
+register_spell(
+    conjure(interface(repl)),
+    input(interface(repl)),
+    output(either(ok(repl_completed), error(repl_failed('Error')))),
+    docstring("Start interactive REPL with context awareness")
+).
+
+register_spell(
+    conjure(interface(status)),
+    input(interface(status)),
+    output(ok(session_status('Status'))),
+    docstring("Show session/transaction status")
+).
+
+register_spell(
+    conjure(interface(session('Args'))),
+    input(interface(session('Args'))),
+    output('SessionDomainResult'),
+    docstring("File-based session management with SQLite command logging (delegated to session domain)")
+).
+
 % === CONTEXT MANAGEMENT ===
 
 % Auto-detect current working context
@@ -283,20 +393,15 @@ cast(conjure(interface(load(EntitySpec))), RetVal) :-
         RetVal = error(entity_load_failed(E, Spec, Msg))
     ).
 
-% Read file command - execute read_file perceive operation
+% Read file command - delegate to fs domain
 cast(conjure(interface(read_file(FilePath, Start, End))), RetVal) :-
     ensure_session_state_loaded,
-    % Pass start/end directly to the perceive operation
-    (perceive(read_file(FilePath, Start, End, ContentWithLineNumbers)) ->
-        RetVal = ok(lines(ContentWithLineNumbers))
-    ;
-        RetVal = error(read_file_failed)
-    ).
+    cast(perceive(fs(read_file(FilePath, Start, End))), RetVal).
 
-% Edit file command - forward to edit_file conjure operation  
+% Edit file command - delegate to fs domain
 cast(conjure(interface(edit_file(FilePath, Edits))), RetVal) :-
     ensure_session_state_loaded,
-    cast(conjure(edit_file(file(FilePath), Edits)), RetVal).
+    cast(conjure(fs(edit_file(file(FilePath), Edits))), RetVal).
 
 % === CORE INTERFACE FUNCTIONS ===
 % These return structured data, no printing
@@ -319,7 +424,7 @@ interface_doc(Entity, Doc) :-
 
 % List all entities
 interface_entities(Entities) :-
-    perceive(entities(Entities)).
+    findall(E, entity(E), Entities).
 
 % Get comprehensive session status
 get_session_status(Status) :-
