@@ -1,14 +1,6 @@
 % Core entities
 :- self_entity(project).
 
-entity(package).
-entity(application).
-entity(environment).
-entity(context).
-entity(language).
-entity(build).
-entity(runtime).
-entity(test).
 entity(mkproject).
 entity(conjure(mkproject)).
 entity(project(app)).
@@ -16,220 +8,7 @@ entity(project(context(build))).
 entity(project(context(runtime))).
 entity(project(context(test))).
 
-component(project, concept, application).
-component(project, concept, context).
-component(project, concept, environment).
-component(project, concept, source).
-
-component(application, ctor, program).
-component(application, ctor, library).
-component(application, ctor, service).
-component(package, ctor, application).
-
-component(application, requires, context(C)) :- component(context, ctor, C).
-component(context, requires, environment).
-
-component(context, ctor, build).
-component(context, ctor, runtime).
-component(context, ctor, test).
-entity(context(C)) :- component(context, ctor, C).
-
-% Config as a distinct entity
-entity(config).
-component(config, ctor, C) :- entity(context(C)).
-entity(config(C)) :- component(config, ctor, C).
-
-% Dependencies as a distinct entity
-entity(deps).
-component(deps, ctor, C) :- entity(context(C)).
-entity(deps(C)) :- component(deps, ctor, C).
-
-% Context-config relationships
-component(context(C), requires, config(C)) :-
-    entity(context(C)), entity(config(C)).
-
-component(context(C), requires, deps(C)) :-
-    entity(context(C)), entity(deps(C)).
-
-component(context(build), requires, source(code)).
-component(context(runtime), requires, source(data)).
-
-component(source, ctor, code).
-component(source, ctor, data).
-
-entity(source(code)).
-entity(source(data)).
-
-docstring(source(code),
-   {|string(_)||
-   Represents source of programming language code.
-   Format:
-     source(code(lang(Lang), file(...))) - file as source code
-     source(code(lang(Lang), folder(...))) - a folder full of source code
-   |}).
-
-docstring(source(data),
-   {|string(_)||
-   Represents a source of data.
-   |}).
-
-docstring(config,
-    {|string(_)||
-    Configuration entity for different project contexts.
-    Configs determine how contexts behave during build and runtime.
-    |}
-).
-
-docstring(deps,
-    {|string(_)||
-    Dependencies entity representing required resources.
-    Build deps are source-level needs (compilers, etc).
-    Runtime deps are execution needs (libraries, etc).
-    |}
-).
-
-docstring(package,
-    {|string(_)||
-    Package entity representing a distributable unit of software.
-    A package wraps a set of applications with their respective dependencies and configurations
-    into a deployable form.
-    |}).
-
-docstring(application,
-    {|string(_)||
-    Application entity representing a software system's intent and behavior.
-    Applications can both consume AND produce runtime dependencies:
-    - Services consume and produce (e.g., API endpoints)
-    - Frameworks primarily produce (e.g., web servers)
-    - Libraries produce factories (e.g., database connections)
-    |}).
-
-docstring(project,
-    {|string(_)||
-    Project entity representing the development context of software.
-    Projects provide structure for source code, build systems, and development
-    tools. They materialize applications into concrete implementations.
-    |}).
-
-docstring(context(build),
-    {|string(_)||
-    Build context configuration for project compilation.
-    Defines build-time environment, tools, and settings.
-    Part of the project's three-phase context system.
-    Requires config(build) and deps(build) for complete specification.
-    |}).
-
-docstring(context(runtime),
-    {|string(_)||
-    Runtime context configuration for project execution.
-    Defines runtime environment, dependencies, and settings.
-    Part of the project's three-phase context system.
-    Requires config(runtime) and deps(runtime) for complete specification.
-    |}).
-
-docstring(context(test),
-    {|string(_)||
-    Test context configuration for project testing.
-    Defines test environment, frameworks, and test-specific settings.
-    Part of the project's three-phase context system.
-    Requires config(test) and deps(test) for complete specification.
-    |}).
-
-docstring(config(build),
-    {|string(_)||
-    Build configuration settings and parameters.
-    Stores build-specific configuration like compiler flags, optimization levels.
-    Associated with context(build) for complete build specification.
-    Provides declarative build configuration management.
-    |}).
-
-docstring(config(runtime),
-    {|string(_)||
-    Runtime configuration settings and parameters.
-    Stores runtime-specific configuration like environment variables, resource limits.
-    Associated with context(runtime) for complete runtime specification.
-    Provides declarative runtime configuration management.
-    |}).
-
-docstring(config(test),
-    {|string(_)||
-    Test configuration settings and parameters.
-    Stores test-specific configuration like test runners, coverage settings.
-    Associated with context(test) for complete test specification.
-    Provides declarative test configuration management.
-    |}).
-
-docstring(deps(build),
-    {|string(_)||
-    Build-time dependencies specification.
-    Lists packages and tools required during compilation/build phase.
-    Managed through package manager integrations like Nix.
-    Provides declarative build dependency management.
-    |}).
-
-docstring(deps(runtime),
-    {|string(_)||
-    Runtime dependencies specification.
-    Lists packages and libraries required during program execution.
-    Managed through package manager integrations like Nix.
-    Provides declarative runtime dependency management.
-    |}).
-
-docstring(deps(test),
-    {|string(_)||
-    Test dependencies specification.
-    Lists test frameworks and tools required for testing.
-    Managed through package manager integrations like Nix.
-    Provides declarative test dependency management.
-    |}).
-
-docstring(environment,
-    {|string(_)||
-    Environment entity representing a complete set of resources for all the project's contexts.
-    - Build environment (compilers, tools)
-    - Runtime environment (libraries, data)
-    - Testing environment (test frameworks, mock data)
-    - Development environment (editors, debuggers)
-    |}).
-
-docstring(context,
-    {|string(_)||
-    Context entity representing a phase in the software lifecycle.
-    Contexts define how software is built, run, and tested.
-    Each context has its own configuration and dependency requirements.
-    |}).
-
-docstring(language,
-    {|string(_)||
-    Language entity representing a formal system for expressing computation.
-    Languages appear in multiple forms:
-    - Source language (how we write code)
-    - Interface language (how components communicate)
-    - Configuration language (how we describe behavior)
-    |}).
-
-docstring(build,
-    {|string(_)||
-    Build entity representing the transformation from source to artifacts.
-    Build is a function from build dependencies and configuration
-    to runtime dependencies (executables, libraries, resources).
-    |}).
-
-docstring(runtime,
-    {|string(_)||
-    Runtime entity representing program execution context.
-    Runtime combines configuration with dependencies to create
-    an environment where applications can execute.
-    |}).
-
-docstring(test,
-    {|string(_)||
-    Test entity representing verification contexts.
-    Tests verify application behavior through:
-    - Unit tests (component behavior)
-    - Integration tests (component interaction)
-    - System tests (complete application)
-    |}).
+docstring(project, "Project domain for composing git + nix + fs into development environments").
 
 % === PURE DSL EXPANSION RULES (NO assertz) ===
 
@@ -243,8 +22,8 @@ component(Entity, project_git_origin, Origin) :-
     component(Entity, has(project(app)), project(app(Options))),
     member(git(repository(origin(Origin))), Options).
 
-% Extract nix flake ref from app DSL
-component(Entity, project_nix_ref, Ref) :-
+% Extract nix flake from app DSL - preserve term structure
+component(Entity, project_nix_flake, nix(flake(Ref))) :-
     component(Entity, has(project(app)), project(app(Options))),
     member(nix(flake(ref(Ref))), Options).
 
@@ -264,9 +43,9 @@ component(Entity, project_context_outputs, Outputs) :-
 component(Entity, has(git(repository)), git(repository(origin(Origin)))) :-
     component(Entity, project_git_origin, Origin).
 
-% Project nix ref triggers nix flake component
-component(Entity, has(nix(flake)), nix(flake(ref(Ref)))) :-
-    component(Entity, project_nix_ref, Ref).
+% Project nix flake triggers nix flake component
+component(Entity, has(nix(flake)), NixFlake) :-
+    component(Entity, project_nix_flake, NixFlake).
 
 % Project fs structure triggers fs structure component
 component(Entity, has(fs(structure)), fs(structure(Patterns))) :-
@@ -277,98 +56,25 @@ component(conjure, ctor, mkproject).
 component(perceive, ctor, project(validate)).
 component(perceive, ctor, project(structure)).
 
-% === SPELL REGISTRATIONS WITH DOCSTRINGS ===
-
-register_spell(
-    conjure(mkproject),
-    input(mkproject(folder_path('FolderPath'), project_name('ProjectName'), options('Options'))),
-    output(either(
-        ok(project_created(path('ProjectPath'), name('ProjectName'))),
-        error(project_error('Reason'))
-    )),
-    docstring("Creates a new project directory with full initialization. Options: git(bool), template(TemplateId).")
-).
-
-register_spell(
-    perceive(project(validate)),
-    input(project(validate(entity('Entity')))),
-    output(either(
-        ok(valid),
-        error(validation_failed(domain('Domain'), reason('Reason')))
-    )),
-    docstring("Validates a project entity against its declared components and cross-domain requirements.")
-).
-
-register_spell(
-    perceive(project(structure)),
-    input(project(structure(entity('Entity')))),
-    output(ok(project_info(
-        type('Type'),
-        sources('Sources'),
-        contexts('Contexts')
-    ))),
-    docstring("Queries project structure, including type, source patterns, and available contexts.")
-).
-
 % === SPELL IMPLEMENTATIONS ===
 
 % mkproject spell - create new project from template or basic structure
 cast(conjure(mkproject(FolderPath, ProjectName, Options)), RetVal) :-
     catch(
-        (
-            % Create full project path
-            directory_file_path(FolderPath, ProjectName, ProjectPath),
-
-            % Ensure base folder exists
-            (exists_directory(FolderPath) ->
-                true
-            ;
-                make_directory_path(FolderPath)
-            ),
-
-            % Check if project already exists
-            (exists_directory(ProjectPath) ->
-                RetVal = error(project_already_exists(ProjectPath))
-            ;
-                % Create project directory
-                make_directory(ProjectPath),
-
-                % Apply template if specified
-                (member(template(Template), Options) ->
-                    cast(conjure(nix(flake(new(Template, ProjectPath)))), TemplateResult),
-                    (TemplateResult = ok(_) ->
-                        % Rename entities in generated files
-                        rename_project_entities(ProjectPath, Template, ProjectName, RenameResult)
-                    ;
-                        RenameResult = TemplateResult
-                    )
-                ;
-                    % Create basic semantics.pl if no template
-                    create_basic_semantics_file(ProjectPath, ProjectName),
-                    RenameResult = ok
-                ),
-
-                (RenameResult = ok ->
-                    % Initialize git if requested
-                    (member(git(false), Options) ->
-                        GitResult = ok
-                    ;
-                        cast(conjure(git(init(ProjectPath))), GitResult)
-                    ),
-
-                    (GitResult = ok ->
-                        RetVal = ok(project_created(ProjectPath, ProjectName))
-                    ;
-                        RetVal = GitResult
-                    )
-                ;
-                    RetVal = error(entity_renaming_failed(RenameResult))
-                )
-            )
-        ),
+        mkproject_impl(FolderPath, ProjectName, Options, RetVal),
         Error,
         RetVal = error(conjure_failed(Error))
     ).
+
+register_spell(
+    conjure(mkproject(folder_path('FolderPath'), project_name('ProjectName'), options('Options'))),
+    input(mkproject(folder_path('FolderPath'), project_name('ProjectName'), options('Options'))),
+    output(either(
+        ok(project_created(path('ProjectPath'), name('ProjectName'))),
+        error(project_error('Reason'))
+    )),
+    "Creates a new project directory with full initialization. Options: git(bool), template(TemplateId)"
+).
 
 % project validate spell - verify project entity composition
 cast(perceive(project(validate(Entity))), Result) :-
@@ -380,13 +86,23 @@ cast(perceive(project(validate(Entity))), Result) :-
              please_verify(component(Entity, has(git(repository)), _))
          ; true),
          % Optionally verify nix if specified
-         (component(Entity, project_nix_ref, _) ->
+         (component(Entity, project_nix_flake, _) ->
              please_verify(component(Entity, has(nix(flake)), _))
          ; true),
          Result = ok(valid)),
         verification_error(Domain, Reason),
         Result = error(validation_failed(Domain, Reason))
     ).
+
+register_spell(
+    perceive(project(validate(entity('Entity')))),
+    input(project(validate(entity('Entity')))),
+    output(either(
+        ok(valid),
+        error(validation_failed(domain('Domain'), reason('Reason')))
+    )),
+    "Validates a project entity against its declared components and cross-domain requirements"
+).
 
 % project structure spell - query project structure information
 cast(perceive(project(structure(Entity))), Result) :-
@@ -399,16 +115,74 @@ cast(perceive(project(structure(Entity))), Result) :-
         Result = error(structure_query_failed(Error))
     ).
 
-% === MAGIC_CAST/4 INTEGRATION ===
+register_spell(
+    perceive(project(structure(entity('Entity')))),
+    input(project(structure(entity('Entity')))),
+    output(ok(project_info(
+        type('Type'),
+        sources('Sources'),
+        contexts('Contexts')
+    ))),
+    "Queries project structure, including type, source patterns, and available contexts"
+).
 
-magic_cast(project, create, [FolderPath, ProjectName|Options], Result) :-
-    cast(conjure(mkproject(FolderPath, ProjectName, Options)), Result).
+% === HELPER PREDICATES ===
 
-magic_cast(project, validate, [Entity], Result) :-
-    cast(perceive(project(validate(Entity))), Result).
+% Main mkproject implementation
+mkproject_impl(FolderPath, ProjectName, Options, RetVal) :-
+    % Create full project path
+    directory_file_path(FolderPath, ProjectName, ProjectPath),
 
-magic_cast(project, structure, [Entity], Result) :-
-    cast(perceive(project(structure(Entity))), Result).
+    % Ensure base folder exists
+    ensure_base_folder(FolderPath),
+
+    % Check if project already exists
+    (exists_directory(ProjectPath) ->
+        RetVal = error(project_already_exists(ProjectPath))
+    ;
+        create_project_structure(ProjectPath, ProjectName, Options, RetVal)
+    ).
+
+ensure_base_folder(FolderPath) :-
+    (exists_directory(FolderPath) ->
+        true
+    ;
+        make_directory_path(FolderPath)
+    ).
+
+create_project_structure(ProjectPath, ProjectName, Options, RetVal) :-
+    make_directory(ProjectPath),
+    apply_template_or_basic(ProjectPath, ProjectName, Options, RenameResult),
+    (RenameResult = ok ->
+        init_git_if_requested(ProjectPath, Options, RetVal, ProjectName)
+    ;
+        RetVal = error(entity_renaming_failed(RenameResult))
+    ).
+
+apply_template_or_basic(ProjectPath, ProjectName, Options, Result) :-
+    (member(template(Template), Options) ->
+        magic_cast(conjure(nix(flake(new(Template, ProjectPath)))), TemplateResult),
+        (TemplateResult = ok(_) ->
+            rename_project_entities(ProjectPath, Template, ProjectName, Result)
+        ;
+            Result = TemplateResult
+        )
+    ;
+        create_basic_semantics_file(ProjectPath, ProjectName),
+        Result = ok
+    ).
+
+init_git_if_requested(ProjectPath, Options, RetVal, ProjectName) :-
+    (member(git(false), Options) ->
+        RetVal = ok(project_created(ProjectPath, ProjectName))
+    ;
+        magic_cast(conjure(git(init(ProjectPath))), GitResult),
+        (GitResult = ok(_) ->
+            RetVal = ok(project_created(ProjectPath, ProjectName))
+        ;
+            RetVal = GitResult
+        )
+    ).
 
 % === HELPER PREDICATES ===
 

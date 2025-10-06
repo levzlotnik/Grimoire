@@ -620,12 +620,10 @@ cast(conjure(nix(flake(new(TemplateId, DestPath)))), RetVal) :-
     ( TemplateId = none -> TId = "default" ; atom_string(TemplateId, TId) ),
     atom_string(DestPath, DestPathStr),
     magic_cast(conjure(shell([InitCmd, TId, DestPathStr])), Result),
-    (Result = ok(result(_Stdout, Stderr)) ->
-        (Stderr = "" ->
-            RetVal = ok(template_initialized(TemplateId, DestPath))
-        ;
-            RetVal = error(nix_error(Stderr))
-        )
+    (Result = ok(result(_Stdout, _Stderr)) ->
+        % shell already checked exit code - if we got ok(), command succeeded
+        % stderr contains informational output like "wrote: /path/file"
+        RetVal = ok(template_initialized(TemplateId, DestPath))
     ; Result = error(Error) ->
         RetVal = error(nix_error(Error))
     ;

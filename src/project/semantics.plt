@@ -14,16 +14,8 @@ verify(component(Entity, has(project(app)), project(app(Options)))) :-
     member(Type, [web_service, cli_tool, library, package]).
 
 % Verify project type is valid
-verify(component(Entity, project_type, Type)) :-
+verify(component(_Entity, project_type, Type)) :-
     member(Type, [web_service, cli_tool, library, package]).
-
-% Verify git repository component
-verify(component(Entity, has(git(repository)), git(repository(origin(Origin))))) :-
-    atom(Origin).
-
-% Verify nix flake component
-verify(component(Entity, has(nix(flake)), nix(flake(ref(Ref))))) :-
-    atom(Ref).
 
 % === TESTS ===
 
@@ -43,28 +35,13 @@ test(project_command_constructors, [true]) :-
 
 % Test project context entities
 test(project_contexts, [true]) :-
-    entity(context(build)), !,
-    entity(context(runtime)), !,
-    entity(context(test)), !.
+    entity(project(context(build))), !,
+    entity(project(context(runtime))), !,
+    entity(project(context(test))), !.
 
 % Test project docstrings exist
 test(project_docstrings_exist, [true]) :-
-    docstring(project, _), !,
-    docstring(mkproject, _), !.
-
-% Test application types
-test(application_types, [true]) :-
-    please_verify(component(application, ctor, program)), !,
-    please_verify(component(application, ctor, library)), !,
-    please_verify(component(application, ctor, service)), !.
-
-% Test config and deps relationships
-test(config_deps_relationships, [true]) :-
-    entity(config), !,
-    entity(deps), !,
-    % Test that contexts require config and deps
-    please_verify(component(context(build), requires, config(build))), !,
-    please_verify(component(context(build), requires, deps(build))), !.
+    docstring(project, _), !.
 
 % Test mkproject implementation exists
 test(mkproject_implementation, [true]) :-
@@ -77,4 +54,69 @@ test(project_dsl_expansion, [true]) :-
     please_verify(component(test_web_app, project_git_origin, 'https://github.com/test/web-app.git')), !,
     please_verify(component(test_web_app, has(git(repository)), git(repository(origin('https://github.com/test/web-app.git'))))), !.
 
+% Test mkproject spell creates project directory
+test(mkproject_creates_directory, [
+    setup(setup_mkproject_test),
+    cleanup(cleanup_mkproject_test)
+]) :-
+    TestPath = '/tmp/grimoire_test_mkproject',
+    magic_cast(conjure(mkproject(TestPath, test_proj, [git(false)])), Result),
+    Result = ok(project_created(ProjectPath, test_proj)),
+    exists_directory(ProjectPath),
+    directory_file_path(ProjectPath, 'semantics.pl', SemFile),
+    exists_file(SemFile).
+
+% Test mkproject initializes git by default
+test(mkproject_initializes_git, [
+    setup(setup_mkproject_test),
+    cleanup(cleanup_mkproject_test)
+]) :-
+    TestPath = '/tmp/grimoire_test_mkproject_git',
+    magic_cast(conjure(mkproject(TestPath, test_git_proj, [])), Result),
+    Result = ok(project_created(ProjectPath, test_git_proj)),
+    directory_file_path(ProjectPath, '.git', GitDir),
+    exists_directory(GitDir).
+
+% Test mkproject with git(false) skips git init
+test(mkproject_skip_git, [
+    setup(setup_mkproject_test),
+    cleanup(cleanup_mkproject_test)
+]) :-
+    TestPath = '/tmp/grimoire_test_mkproject_nogit',
+    magic_cast(conjure(mkproject(TestPath, test_nogit_proj, [git(false)])), Result),
+    Result = ok(project_created(ProjectPath, test_nogit_proj)),
+    directory_file_path(ProjectPath, '.git', GitDir),
+    \+ exists_directory(GitDir).
+
+% Test mkproject with nix template
+test(mkproject_with_template, [
+    setup(setup_mkproject_test),
+    cleanup(cleanup_mkproject_test)
+]) :-
+    TestPath = '/tmp/grimoire_test_mkproject_template',
+    % Use python template from grimoire-templates
+    magic_cast(conjure(mkproject(TestPath, test_template_proj, [template(python), git(false)])), Result),
+    Result = ok(project_created(ProjectPath, test_template_proj)),
+    exists_directory(ProjectPath),
+    directory_file_path(ProjectPath, 'flake.nix', FlakeFile),
+    exists_file(FlakeFile),
+    directory_file_path(ProjectPath, 'semantics.pl', SemFile),
+    exists_file(SemFile).
+
 :- end_tests(project).
+
+% === SETUP/CLEANUP ===
+
+setup_mkproject_test :-
+    cleanup_mkproject_test.
+
+cleanup_mkproject_test :-
+    delete_if_exists('/tmp/grimoire_test_mkproject'),
+    delete_if_exists('/tmp/grimoire_test_mkproject_git'),
+    delete_if_exists('/tmp/grimoire_test_mkproject_nogit'),
+    delete_if_exists('/tmp/grimoire_test_mkproject_template').
+
+delete_if_exists(Dir) :-
+    (exists_directory(Dir) ->
+        delete_directory_and_contents(Dir)
+    ; true).
