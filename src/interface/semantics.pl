@@ -222,7 +222,7 @@ cast(conjure(interface(status)), RetVal) :-
 % Test command - delegate to existing implementation
 cast(conjure(interface(test)), RetVal) :-
     catch(
-        (grimoire_ensure_loaded('@/src/tests/run_tests.pl'), run_all_tests, RetVal = ok(tests_passed))
+        (grimoire_ensure_loaded('@/src/run_tests.pl'), run_all_tests, RetVal = ok(tests_passed))
     ,
         Error,
         RetVal = error(tests_failed(Error))
@@ -231,7 +231,7 @@ cast(conjure(interface(test)), RetVal) :-
 % Test command with specific test arguments
 cast(conjure(interface(test(TestArgs))), RetVal) :-
     catch(
-        (grimoire_ensure_loaded('@/src/tests/run_tests.pl'),
+        (grimoire_ensure_loaded('@/src/run_tests.pl'),
          (member('--list', TestArgs) ->
              (list_available_tests,
               RetVal = ok(tests_listed))
@@ -247,7 +247,7 @@ cast(conjure(interface(test(TestArgs))), RetVal) :-
 % Test files command - run tests from specific .plt files
 cast(conjure(interface(test_files(TestNames, FilePaths))), RetVal) :-
     catch(
-        (grimoire_ensure_loaded('@/src/tests/run_tests.pl'),
+        (grimoire_ensure_loaded('@/src/run_tests.pl'),
          run_test_files(TestNames, FilePaths),
          RetVal = ok(tests_passed))
     ,

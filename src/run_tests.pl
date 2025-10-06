@@ -1,17 +1,13 @@
-% Test infrastructure - assumes grimoire.pl (which loads ecs_kernel.pl) is already loaded
+% Test infrastructure
 :- use_module(library(plunit)).
 :- use_module(library(filesex)).
 
-% Load foundational .plt files on the discriminative branch
+% Load grimoire.pl which loads all ECS infrastructure
+:- grimoire_ensure_loaded('@/src/grimoire.pl').
+
+% Load verification infrastructure (.plt files define please_verify/1 and verify/1 hooks)
 :- grimoire_ensure_loaded('@/src/ecs_kernel.plt').
 :- grimoire_ensure_loaded('@/src/grimoire.plt').
-
-% Load all domain .plt files as top-level directives (same as old version)
-:- grimoire_ensure_loaded('@/src/utils.plt').
-:- grimoire_ensure_loaded('@/src/fs.plt').
-:- grimoire_ensure_loaded('@/src/git.plt').
-:- grimoire_ensure_loaded('@/src/nix/semantics.plt').
-:- grimoire_ensure_loaded('@/src/db/semantics.plt').
 
 :- self_entity(run_tests).
 

@@ -1,9 +1,9 @@
 % Database entity tests - reverse proxy predicating system
 
-% Note: db/semantics.pl already loaded by grimoire.pl
-% ECS predicates (entity/1, component/3, etc.) are multifile and globally available
-
 :- use_module(library(plunit)).
+
+% Load test entities from file-based knowledge
+:- load_entity(semantic(file('@/src/tests/db_test_entities.pl'))).
 
 :- dynamic(test_db_path/1).
 :- dynamic(registered_db/3).
@@ -117,9 +117,9 @@ test(db_docstring_exists) :-
 
 % Test DSL pattern verification with please_verify
 test(verify_dsl_pattern, [cleanup(cleanup_verify_dsl)]) :-
-    % Setup: assertz a DSL pattern component
+    % Setup: Create files needed for test entity
     TestDbPath = '/tmp/test_verify_dsl.db',
-    TestSchemaPath = '/tmp/test_verify_schema.sql',
+    TestSchemaPath = '/tmp/test_schema.sql',
     % Clean up any existing files first
     (exists_file(TestDbPath) -> delete_file(TestDbPath) ; true),
     (exists_file(TestSchemaPath) -> delete_file(TestSchemaPath) ; true),
@@ -129,24 +129,12 @@ test(verify_dsl_pattern, [cleanup(cleanup_verify_dsl)]) :-
     close(Stream),
     % Create database
     sqlite3_init_db(TestDbPath, TestSchemaPath),
-    % assertz the DSL component
-    user:assertz(component(test_verify_entity, has(db(sqlite)),
-        db(sqlite(database_id(test_verify_db), file(TestDbPath), schema(TestSchemaPath))))),
-    % Verify with please_verify
-    user:please_verify(component(test_verify_entity, has(db(sqlite)), _)),
-    % Cleanup
-    forall(
-        clause(user:component(test_verify_entity, C, V), true),
-        retract(user:component(test_verify_entity, C, V))
-    ).
+    % Entity already loaded from file, just verify it
+    user:please_verify(component(test_verify_entity, has(db(sqlite)), _)).
 
 cleanup_verify_dsl :-
     (exists_file('/tmp/test_verify_dsl.db') -> delete_file('/tmp/test_verify_dsl.db') ; true),
-    (exists_file('/tmp/test_verify_schema.sql') -> delete_file('/tmp/test_verify_schema.sql') ; true),
-    forall(
-        clause(user:component(test_verify_entity, C, V), true),
-        retract(user:component(test_verify_entity, C, V))
-    ).
+    (exists_file('/tmp/test_schema.sql') -> delete_file('/tmp/test_schema.sql') ; true).
 
 % Test expanded components with please_verify
 test(verify_expanded_components, [cleanup(cleanup_verify_expanded)]) :-
@@ -193,24 +181,12 @@ test(verify_table_pattern, [cleanup(cleanup_verify_table)]) :-
     write(Stream, 'CREATE TABLE products (id INTEGER PRIMARY KEY);'),
     close(Stream),
     sqlite3_init_db(TestDbPath, TestSchemaPath),
-    % assertz components
-    user:assertz(component(test_table_entity, db_sqlite_file, TestDbPath)),
-    user:assertz(component(test_table_entity, has(db(table)), db(table(products)))),
-    % Verify table exists
-    user:please_verify(component(test_table_entity, has(db(table)), db(table(products)))),
-    % Cleanup
-    forall(
-        clause(user:component(test_table_entity, C, V), true),
-        retract(user:component(test_table_entity, C, V))
-    ), !.
+    % Entity already loaded from file, just verify it
+    user:please_verify(component(test_table_entity, has(db(table)), db(table(products)))), !.
 
 cleanup_verify_table :-
     (exists_file('/tmp/test_verify_table.db') -> delete_file('/tmp/test_verify_table.db') ; true),
-    (exists_file('/tmp/test_verify_table_schema.sql') -> delete_file('/tmp/test_verify_table_schema.sql') ; true),
-    forall(
-        clause(user:component(test_table_entity, C, V), true),
-        retract(user:component(test_table_entity, C, V))
-    ).
+    (exists_file('/tmp/test_verify_table_schema.sql') -> delete_file('/tmp/test_verify_table_schema.sql') ; true).
 
 % Test verify missing database file throws error
 test(verify_missing_db_file, [

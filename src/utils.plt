@@ -1,6 +1,9 @@
 % PLUnit tests for utils entity
 :- use_module(library(plunit)).
 
+% Load test entities from file-based knowledge
+:- load_entity(semantic(file('@/src/tests/utils_test_entities.pl'))).
+
 % === DISCRIMINATIVE FLOW: VERIFICATION IMPLEMENTATIONS ===
 % This is the .plt (test/verification) side following dual ECS pattern
 
@@ -100,39 +103,39 @@ test(entity_exists) :-
 % Test file processor DSL pattern
 test(utils_file_processor_verification, [setup(setup_file_processor), cleanup(cleanup_file_processor)]) :-
     % Verify it using please_verify
-    user:please_verify(component(test_entity, has(utils(file_processor)),
+    user:please_verify(component(test_entity(utils_file_processor), has(utils(file_processor)),
         utils(file_processor(type(semantics), filters([extensions(['.pl', '.plt'])]))))),
     % Verify generative expansion worked
-    user:please_verify(component(test_entity, utils_processor_type, semantics)),
-    user:please_verify(component(test_entity, utils_file_extensions, ['.pl', '.plt'])), !.
+    user:please_verify(component(test_entity(utils_file_processor), utils_processor_type, semantics)),
+    user:please_verify(component(test_entity(utils_file_processor), utils_file_extensions, ['.pl', '.plt'])), !.
 
 % Test tree builder DSL pattern
 test(utils_tree_builder_verification, [setup(setup_tree_builder), cleanup(cleanup_tree_builder)]) :-
     % Verify it using please_verify
-    user:please_verify(component(test_entity, has(utils(tree_builder)),
+    user:please_verify(component(test_entity(utils_tree_builder), has(utils(tree_builder)),
         utils(tree_builder(root(test_root), relationship(child), options([max_depth(10)]))))),
     % Verify generative expansion worked
-    user:please_verify(component(test_entity, utils_tree_root, test_root)),
-    user:please_verify(component(test_entity, utils_tree_relationship, child)),
-    user:please_verify(component(test_entity, utils_tree_max_depth, 10)), !.
+    user:please_verify(component(test_entity(utils_tree_builder), utils_tree_root, test_root)),
+    user:please_verify(component(test_entity(utils_tree_builder), utils_tree_relationship, child)),
+    user:please_verify(component(test_entity(utils_tree_builder), utils_tree_max_depth, 10)), !.
 
 % Test validator DSL pattern
 test(utils_validator_verification, [setup(setup_validator), cleanup(cleanup_validator)]) :-
     % Verify it using please_verify
-    user:please_verify(component(test_entity, has(utils(validator)),
+    user:please_verify(component(test_entity(utils_validator), has(utils(validator)),
         utils(validator(rules([check_existence, check_format]), on_error(throw))))),
     % Verify generative expansion worked
-    user:please_verify(component(test_entity, utils_validation_rules, [check_existence, check_format])),
-    user:please_verify(component(test_entity, utils_error_handling, throw)), !.
+    user:please_verify(component(test_entity(utils_validator), utils_validation_rules, [check_existence, check_format])),
+    user:please_verify(component(test_entity(utils_validator), utils_error_handling, throw)), !.
 
 % Test collection DSL pattern
 test(utils_collection_verification, [setup(setup_collection), cleanup(cleanup_collection)]) :-
     % Verify it using please_verify
-    user:please_verify(component(test_entity, has(utils(collection)),
+    user:please_verify(component(test_entity(utils_collection), has(utils(collection)),
         utils(collection(type(entities), operations([filter, map]), predicate(is_atom/1))))),
     % Verify generative expansion worked
-    user:please_verify(component(test_entity, utils_collection_type, entities)),
-    user:please_verify(component(test_entity, utils_collection_operations, [filter, map])), !.
+    user:please_verify(component(test_entity(utils_collection), utils_collection_type, entities)),
+    user:please_verify(component(test_entity(utils_collection), utils_collection_operations, [filter, map])), !.
 
 % === SPELL CONSTRUCTOR TESTS ===
 
@@ -206,52 +209,36 @@ test(semantic_entity_id_integration) :-
 % === SETUP/CLEANUP HELPERS ===
 
 setup_file_processor :-
-    user:assertz(entity(test_entity)),
-    user:assertz(component(test_entity, has(utils(file_processor)),
-        utils(file_processor(type(semantics), filters([extensions(['.pl', '.plt'])]))))).
+    % Entity already loaded from file
+    true.
 
 cleanup_file_processor :-
-    user:retractall(entity(test_entity)),
-    user:retractall(component(test_entity, _, _)).
+    % No cleanup needed
+    true.
 
 setup_tree_builder :-
-    user:assertz(entity(test_entity)),
-    user:assertz(entity(test_root)),
-    user:assertz(component(test_entity, has(utils(tree_builder)),
-        utils(tree_builder(root(test_root), relationship(child), options([max_depth(10)]))))),
-    % Assert the derived components that the verify/1 rule will check
-    user:assertz(component(test_entity, utils_tree_root, test_root)),
-    user:assertz(component(test_entity, utils_tree_relationship, child)),
-    user:assertz(component(test_entity, utils_tree_max_depth, 10)).
+    % Entity already loaded from file
+    true.
 
 cleanup_tree_builder :-
-    user:retractall(entity(test_entity)),
-    user:retractall(entity(test_root)),
-    user:retractall(component(test_entity, _, _)).
+    % No cleanup needed
+    true.
 
 setup_validator :-
-    user:assertz(entity(test_entity)),
-    user:assertz(component(test_entity, has(utils(validator)),
-        utils(validator(rules([check_existence, check_format]), on_error(throw))))),
-    % Assert the derived components that the verify/1 rule will check
-    user:assertz(component(test_entity, utils_validation_rules, [check_existence, check_format])),
-    user:assertz(component(test_entity, utils_error_handling, throw)).
+    % Entity already loaded from file
+    true.
 
 cleanup_validator :-
-    user:retractall(entity(test_entity)),
-    user:retractall(component(test_entity, _, _)).
+    % No cleanup needed
+    true.
 
 setup_collection :-
-    user:assertz(entity(test_entity)),
-    user:assertz(component(test_entity, has(utils(collection)),
-        utils(collection(type(entities), operations([filter, map]), predicate(is_atom/1))))),
-    % Assert the derived components that the verify/1 rule will check
-    user:assertz(component(test_entity, utils_collection_type, entities)),
-    user:assertz(component(test_entity, utils_collection_operations, [filter, map])).
+    % Entity already loaded from file
+    true.
 
 cleanup_collection :-
-    user:retractall(entity(test_entity)),
-    user:retractall(component(test_entity, _, _)).
+    % No cleanup needed
+    true.
 
 setup_validate_entity :-
     user:assertz(entity(validate_test_entity)).

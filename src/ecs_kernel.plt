@@ -85,7 +85,7 @@ verify(component(_Entity, self, semantic(Source))) :-
 % Test please_verify/1 Case 1: Component exists + verify succeeds
 test(please_verify_with_verify_succeeds, [setup(setup_test_component), cleanup(cleanup_test_component)]) :-
     % Component exists and has verify/1 rule
-    please_verify(component(test_entity, test_prop, test_value)).
+    please_verify(component(test_entity(ecs_kernel), test_prop, test_value)).
 
 % Test please_verify/1 Case 2: Component exists but no verify/1
 test(please_verify_without_verify_succeeds, [setup(setup_simple_component), cleanup(cleanup_simple_component)]) :-
@@ -146,14 +146,14 @@ test(verify_missing_semantic_file, [
 
 % Setup for component with verify/1
 setup_test_component :-
-    user:assertz(entity(test_entity)),
-    user:assertz(component(test_entity, test_prop, test_value)),
-    user:assertz(verify(component(test_entity, test_prop, test_value))).
+    user:assertz(entity(test_entity(ecs_kernel))),
+    user:assertz(component(test_entity(ecs_kernel), test_prop, test_value)),
+    user:assertz(verify(component(test_entity(ecs_kernel), test_prop, test_value))).
 
 cleanup_test_component :-
-    user:retractall(entity(test_entity)),
-    user:retractall(component(test_entity, test_prop, test_value)),
-    user:retractall(verify(component(test_entity, test_prop, test_value))).
+    user:retractall(entity(test_entity(ecs_kernel))),
+    user:retractall(component(test_entity(ecs_kernel), test_prop, test_value)),
+    user:retractall(verify(component(test_entity(ecs_kernel), test_prop, test_value))).
 
 % Setup for simple component without verify/1
 setup_simple_component :-

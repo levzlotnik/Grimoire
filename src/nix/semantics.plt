@@ -1,8 +1,5 @@
 :- use_module(library(plunit)).
 
-% Note: nix/semantics.pl already loaded by grimoire.pl
-% ECS predicates (entity/1, component/3, etc.) are multifile and globally available
-
 % === DISCRIMINATIVE FLOW: VERIFICATION IMPLEMENTATIONS ===
 
 % Main flake declaration verification - verify against OS reality
@@ -152,6 +149,36 @@ verify(component(Entity, nix_dev_env_available, true)) :-
 :- begin_tests(nix).
 
 % === BASIC EXISTENCE TESTS ===
+
+% Debug test - check what entities exist at start of nix tests
+test(debug_entities_at_start, [true]) :-
+    open('/tmp/nix_test_debug.txt', write, Stream),
+    findall(E, entity(E), Entities),
+    length(Entities, N),
+    format(Stream, 'At start of nix tests: ~w entities exist~n', [N]),
+    (entity(nix) -> format(Stream, '  entity(nix) EXISTS~n', []) ; format(Stream, '  entity(nix) MISSING~n', [])),
+    (user:entity(nix) -> format(Stream, '  user:entity(nix) EXISTS~n', []) ; format(Stream, '  user:entity(nix) MISSING~n', [])),
+    (component(nix, defined, true) -> format(Stream, '  component(nix, defined, true) EXISTS~n', []) ; format(Stream, '  component(nix, defined, true) MISSING~n', [])),
+    (user:component(nix, defined, true) -> format(Stream, '  user:component(nix, defined, true) EXISTS~n', []) ; format(Stream, '  user:component(nix, defined, true) MISSING~n', [])),
+    % Check if the rule exists in current module
+    (clause(component(_, defined, true), entity(_)) -> format(Stream, '  RULE component(Entity, defined, true) :- entity(Entity) EXISTS (current)~n', []) ; format(Stream, '  RULE component(Entity, defined, true) :- entity(Entity) MISSING (current)~n', [])),
+    % Check if the rule exists in user module
+    (user:clause(component(_, defined, true), entity(_)) -> format(Stream, '  RULE user:component(Entity, defined, true) :- user:entity(Entity) EXISTS~n', []) ; format(Stream, '  RULE user:component(Entity, defined, true) :- user:entity(Entity) MISSING~n', [])),
+    % Check what clauses exist for component/3
+    findall(M:H-B, clause(M:component(H1, H2, H3), B), Clauses),
+    length(Clauses, NC),
+    format(Stream, '  Total component/3 clauses visible: ~w~n', [NC]),
+    findall(M2:H2-B2, user:clause(component(Ha, Hb, Hc), B2), UserClauses),
+    length(UserClauses, NUC),
+    format(Stream, '  Total user:component/3 clauses visible: ~w~n', [NUC]),
+    % Check for the specific rule we're looking for
+    findall(Body, user:clause(component(_, defined, true), Body), DefinedBodies),
+    length(DefinedBodies, NDB),
+    format(Stream, '  component(_,defined,true) clauses: ~w~n', [NDB]),
+    (DefinedBodies \= [] -> format(Stream, '    First body: ~w~n', [DefinedBodies]) ; true),
+    (entity(utils) -> format(Stream, '  entity(utils) EXISTS~n', []) ; format(Stream, '  entity(utils) MISSING~n', [])),
+    (entity(fs) -> format(Stream, '  entity(fs) EXISTS~n', []) ; format(Stream, '  entity(fs) MISSING~n', [])),
+    close(Stream), !.
 
 test(nix_entity_exists, [true]) :-
     user:please_verify(component(nix, defined, true)), !.

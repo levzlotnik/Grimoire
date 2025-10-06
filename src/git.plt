@@ -1,8 +1,8 @@
 :- use_module(library(plunit)).
 :- use_module(library(filesex)).
 
-% Note: git.pl already loaded by grimoire.pl
-% ECS predicates (entity/1, component/3, etc.) are multifile and globally available
+% Load test entity from file-based knowledge
+:- load_entity(semantic(file('@/src/tests/git_test_entity.pl'))).
 
 % === DISCRIMINATIVE FLOW: VERIFICATION IMPLEMENTATIONS ===
 
@@ -173,66 +173,33 @@ test(verify_git_repository_root, [
     setup(setup_mock_git_repo),
     cleanup(cleanup_mock_git_repo)
 ]) :-
-    test_git_root(TestRoot),
-    user:assertz(component(mock_entity, git_repository_root, TestRoot)),
-    user:please_verify(component(mock_entity, git_repository_root, TestRoot)).
+    % Entity and component declared in file, just verify
+    user:please_verify(component(git_mock_entity, git_repository_root, '/tmp/test_git_mock')).
 
 % Test verify/1 for missing git directory should fail
 test(verify_missing_git_directory, [
-    cleanup(cleanup_missing_git_directory),
     throws(verification_error(git, missing_directory(_)))
 ]) :-
-    user:assertz(component(bad_entity, git_repository_root, '/nonexistent/path')),
-    user:please_verify(component(bad_entity, git_repository_root, '/nonexistent/path')).
-
-cleanup_missing_git_directory :-
-    % Retract only FACTS for bad_entity (not rules - check body = true)
-    forall(
-        clause(user:component(bad_entity, C, V), true),
-        retract(user:component(bad_entity, C, V))
-    ).
+    % Entity declared in file with nonexistent path
+    user:please_verify(component(git_bad_entity, git_repository_root, '/nonexistent/path')).
 
 % Test verify/1 for directory that is not a git repository
 test(verify_not_git_repository, [
-    cleanup(cleanup_not_git_repository),
+    setup(setup_not_git_repo),
+    cleanup(cleanup_not_git_repo),
     throws(verification_error(git, not_git_repository(_)))
 ]) :-
-    tmp_file_stream(text, TmpFile, Stream),
-    close(Stream),
-    file_directory_name(TmpFile, TmpDir),
-    user:assertz(component(not_git_entity, git_repository_root, TmpDir)),
-    user:please_verify(component(not_git_entity, git_repository_root, TmpDir)).
-
-cleanup_not_git_repository :-
-    % Retract only FACTS for not_git_entity (not rules - check body = true)
-    forall(
-        clause(user:component(not_git_entity, C, V), true),
-        retract(user:component(not_git_entity, C, V))
-    ).
+    user:please_verify(component(git_not_git_entity, git_repository_root, '/tmp/test_not_git')).
 
 % Test complete repository DSL pattern
 test(verify_git_repository_complete, [
     setup(setup_complete_mock_git),
     cleanup(cleanup_complete_mock_git)
 ]) :-
-    % Get test data
-    test_git_root(TestRoot),
-    test_git_url(TestURL),
-    % Assert the DSL pattern - this is how users will use it
-    user:assertz(component(complete_test, has(git(repository)), git(repository([
-        remote(origin, TestURL),
-        branch(main)
-    ])))),
-    user:assertz(component(complete_test, self, semantic(folder(TestRoot)))),
-    % Debug: check if derivation works before please_verify
-    (user:component(complete_test, git_repository_root, CheckRoot) ->
-        format('DEBUG: Derivation works, root=~w~n', [CheckRoot])
-    ;
-        format('DEBUG: Derivation FAILED~n')
-    ),
+    % Entity and components declared in file
     % Verify the DSL - verify/1 will check all derived components against OS
-    user:please_verify(component(complete_test, has(git(repository)), git(repository([
-        remote(origin, TestURL),
+    user:please_verify(component(git_complete_test, has(git(repository)), git(repository([
+        remote(origin, 'https://github.com/test/complete_repo'),
         branch(main)
     ])))).
 
@@ -242,78 +209,66 @@ test(verify_git_repository_complete, [
 
 % Setup DSL pattern test
 setup_git_repository_dsl :-
-    user:assertz(entity(test_project)),
-    user:assertz(component(test_project, has(git(repository)), git(repository([
-        remote(origin, 'https://github.com/test/repo'),
-        branch(main),
-        clean(true)
-    ])))).
+    % Entity already loaded from file
+    true.
 
 cleanup_git_repository_dsl :-
-    user:retractall(entity(test_project)),
-    % Only retract asserted facts, not derived rules
-    user:retractall(component(test_project, has(git(repository)), _)).
+    % No cleanup needed
+    true.
 
 % Setup mock git repository for verification tests
-:- dynamic test_git_root/1.
-
 setup_mock_git_repo :-
-    tmp_file_stream(text, TmpFile, Stream),
-    close(Stream),
-    file_directory_name(TmpFile, TmpDir),
-    directory_file_path(TmpDir, 'test_git_repo', TestRoot),
+    TestRoot = '/tmp/test_git_mock',
+    % Clean up if exists from previous run
+    (exists_directory(TestRoot) ->
+        delete_directory_and_contents(TestRoot)
+    ; true),
     make_directory(TestRoot),
-    directory_file_path(TestRoot, '.git', GitDir),
-    make_directory(GitDir),
-    assertz(test_git_root(TestRoot)).
+    % Initialize git repo using direct process_create
+    working_directory(OldCwd, TestRoot),
+    process_create(path(git), ['init'], [stdout(null), stderr(null)]),
+    working_directory(_, OldCwd).
 
 cleanup_mock_git_repo :-
-    (test_git_root(TestRoot) ->
-        (exists_directory(TestRoot) ->
-            delete_directory_and_contents(TestRoot)
-        ; true),
-        retractall(test_git_root(_))
+    TestRoot = '/tmp/test_git_mock',
+    (exists_directory(TestRoot) ->
+        delete_directory_and_contents(TestRoot)
+    ; true).
+
+% Setup directory that is NOT a git repository
+setup_not_git_repo :-
+    TestDir = '/tmp/test_not_git',
+    % Clean up if exists from previous run
+    (exists_directory(TestDir) ->
+        delete_directory_and_contents(TestDir)
     ; true),
-    % Retract only FACTS for mock_entity (not rules - check body = true)
-    forall(
-        clause(user:component(mock_entity, C, V), true),
-        retract(user:component(mock_entity, C, V))
-    ).
+    make_directory(TestDir).
+
+cleanup_not_git_repo :-
+    TestDir = '/tmp/test_not_git',
+    (exists_directory(TestDir) ->
+        delete_directory_and_contents(TestDir)
+    ; true).
 
 % Setup complete mock git repository with remote and branch
-:- dynamic test_git_url/1.
-
 setup_complete_mock_git :-
-    tmp_file_stream(text, TmpFile, Stream),
-    close(Stream),
-    file_directory_name(TmpFile, TmpDir),
-    directory_file_path(TmpDir, 'test_git_complete', TestRoot),
+    TestRoot = '/tmp/test_git_complete',
+    % Clean up if exists from previous run
+    (exists_directory(TestRoot) ->
+        delete_directory_and_contents(TestRoot)
+    ; true),
     make_directory(TestRoot),
-    directory_file_path(TestRoot, '.git', GitDir),
-    make_directory(GitDir),
-    % Initialize git repo
+    % Initialize git repo with direct process_create
     working_directory(OldCwd, TestRoot),
     process_create(path(git), ['init'], [stdout(null), stderr(null)]),
     process_create(path(git), ['config', 'user.email', 'test@example.com'], [stdout(null), stderr(null)]),
     process_create(path(git), ['config', 'user.name', 'Test User'], [stdout(null), stderr(null)]),
     process_create(path(git), ['checkout', '-b', 'main'], [stdout(null), stderr(null)]),
-    TestURL = 'https://github.com/test/complete_repo',
-    atom_string(TestURL, TestURLStr),
-    process_create(path(git), ['remote', 'add', 'origin', TestURLStr], [stdout(null), stderr(null)]),
-    working_directory(_, OldCwd),
-    assertz(test_git_root(TestRoot)),
-    assertz(test_git_url(TestURL)).
+    process_create(path(git), ['remote', 'add', 'origin', 'https://github.com/test/complete_repo'], [stdout(null), stderr(null)]),
+    working_directory(_, OldCwd).
 
 cleanup_complete_mock_git :-
-    (test_git_root(TestRoot) ->
-        (exists_directory(TestRoot) ->
-            delete_directory_and_contents(TestRoot)
-        ; true),
-        retractall(test_git_root(_))
-    ; true),
-    retractall(test_git_url(_)),
-    % Retract only FACTS for complete_test (not rules - check body = true)
-    forall(
-        clause(user:component(complete_test, C, V), true),
-        retract(user:component(complete_test, C, V))
-    ).
+    TestRoot = '/tmp/test_git_complete',
+    (exists_directory(TestRoot) ->
+        delete_directory_and_contents(TestRoot)
+    ; true).

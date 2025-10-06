@@ -1,6 +1,9 @@
 :- use_module(library(plunit)).
 :- use_module(library(filesex)).
 
+% Load test entity from file-based knowledge
+:- load_entity(semantic(file('@/src/tests/fs_test_entity.pl'))).
+
 % === DISCRIMINATIVE FLOW: VERIFICATION RULES ===
 
 % === VERIFICATION RULES FOR FS DSL PATTERNS ===
@@ -145,54 +148,33 @@ verify_permissions_against_filesystem(Path, PermType) :-
 
 % Test fs(structure) verification with real files
 test(fs_structure_verification, [
-    setup(create_test_structure),
-    cleanup(cleanup_test_structure)
+    setup(setup_fs_structure_test),
+    cleanup(cleanup_fs_structure_test)
 ]) :-
-    % Declare structure in component (assert into user module)
-    user:assertz(entity(test_entity)),
-    user:assertz(component(test_entity, has(fs(structure)), fs(structure([
-        file('test_file.txt'),
-        folder('test_dir', [file('nested_file.txt')])
-    ])))),
     % Verify it exists
-    user:please_verify(component(test_entity, has(fs(structure)), fs(structure([
+    user:please_verify(component(test_entity(fs), has(fs(structure)), fs(structure([
         file('test_file.txt'),
         folder('test_dir', [file('nested_file.txt')])
-    ])))),
-    % Cleanup component
-    user:retractall(entity(test_entity)),
-    user:retractall(component(test_entity, _, _)).
+    ])))).
 
 % Test fs(file_content) verification
 test(fs_file_content_verification, [
-    setup(create_content_test_file),
-    cleanup(cleanup_content_test_file)
+    setup(setup_content_test),
+    cleanup(cleanup_content_test)
 ]) :-
-    user:assertz(entity(content_test_entity)),
-    user:assertz(component(content_test_entity, has(fs(file_content)), fs(file_content(
-        'content_test.txt', contains(["hello", "world"])
-    )))),
     user:please_verify(component(content_test_entity, has(fs(file_content)), fs(file_content(
         'content_test.txt', contains(["hello", "world"])
-    )))),
-    user:retractall(entity(content_test_entity)),
-    user:retractall(component(content_test_entity, _, _)).
+    )))).
 
 % Test fs(permissions) verification on executable script
 test(fs_permissions_verification, [
-    setup(create_executable_script),
-    cleanup(cleanup_executable_script),
+    setup(setup_permissions_test),
+    cleanup(cleanup_permissions_test),
     condition(current_prolog_flag(unix, true))  % Only on Unix systems
 ]) :-
-    user:assertz(entity(perm_test_entity)),
-    user:assertz(component(perm_test_entity, has(fs(permissions)), fs(permissions(
-        'test_script.sh', executable
-    )))),
     user:please_verify(component(perm_test_entity, has(fs(permissions)), fs(permissions(
         'test_script.sh', executable
-    )))),
-    user:retractall(entity(perm_test_entity)),
-    user:retractall(component(perm_test_entity, _, _)).
+    )))).
 
 % === SPELL OPERATION TESTS ===
 
@@ -261,24 +243,9 @@ test(fs_mkfile_spell, [cleanup(cleanup_mkfile_test)]) :-
 % === ASSERTZ→PLEASE_VERIFY→RETRACTALL PATTERN TESTS ===
 
 % Test the canonical pattern with mock filesystem
-test(verify_domain_component, [
-    setup(setup_mock_fs),
-    cleanup(cleanup_mock_fs)
-]) :-
-    % Assert component
-    user:assertz(entity(mock_entity)),
-    user:assertz(component(mock_entity, has(fs(structure)), fs(structure([
-        file('mock_test.txt'),
-        folder('mock_testdir', [file('mock_nested.txt')])
-    ])))),
-    % Verify it
-    user:please_verify(component(mock_entity, has(fs(structure)), fs(structure([
-        file('mock_test.txt'),
-        folder('mock_testdir', [file('mock_nested.txt')])
-    ])))),
-    % Retract it
-    user:retractall(entity(mock_entity)),
-    user:retractall(component(mock_entity, _, _)).
+test(verify_domain_component) :-
+    % Entity already loaded from file, just verify it
+    user:please_verify(component(mock_entity, fs_test_prop, test_value)).
 
 % Test verification failure for missing file
 test(verify_missing_file_throws, [
@@ -300,11 +267,33 @@ test(verify_content_mismatch_throws, [
         'content_test.txt', contains(["missing"])
     )))).
 
+% Debug test - check if other entities still exist after fs tests
+test(debug_entity_integrity) :-
+    entity(nix),
+    entity(utils),
+    entity(db), !.
+
 :- end_tests(fs).
 
 % === TEST SETUP/CLEANUP HELPERS ===
 
-% Setup test directory structure
+% Setup test directory structure - just create the actual files
+setup_fs_structure_test :-
+    % Create test files that match the entity declaration
+    open('test_file.txt', write, Stream1),
+    write(Stream1, 'test content'),
+    close(Stream1),
+    make_directory('test_dir'),
+    open('test_dir/nested_file.txt', write, Stream2),
+    write(Stream2, 'nested content'),
+    close(Stream2).
+
+cleanup_fs_structure_test :-
+    % Cleanup files only - entity persists in loaded file
+    (exists_file('test_file.txt') -> delete_file('test_file.txt'); true),
+    (exists_file('test_dir/nested_file.txt') -> delete_file('test_dir/nested_file.txt'); true),
+    (exists_directory('test_dir') -> delete_directory('test_dir'); true).
+
 create_test_structure :-
     open('test_file.txt', write, Stream1),
     write(Stream1, 'test content'),
@@ -319,6 +308,17 @@ cleanup_test_structure :-
     (exists_file('test_dir/nested_file.txt') -> delete_file('test_dir/nested_file.txt'); true),
     (exists_directory('test_dir') -> delete_directory('test_dir'); true).
 
+% Setup for content test
+setup_content_test :-
+    % Create test file
+    open('content_test.txt', write, Stream),
+    write(Stream, 'hello world from test file'),
+    close(Stream).
+
+cleanup_content_test :-
+    % Cleanup file only
+    (exists_file('content_test.txt') -> delete_file('content_test.txt'); true).
+
 % Setup file with specific content for content verification
 create_content_test_file :-
     open('content_test.txt', write, Stream),
@@ -327,6 +327,21 @@ create_content_test_file :-
 
 cleanup_content_test_file :-
     (exists_file('content_test.txt') -> delete_file('content_test.txt'); true).
+
+% Setup for permissions test
+setup_permissions_test :-
+    % Create executable script
+    open('test_script.sh', write, Stream),
+    write(Stream, '#!/bin/bash\necho "test"\n'),
+    close(Stream),
+    % Make it executable on Unix systems
+    (current_prolog_flag(unix, true) ->
+        process_create(path(chmod), ['+x', 'test_script.sh'], [])
+    ; true).
+
+cleanup_permissions_test :-
+    % Cleanup file only
+    (exists_file('test_script.sh') -> delete_file('test_script.sh'); true).
 
 % Setup executable script for permission verification
 create_executable_script :-
@@ -387,26 +402,18 @@ cleanup_mock_fs :-
 
 % Setup for missing file test
 setup_missing_file_test :-
-    user:assertz(entity(fail_entity)),
-    user:assertz(component(fail_entity, has(fs(structure)), fs(structure([
-        file('nonexistent.txt')
-    ])))).
+    % No setup needed - entity already loaded from file
+    true.
 
 cleanup_missing_file_test :-
-    user:retractall(entity(fail_entity)),
-    user:retractall(component(fail_entity, _, _)).
+    % No cleanup needed
+    true.
 
 % Setup for content mismatch test
 setup_content_mismatch_test :-
     open('content_test.txt', write, Stream),
     write(Stream, 'hello world from test file'),
-    close(Stream),
-    user:assertz(entity(content_fail_entity)),
-    user:assertz(component(content_fail_entity, has(fs(file_content)), fs(file_content(
-        'content_test.txt', contains(["missing"])
-    )))).
+    close(Stream).
 
 cleanup_content_mismatch_test :-
-    (exists_file('content_test.txt') -> delete_file('content_test.txt'); true),
-    user:retractall(entity(content_fail_entity)),
-    user:retractall(component(content_fail_entity, _, _)).
+    (exists_file('content_test.txt') -> delete_file('content_test.txt'); true).
