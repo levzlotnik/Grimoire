@@ -2,7 +2,7 @@
 Grimoire Golems AI Agent Framework
 
 Provides autonomous AI agents built on Entity-Component-System architecture.
-Integrates with the existing GrimoireInterface for seamless tool discovery
+Integrates with the existing GrimoireClient for seamless tool discovery
 and supports multiple LLM providers for flexible AI service integration.
 """
 

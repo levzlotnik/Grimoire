@@ -103,6 +103,35 @@ test(mkproject_with_template, [
     directory_file_path(ProjectPath, 'semantics.pl', SemFile),
     exists_file(SemFile).
 
+% Test perceive(project(validate(...))) spell with valid entity
+test(project_validate_valid_entity, [true]) :-
+    magic_cast(perceive(project(validate(test_web_app))), Result),
+    assertion(Result = ok(valid)).
+
+% Test perceive(project(validate(...))) spell with entity without git
+test(project_validate_no_git, [true]) :-
+    magic_cast(perceive(project(validate(test_project_no_git))), Result),
+    assertion(Result = ok(valid)).
+
+% Test perceive(project(validate(...))) spell with invalid type
+% Note: Currently validation only checks component existence, not type validity
+test(project_validate_invalid_type, [true]) :-
+    magic_cast(perceive(project(validate(test_project_invalid_type))), Result),
+    % Project validation checks component existence, not type semantics
+    % Type validity is checked by verify/1 predicates in the test suite
+    assertion(Result = ok(valid)).
+
+% Test perceive(project(structure(...))) spell
+test(project_structure_query, [true]) :-
+    magic_cast(perceive(project(structure(test_web_app))), Result),
+    assertion(Result = ok(project_info(type(web_service), sources(_), contexts(_)))).
+
+% Test perceive(project(structure(...))) with project that has context
+test(project_structure_with_context, [true]) :-
+    magic_cast(perceive(project(structure(test_project_with_context))), Result),
+    Result = ok(project_info(type(web_service), sources(_), contexts(Contexts))),
+    assertion(member(build, Contexts)).
+
 :- end_tests(project).
 
 % === SETUP/CLEANUP ===

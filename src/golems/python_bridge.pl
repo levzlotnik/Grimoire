@@ -93,7 +93,7 @@ translate_python_error(ErrorType, ExceptionObj, ErrorMessage) :-
 % Log thoughts to session database using existing think command
 log_thought_to_session(Content, RetVal) :-
     % Use the existing think command from session.pl
-    cast(conjure(think(Content)), RetVal).
+    magic_cast(conjure(think(Content)), RetVal).
 
 % Execute a golem task with full parsing (output parser + message parsing)
 execute_golem_task_parsed(Id, InputDict, golem_response(ParsedOutput, ParsedMessages, GolemId, SessionId)) :-

@@ -5,12 +5,12 @@ A Python package for interfacing with the Grimoire knowledge-based OS.
 Provides both library interface and executable servers (MCP and REST).
 """
 
-from .grimoire_interface import (
-    GrimoireInterface,
+from .grimoire_client import (
+    GrimoireClient,
     GrimoireError,
     # Response models
     ComponentTypesResponse,
-    ComponentsResponse, 
+    ComponentsResponse,
     ComponentEntry,
     DocumentationResponse,
     StatusResponse,
@@ -26,7 +26,7 @@ from .grimoire_interface import (
 
 __all__ = [
     # Main interface class
-    'GrimoireInterface',
+    'GrimoireClient',
     'GrimoireError',
     # Response models
     'ComponentTypesResponse',

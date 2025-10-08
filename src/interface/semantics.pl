@@ -98,14 +98,14 @@ register_spell(
     conjure(interface(conjure('SpellTerm'))),
     input(interface(conjure('SpellTerm'))),
     output('DomainDependentResult'),
-    docstring("Delegate conjure spell to appropriate domain")
+    "Delegate conjure spell to appropriate domain"
 ).
 
 register_spell(
-    conjure(interface(perceive('QueryTerm'))),
+    perceive(interface(perceive('QueryTerm'))),
     input(interface(perceive('QueryTerm'))),
     output(either(ok(query_succeeded), error(query_failed))),
-    docstring("Delegate perceive query to appropriate domain")
+    "Delegate perceive query to appropriate domain"
 ).
 
 register_spell(
@@ -367,21 +367,20 @@ cast(conjure(interface(test_files(TestNames, FilePaths))), RetVal) :-
 
 % Session commands - forward to session.pl
 cast(conjure(interface(session(Args))), RetVal) :-
-    cast(conjure(session(Args)), RetVal).
+    magic_cast(conjure(session(Args)), RetVal).
 
 % Conjure command - execute conjuration spells
 cast(conjure(interface(conjure(SpellTerm))), RetVal) :-
-    cast(conjure(SpellTerm), RetVal).
+    magic_cast(conjure(SpellTerm), RetVal).
 
 % Perceive command - execute perception spells directly
 cast(conjure(interface(perceive(QueryTerm))), RetVal) :-
-    (perceive(QueryTerm) ->
+    magic_cast(perceive(QueryTerm), Result),
+    (Result = ok(_) ->
         RetVal = ok(query_succeeded)
     ;
         RetVal = error(query_failed)
     ).
-
-% Removed legacy run command
 
 % Load command - load entity into current session
 cast(conjure(interface(load(EntitySpec))), RetVal) :-
@@ -396,12 +395,12 @@ cast(conjure(interface(load(EntitySpec))), RetVal) :-
 % Read file command - delegate to fs domain
 cast(conjure(interface(read_file(FilePath, Start, End))), RetVal) :-
     ensure_session_state_loaded,
-    cast(perceive(fs(read_file(FilePath, Start, End))), RetVal).
+    magic_cast(perceive(fs(read_file(FilePath, Start, End))), RetVal).
 
 % Edit file command - delegate to fs domain
 cast(conjure(interface(edit_file(FilePath, Edits))), RetVal) :-
     ensure_session_state_loaded,
-    cast(conjure(fs(edit_file(file(FilePath), Edits))), RetVal).
+    magic_cast(conjure(fs(edit_file(file(FilePath), Edits))), RetVal).
 
 % === CORE INTERFACE FUNCTIONS ===
 % These return structured data, no printing
@@ -428,28 +427,28 @@ interface_entities(Entities) :-
 
 % Get comprehensive session status
 get_session_status(Status) :-
-    % Use git directly instead of session.pl predicates to avoid hanging
-    perceive(git(status(BranchResult, _, _))),
-    (BranchResult = ok(result(BranchOutput, _)) ->
-        string_concat(BranchStr, "\n", BranchOutput),
-        atom_string(CurrentBranch, BranchStr)
+    % Use git status spell via magic_cast
+    magic_cast(perceive(git(status)), GitResult),
+    (GitResult = ok(status_info(branch(Branch), working_status(WorkingStatus), files(_))) ->
+        CurrentBranch = Branch,
+        CurrentStatus = WorkingStatus
     ;
-        CurrentBranch = main
+        CurrentBranch = main,
+        CurrentStatus = unknown
     ),
-    perceive(git(status(_, StatusResult, _))),
-    (StatusResult = ok(result("", _)) ->
-        WorkingStatus = clean
+    % Get list of sessions - use direct helper for now since perceive(session(list)) isn't wrapped in cast
+    % TODO: This should be magic_cast once session.pl is updated to use cast/perceive pattern
+    (catch(perceive(session(list(Sessions))), _, fail) ->
+        true
     ;
-        WorkingStatus = dirty
+        Sessions = []
     ),
-    % For now, just show current session to avoid parsing issues
-    Sessions = [CurrentBranch],
-    Status = status_info(CurrentBranch, WorkingStatus, Sessions).
+    Status = status_info(CurrentBranch, CurrentStatus, Sessions).
 
 % Find all session branches
 find_all_sessions(Sessions) :-
-    perceive(git(branch(Result))),
-    (Result = ok(result(BranchOutput, _)) ->
+    magic_cast(perceive(git(branch)), BranchResult),
+    (BranchResult = ok(result(BranchOutput, _)) ->
         string_lines(BranchOutput, BranchLines),
         include_session_branches(BranchLines, Sessions)
     ;

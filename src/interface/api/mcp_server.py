@@ -11,16 +11,35 @@ from mcp.server import FastMCP
 from typing import Dict, List, Any, Optional
 
 from pydantic import BaseModel
-from grimoire_interface import GrimoireInterface
+from grimoire_client import GrimoireClient
 
 # Create global instance of Grimoire interface
-grimoire = GrimoireInterface()
+grimoire = GrimoireClient()
 
 # Create FastMCP server with proper instructions
 mcp = FastMCP("Grimoire Interface", instructions=grimoire.system_instructions())
 
 # Get interface docstrings from Prolog (defer until after initialization)
-interface_docs = grimoire.query_interface_docstrings()
+# Fallback to generic descriptions if Prolog query fails
+try:
+    interface_docs = grimoire.query_interface_docstrings()
+except Exception as e:
+    # Provide fallback descriptions if Prolog query fails
+    interface_docs = {
+        "compt": "List component types for entity",
+        "comp": "List components of specific type for entity",
+        "doc": "Get documentation for entity",
+        "status": "Get session status",
+        "perceive": "Execute perceive query",
+        "conjure": "Execute conjure spell",
+        "entities": "List all entities",
+        "test": "Run test suite",
+        "session": "Execute session command",
+        "load": "Load entity into current session",
+        "read_file": "Read lines from a file",
+        "edit_file": "Edit file with specified operations",
+    }
+    print(f"Warning: Failed to query interface docstrings, using fallbacks: {e}")
 
 
 def _model_to_string(model: Any) -> str:
@@ -89,7 +108,7 @@ def load(entity_spec: str):
 
 
 @mcp.tool(description=interface_docs["read_file"])
-def read_file(file_path: str, start: int, end: int):
+def read_file(file_path: str, start: int = 1, end: int = 10):
     """Read lines from a file using 1-based indexing."""
     result = grimoire.read_file(file_path, start, end)
     
@@ -103,22 +122,51 @@ def read_file(file_path: str, start: int, end: int):
 
 @mcp.tool(description=interface_docs["edit_file"])
 def edit_file(file_path: str, edits: List[Dict[str, Any]]):
-    """Edit file using Grimoire's edit_file conjure operation. Edits should be list of edit operations."""
-    from grimoire_interface import EditInsert, EditDelete, EditReplace, EditAppend
-    
-    # Convert dicts to typed models
+    """
+    Edit file using Grimoire's edit_file conjure operation.
+
+    Edits should be a list of edit operations. Each operation must have an 'operation' field
+    with one of: 'insert', 'delete', 'replace', 'append'.
+
+    Note: The REPL interface command is intentionally not exposed as an MCP tool because
+    REPL requires interactive stdin/stdout which is incompatible with the MCP server's
+    async request/response model.
+    """
+    from grimoire_client import EditInsert, EditDelete, EditReplace, EditAppend
+
+    # Validate and convert dicts to typed models
     typed_edits = []
-    for edit in edits:
+    valid_operations = {"insert", "delete", "replace", "append"}
+
+    for i, edit in enumerate(edits):
         op = edit.get("operation", "")
-        if op == "insert":
-            typed_edits.append(EditInsert(**edit))
-        elif op == "delete":
-            typed_edits.append(EditDelete(**edit))
-        elif op == "replace":
-            typed_edits.append(EditReplace(**edit))
-        elif op == "append":
-            typed_edits.append(EditAppend(**edit))
-    
+
+        # Validate operation type
+        if not op:
+            raise ValueError(f"Edit at index {i} is missing 'operation' field")
+        if op not in valid_operations:
+            raise ValueError(
+                f"Edit at index {i} has invalid operation '{op}'. "
+                f"Must be one of: {', '.join(valid_operations)}"
+            )
+
+        # Convert to appropriate typed model with Pydantic validation
+        try:
+            if op == "insert":
+                typed_edits.append(EditInsert(**edit))
+            elif op == "delete":
+                typed_edits.append(EditDelete(**edit))
+            elif op == "replace":
+                typed_edits.append(EditReplace(**edit))
+            elif op == "append":
+                typed_edits.append(EditAppend(**edit))
+        except Exception as e:
+            raise ValueError(f"Invalid edit at index {i}: {e}") from e
+
+    # Ensure at least one valid edit was provided
+    if not typed_edits:
+        raise ValueError("No valid edits provided")
+
     return _model_to_string(grimoire.edit_file(file_path, typed_edits))
 
 

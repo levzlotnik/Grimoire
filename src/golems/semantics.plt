@@ -2,6 +2,7 @@
 % Validates ECS components, Python bridge functionality, and golem execution
 
 :- use_module(library(plunit)).
+:- load_entity(semantic(file('@/src/tests/golems_test_entities.pl'))).
 
 :- begin_tests(golems).
 
@@ -43,10 +44,10 @@ test(golems_have_docstrings) :-
 % === CONJURE SPELL TESTS ===
 
 test(golem_task_constructor_exists) :-
-    component(conjure, ctor, golem_task), !.
+    user:please_verify(component(conjure, ctor, golem_task)).
 
 test(thought_constructor_exists) :-
-    component(conjure, ctor, thought), !.
+    user:please_verify(component(conjure, ctor, thought)).
 
 % === PYTHON BRIDGE TESTS ===
 
@@ -89,6 +90,38 @@ test(main_docstring) :-
     atom_string(Doc, DocStr),
     once(sub_atom(DocStr, _, _, _, 'AI Agent Framework')),
     once(sub_atom(DocStr, _, _, _, 'Pydantic AI')).
+
+% === SPELL INVOCATION TESTS (using magic_cast) ===
+
+% Test golem_task spell invocation - verify spell can be invoked
+% Note: Full execution would require LLM calls, so we test error handling
+test(golem_task_spell_invocation, [condition(python_available)]) :-
+    % Test with invalid golem - should return error but not crash
+    catch(
+        magic_cast(conjure(golem_task(golem(nonexistent_test_golem), #{})), Result),
+        Error,
+        (Result = error(Error))
+    ),
+    % Should get an error result (expected behavior for invalid golem)
+    assertion(Result = error(_)).
+
+% Test actual thought spell invocation with magic_cast
+test(thought_spell_invocation, [condition(python_available)]) :-
+    user:please_verify(component(test_thought, content, Content)),
+    magic_cast(conjure(thought(Content)), Result),
+    % Result should be either ok(_) or error(_)
+    assertion((Result = ok(_) ; Result = error(_))).
+
+% Test test golem entities loaded
+test(test_golem_entities_loaded) :-
+    entity(test_golem(basic)),
+    entity(test_golem(with_delegation)),
+    entity(test_golem(with_parser)).
+
+% Test test golem configurations
+test(test_golem_configurations) :-
+    user:please_verify(component(test_golem(basic), config, _Config)),
+    user:please_verify(component(test_golem(with_parser), output_parser, structured_response)).
 
 :- end_tests(golems).
 

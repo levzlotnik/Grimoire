@@ -51,12 +51,17 @@ component(Entity, has(nix(flake)), NixFlake) :-
 component(Entity, has(fs(structure)), fs(structure(Patterns))) :-
     component(Entity, project_fs_structure, Patterns).
 
-% === SPELL CONSTRUCTORS ===
-component(conjure, ctor, mkproject).
-component(perceive, ctor, project(validate)).
-component(perceive, ctor, project(structure)).
-
 % === SPELL IMPLEMENTATIONS ===
+
+register_spell(
+    conjure(mkproject),
+    input(mkproject(folder_path('FolderPath'), project_name('ProjectName'), options('Options'))),
+    output(either(
+        ok(project_created(path('ProjectPath'), name('ProjectName'))),
+        error(project_error('Reason'))
+    )),
+    docstring("Creates a new project directory with full initialization. Options: git(bool), template(TemplateId)")
+).
 
 % mkproject spell - create new project from template or basic structure
 cast(conjure(mkproject(FolderPath, ProjectName, Options)), RetVal) :-
@@ -67,13 +72,13 @@ cast(conjure(mkproject(FolderPath, ProjectName, Options)), RetVal) :-
     ).
 
 register_spell(
-    conjure(mkproject(folder_path('FolderPath'), project_name('ProjectName'), options('Options'))),
-    input(mkproject(folder_path('FolderPath'), project_name('ProjectName'), options('Options'))),
+    perceive(project(validate)),
+    input(project(validate(entity('Entity')))),
     output(either(
-        ok(project_created(path('ProjectPath'), name('ProjectName'))),
-        error(project_error('Reason'))
+        ok(valid),
+        error(validation_failed(domain('Domain'), reason('Reason')))
     )),
-    "Creates a new project directory with full initialization. Options: git(bool), template(TemplateId)"
+    docstring("Validates a project entity against its declared components and cross-domain requirements")
 ).
 
 % project validate spell - verify project entity composition
@@ -95,13 +100,14 @@ cast(perceive(project(validate(Entity))), Result) :-
     ).
 
 register_spell(
-    perceive(project(validate(entity('Entity')))),
-    input(project(validate(entity('Entity')))),
-    output(either(
-        ok(valid),
-        error(validation_failed(domain('Domain'), reason('Reason')))
-    )),
-    "Validates a project entity against its declared components and cross-domain requirements"
+    perceive(project(structure)),
+    input(project(structure(entity('Entity')))),
+    output(ok(project_info(
+        type('Type'),
+        sources('Sources'),
+        contexts('Contexts')
+    ))),
+    docstring("Queries project structure, including type, source patterns, and available contexts")
 ).
 
 % project structure spell - query project structure information
@@ -114,17 +120,6 @@ cast(perceive(project(structure(Entity))), Result) :-
         Error,
         Result = error(structure_query_failed(Error))
     ).
-
-register_spell(
-    perceive(project(structure(entity('Entity')))),
-    input(project(structure(entity('Entity')))),
-    output(ok(project_info(
-        type('Type'),
-        sources('Sources'),
-        contexts('Contexts')
-    ))),
-    "Queries project structure, including type, source patterns, and available contexts"
-).
 
 % === HELPER PREDICATES ===
 

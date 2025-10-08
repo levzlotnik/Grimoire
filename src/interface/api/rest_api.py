@@ -3,14 +3,14 @@ from pydantic import BaseModel
 from typing import Optional, Any, List, Dict, Union
 
 # Import our Grimoire interface module
-from grimoire_interface import (
-    GrimoireInterface, GrimoireError, SystemInfo, InterfaceEndpoint, RootResponse,
+from grimoire_client import (
+    GrimoireClient, GrimoireError, SystemInfo, InterfaceEndpoint, RootResponse,
     EntitiesResponse, TestResponse, SessionCommandResponse, LoadResponse,
     ReadFileResponse, EditFileResponse
 )
 
 # Create global instance of Grimoire interface
-grimoire = GrimoireInterface()
+grimoire = GrimoireClient()
 
 app = FastAPI(
     title="Grimoire Interface API",
@@ -210,7 +210,7 @@ async def read_file_endpoint(
         raise HTTPException(status_code=400, detail=f"Invalid parameters: {e}")
 
 # Edit file endpoint
-from grimoire_interface import EditInsert, EditDelete, EditReplace, EditAppend
+from grimoire_client import EditInsert, EditDelete, EditReplace, EditAppend
 
 class EditFileRequest(BaseModel):
     file_path: str

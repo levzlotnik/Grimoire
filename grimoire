@@ -4,7 +4,4 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export GRIMOIRE_ROOT="${GRIMOIRE_ROOT:-$SCRIPT_DIR}"
 
-exec swipl \
-  -g "ensure_loaded('$GRIMOIRE_ROOT/src/grimoire.pl'), ensure_loaded('$GRIMOIRE_ROOT/src/interface/cli.pl')" \
-  -t "main" \
-  -- "$@"
+exec grimoire-py "$@"

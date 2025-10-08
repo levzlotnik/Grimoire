@@ -22,12 +22,17 @@
 :- load_entity(semantic(folder("./test_runner"))).
 :- load_entity(semantic(folder("./architect"))).
 
-% Golem task execution system - conjure spells
-entity(golem_task).
-entity(thought).
+% === SPELL REGISTRATIONS ===
 
-component(conjure, ctor, golem_task).
-component(conjure, ctor, thought).
+register_spell(
+    conjure(golem_task),
+    input(golem_task(golem('GolemId'), input_dict('InputDict'))),
+    output(either(
+        ok(golem_response(parsed_output('ParsedOutput'), messages('Messages'), golem('GolemId'), session_id('SessionId'))),
+        error(golem_execution_failed('GolemId', 'Error'))
+    )),
+    docstring("Execute a golem AI agent task with input dict, returning structured golem response with parsed output and messages")
+).
 
 % Execute a golem task - returns structured golem_response with parsed output
 cast(conjure(golem_task(golem(Id), InputDict)), Result) :-
@@ -49,6 +54,16 @@ cast(conjure(golem_task(golem(Id), InputDict)), Result) :-
             )
         )
     ).
+
+register_spell(
+    conjure(thought),
+    input(thought(content('Content'))),
+    output(either(
+        ok(thought_recorded('Content')),
+        error(thought_logging_failed('Reason'))
+    )),
+    docstring("Log AI agent thought/reasoning to session database for debugging and audit trails")
+).
 
 % Log thoughts to session during execution
 cast(conjure(thought(Content)), RetVal) :-

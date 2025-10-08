@@ -1,7 +1,7 @@
 """
-Grimoire Interface Module
+Grimoire Client Module
 
-Provides Python interface to Grimoire Prolog system using janus-swi.
+Provides Python client interface to Grimoire Prolog system using janus-swi.
 Handles all Prolog integration, query execution, and result formatting.
 """
 
@@ -242,8 +242,8 @@ class RootResponse(BaseModel):
     endpoints: List[InterfaceEndpoint]
 
 
-class GrimoireInterface:
-    """Interface to Grimoire Prolog system via janus-swi"""
+class GrimoireClient:
+    """Client interface to Grimoire Prolog system via janus-swi"""
 
     def __init__(self, skip_prolog_init: bool = False):
         self.janus = janus_swi

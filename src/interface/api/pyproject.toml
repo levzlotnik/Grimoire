@@ -25,11 +25,12 @@ dev = [
 ]
 
 [project.scripts]
+grimoire-py = "cli_python:main"
 grimoire-mcp-server = "mcp_server:main"
 grimoire-rest-api = "rest_api:main"
 
 [tool.setuptools]
-py-modules = ["grimoire_interface"]
+py-modules = ["grimoire_client", "cli_python", "mcp_server", "rest_api"]
 packages = []
 
 [tool.pytest.ini_options]

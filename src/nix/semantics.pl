@@ -714,29 +714,3 @@ cast(perceive(nix(templates)), Result) :-
         Error,
         Result = error(nix_error(Error))
     ).
-
-% Initialize project from template
-register_spell(
-    conjure(nix(template(init))),
-    input(nix(template(init(template_id('TemplateId'), project_dir('ProjectDir'))))),
-    output(either(
-        ok(template_initialized('ProjectDir')),
-        error(nix_error('Reason'))
-    )),
-    docstring("Initialize a new project from a Grimoire template. TemplateId: template name, ProjectDir: target directory.")
-).
-
-cast(conjure(nix(template(init(TemplateId, ProjectDir)))), Result) :-
-    catch(
-        (atom(TemplateId), atom(ProjectDir),
-         format(atom(TemplateIdStr), '~w', [TemplateId]),
-         format(atom(ProjectDirStr), '~w', [ProjectDir]),
-         magic_cast(conjure(shell(["initGrimoireTemplate", TemplateIdStr, ProjectDirStr])), ShellResult),
-         (ShellResult = ok(result(_, 0)) ->
-             Result = ok(template_initialized(ProjectDir))
-         ;
-             Result = error(nix_error(template_init_failed))
-         )),
-        Error,
-        Result = error(nix_error(Error))
-    ).

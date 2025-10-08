@@ -1,7 +1,7 @@
 """
 Core golem class using Pydantic AI for unified LLM interface.
 
-This class integrates with GrimoireInterface to auto-discover available tools
+This class integrates with GrimoireClient to auto-discover available tools
 and uses Pydantic AI's agent framework for all LLM interactions.
 """
 
@@ -16,7 +16,7 @@ from pydantic_ai.result import AgentRunResult
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.toolsets import FunctionToolset
 
-from grimoire_interface import GrimoireInterface
+from grimoire_client import GrimoireClient
 
 # Type variable for generic GolemResponse
 OutputT = TypeVar("OutputT")
@@ -64,7 +64,7 @@ class Golem:
             self.config = Config.model_validate(config)
 
         # Initialize Grimoire interface for tools, skipping Prolog init since janus-swi shares the session
-        self.grimoire_interface = GrimoireInterface(skip_prolog_init=False)
+        self.grimoire_interface = GrimoireClient(skip_prolog_init=False)
 
         # Create Pydantic AI agent based on config
         self.agent = self._create_agent(self.config)
@@ -94,7 +94,7 @@ class Golem:
         # Get output type from config (now a direct class reference)
         output_type = config.output_type if config.output_type else dict
 
-        # Get the toolset from GrimoireInterface
+        # Get the toolset from GrimoireClient
         grimoire_toolset = self.grimoire_interface.get_toolset()
         
         # Create FunctionToolset from the Grimoire tools
