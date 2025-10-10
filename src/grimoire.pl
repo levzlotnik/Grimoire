@@ -168,7 +168,8 @@ docstring(project,
 :- load_entity(semantic(file("@/src/fs.pl"))).
 :- load_entity(semantic(folder("@/src/db"))).
 :- load_entity(semantic(folder("@/src/project"))).
-:- load_entity(semantic(file("@/src/session.pl"))).
+% :- load_entity(semantic(file("@/src/session.pl"))).  % Being reworked - temporarily disabled
+:- load_entity(semantic(folder("@/src/interface"))).
 :- load_entity(semantic(folder("@/src/golems"))).
 :- load_entity(semantic(folder("@/src/protocol_clients"))).
 

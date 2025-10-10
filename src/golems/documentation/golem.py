@@ -32,7 +32,7 @@ system_prompt = get_readme()
 
 # Golem configuration
 config = Config(
-    model="openai:gpt-5-mini",
+    model="openai:gpt-5-nano",
     system_prompt=system_prompt,
     output_type=Documentation,
     temperature=0.3,
@@ -41,3 +41,7 @@ config = Config(
 
 # Instantiate the golem
 golem = Golem(golem_id="documentation", config=config, session_id="main")
+
+# Register with grimoire_golems.core registry
+from grimoire_golems.core import register_golem
+register_golem("documentation", golem)

@@ -3,7 +3,12 @@
 
 :- use_module(library(plunit)).
 
-:- begin_tests(test_planner_semantics).
+% Helper predicate: check if end-to-end tests should run
+:- multifile e2e_tests_enabled/0.
+e2e_tests_enabled :-
+    getenv('GRIMOIRE_RUN_E2E_TESTS', '1').
+
+:- begin_tests('golem(test_planner)').
 
 % === ENTITY TESTS ===
 
@@ -12,9 +17,6 @@ test(test_planner_entity_exists) :-
 
 % === COMPONENT TESTS ===
 
-test(test_planner_has_output_parser) :-
-    component(golem(test_planner), output_parser, parse_test_plan).
-
 test(test_planner_delegation_relationships) :-
     component(golem(test_planner), can_delegate_to, golem(code_assistant)),
     component(golem(test_planner), can_delegate_to, golem(semantics_verifier)).
@@ -22,32 +24,17 @@ test(test_planner_delegation_relationships) :-
 test(test_planner_has_available_tools) :-
     component(golem(test_planner), available_tools, _Tools).
 
-% === PARSER TESTS ===
+% === END-TO-END TESTS ===
 
-test(parse_test_plan_with_full_dict) :-
-    Dict = _{
-        test_cases: ["test_valid_input", "test_invalid_input"],
-        coverage_areas: ["input validation", "error handling"],
-        edge_cases: ["empty input", "null values"],
-        test_strategy: "Unit tests with mocking"
-    },
-    parse_test_plan(Dict, test_plan(TestCases, CoverageAreas, EdgeCases, Strategy)),
-    TestCases = ["test_valid_input", "test_invalid_input"],
-    CoverageAreas = ["input validation", "error handling"],
-    EdgeCases = ["empty input", "null values"],
-    Strategy = "Unit tests with mocking".
+test(test_planner_end_to_end, [condition(e2e_tests_enabled)]) :-
+    Input = input{prompt: "Create a test plan for: def add(a, b): return a + b"},
+    magic_cast(conjure(golem_task(golem(test_planner), Input)), Result),
+    Result = ok(golem_response(ParsedOutput, _Messages, test_planner, _SessionId)),
+    % Use dot notation for dict access
+    assertion(ParsedOutput.type = 'TestPlan'),
+    assertion(is_list(ParsedOutput.test_cases)),
+    assertion(is_list(ParsedOutput.coverage_areas)),
+    assertion(is_list(ParsedOutput.edge_cases)),
+    assertion(atom(ParsedOutput.test_strategy)).
 
-test(parse_test_plan_with_minimal_dict) :-
-    Dict = _{
-        test_cases: [],
-        coverage_areas: [],
-        edge_cases: [],
-        test_strategy: "Basic testing"
-    },
-    parse_test_plan(Dict, test_plan(TestCases, CoverageAreas, EdgeCases, Strategy)),
-    TestCases = [],
-    CoverageAreas = [],
-    EdgeCases = [],
-    Strategy = "Basic testing".
-
-:- end_tests(test_planner_semantics).
+:- end_tests('golem(test_planner)').

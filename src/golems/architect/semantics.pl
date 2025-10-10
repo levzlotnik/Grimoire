@@ -6,17 +6,8 @@
 % Configuration now handled in Python __init__.py
 % No longer need config component here since golem is instantiated in Python
 
-% Structured output parser (optional)
-component(golem(architect), output_parser, parse_architectural_plan).
-
-% Parser converts ArchitecturalPlan Pydantic model to Prolog term
-parse_architectural_plan(ArchitecturalPlanObj, architectural_plan(Patterns, Strengths, Weaknesses, Recommendations, Diagram)) :-
-    % Extract fields from ArchitecturalPlan Pydantic model using py_call
-    py_call(ArchitecturalPlanObj:patterns_used, Patterns),
-    py_call(ArchitecturalPlanObj:strengths, Strengths),
-    py_call(ArchitecturalPlanObj:weaknesses, Weaknesses),
-    py_call(ArchitecturalPlanObj:recommendations, Recommendations),
-    py_call(ArchitecturalPlanObj:diagram, Diagram).
+% Output is already a typed dict from Python (via encode_to_prolog_dict)
+% No custom parser needed - access fields directly with dot notation (Dict.field)
 
 % Delegation relationships
 component(golem(architect), can_delegate_to, golem(code_reviewer)).

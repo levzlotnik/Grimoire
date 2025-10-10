@@ -42,6 +42,64 @@ class Config(BaseModel):
     base_url: Optional[str] = None
 
 
+def encode_to_prolog_dict(value: Any) -> Any:
+    """
+    Recursively convert Python/Pydantic values to Janus/SWI friendly structures:
+    - Pydantic BaseModel -> {'type': ClassName, field1: Encoded, ...}
+    - Objects with __dict__ -> {'type': ClassName, **encoded __dict__}
+    - list/tuple/set -> [Encoded...]
+    - Mapping -> {k: Encoded(v)}
+    - primitives (bool/int/float/str/None) -> as-is
+    """
+    # Pydantic BaseModel
+    if isinstance(value, BaseModel):
+        cls = value.__class__
+        fields = getattr(cls, "model_fields", {})  # pydantic v2
+        out: Dict[str, Any] = {'type': cls.__name__}
+        if fields:
+            for field_name in fields.keys():
+                out[field_name] = encode_to_prolog_dict(getattr(value, field_name))
+        else:
+            for k, v in value.model_dump().items():
+                out[k] = encode_to_prolog_dict(v)
+        return out
+
+    # Generic Python objects with __dict__ (e.g., non-pydantic classes)
+    if hasattr(value, "__dict__"):
+        cls = value.__class__
+        raw = {}
+        try:
+            raw = vars(value)
+        except Exception:
+            # Fallback: introspect public attributes
+            for attr in dir(value):
+                if attr.startswith("_"):
+                    continue
+                try:
+                    raw[attr] = getattr(value, attr)
+                except Exception:
+                    pass
+        out: Dict[str, Any] = {'type': cls.__name__}
+        for k, v in raw.items():
+            out[k] = encode_to_prolog_dict(v)
+        return out
+
+    # Sequences
+    if isinstance(value, (list, tuple, set)):
+        return [encode_to_prolog_dict(v) for v in value]
+
+    # Mappings
+    if isinstance(value, dict):
+        return {k: encode_to_prolog_dict(v) for k, v in value.items()}
+
+    # Primitives (including None)
+    if isinstance(value, (bool, int, float, str)) or value is None:
+        return value
+
+    # Fallback: string representation
+    return str(value)
+
+
 class Golem:
     """
     Core golem class using Pydantic AI agents.
@@ -63,7 +121,7 @@ class Golem:
         else:
             self.config = Config.model_validate(config)
 
-        # Initialize Grimoire interface for tools, skipping Prolog init since janus-swi shares the session
+        # Initialize Grimoire interface for tools, ensure Prolog is initialized to load Grimoire system
         self.grimoire_interface = GrimoireClient(skip_prolog_init=False)
 
         # Create Pydantic AI agent based on config
@@ -96,13 +154,13 @@ class Golem:
 
         # Get the toolset from GrimoireClient
         grimoire_toolset = self.grimoire_interface.get_toolset()
-        
+
         # Create FunctionToolset from the Grimoire tools
         function_toolset = FunctionToolset(grimoire_toolset.tools)
-        
+
         # Create agent with configuration and toolsets
         agent_kwargs = {
-            "model": model_instance, 
+            "model": model_instance,
             "output_type": output_type,
             "toolsets": [function_toolset]  # Pass as a list of toolsets
         }
@@ -139,7 +197,7 @@ class Golem:
         if isinstance(result, AgentRunResult):
             output_data = result.output
             all_messages = result.new_messages()
-            
+
             # Filter out system prompt and user message to avoid bloat
             filtered_messages = []
             for msg in all_messages:
@@ -172,7 +230,6 @@ class Golem:
         Returns:
             GolemResponse containing the execution result
         """
-        print(f"DEBUG: PYTHON: Executing task synchronously with inputs: {inputs}")
         import asyncio
 
         # Get or create event loop
@@ -184,6 +241,21 @@ class Golem:
 
         # Run async task
         return loop.run_until_complete(self.execute_task(inputs))
+
+    # === Prolog-friendly execution returning real Python dicts with type tags ===
+
+    def execute_task_sync_prolog(self, inputs: Dict) -> Dict[str, Any]:
+        """
+        Execute a task and return a Python dict that Janus can map directly
+        to a SWI-Prolog dict. All Pydantic models (including output/messages)
+        are converted recursively into dicts with a 'type' tag.
+
+        Returns:
+            Dict structurally equivalent to GolemResponse, fully encoded.
+        """
+        golem_response = self.execute_task_sync(inputs)
+        return encode_to_prolog_dict(golem_response)
+
 
     def _build_prompt(self, inputs: Dict) -> str:
         """Build prompt string from input dict."""

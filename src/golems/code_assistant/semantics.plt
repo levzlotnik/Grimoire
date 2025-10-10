@@ -3,7 +3,12 @@
 
 :- use_module(library(plunit)).
 
-:- begin_tests(code_assistant_semantics).
+% Helper predicate: check if end-to-end tests should run
+:- multifile e2e_tests_enabled/0.
+e2e_tests_enabled :-
+    getenv('GRIMOIRE_RUN_E2E_TESTS', '1').
+
+:- begin_tests('golem(code_assistant)').
 
 % === ENTITY TESTS ===
 
@@ -12,9 +17,6 @@ test(code_assistant_entity_exists) :-
 
 % === COMPONENT TESTS ===
 
-test(code_assistant_has_output_parser) :-
-    component(golem(code_assistant), output_parser, parse_code_response).
-
 test(code_assistant_delegation_relationships) :-
     component(golem(code_assistant), can_delegate_to, golem(test_runner)),
     component(golem(code_assistant), can_delegate_to, golem(documentation)).
@@ -22,33 +24,16 @@ test(code_assistant_delegation_relationships) :-
 test(code_assistant_has_available_tools) :-
     component(golem(code_assistant), available_tools, _Tools).
 
-% === PARSER TESTS ===
+% === END-TO-END TESTS ===
 
-test(parse_code_response_with_full_dict) :-
-    Dict = _{
-        code: "print('hello')",
-        language: "python",
-        tests: ["test_hello()"],
-        documentation: "Simple hello function",
-        explanation: "Prints hello to stdout"
-    },
-    parse_code_response(Dict, code_response(Code, Language, Tests, Docs, Explanation)),
-    Code = "print('hello')",
-    Language = "python",
-    Tests = ["test_hello()"],
-    Docs = "Simple hello function",
-    Explanation = "Prints hello to stdout".
+test(code_assistant_end_to_end, [condition(e2e_tests_enabled)]) :-
+    Input = input{prompt: "Return code='print(\"hello\")', language='python', tests=[], documentation='test', explanation='test'. Do not use any tools."},
+    magic_cast(conjure(golem_task(golem(code_assistant), Input)), Result),
+    Result = ok(golem_response(ParsedOutput, _Messages, code_assistant, _SessionId)),
+    % Use dot notation for dict access - throws error if key missing
+    assertion(ParsedOutput.type = 'CodeResponse'),
+    assertion(atom(ParsedOutput.code)),
+    assertion(atom(ParsedOutput.language)),
+    assertion(is_list(ParsedOutput.tests)).
 
-test(parse_code_response_with_minimal_dict) :-
-    Dict = _{
-        code: "x = 1",
-        language: "python"
-    },
-    parse_code_response(Dict, code_response(Code, Language, Tests, Docs, Explanation)),
-    Code = "x = 1",
-    Language = "python",
-    Tests = [],
-    Docs = "",
-    Explanation = "".
-
-:- end_tests(code_assistant_semantics).
+:- end_tests('golem(code_assistant)').

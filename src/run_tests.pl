@@ -109,12 +109,23 @@ available_tests(Tests) :-
 % Get test units for a specific entity (by file path pattern)
 available_tests_for_entity(Entity, Tests) :-
     build_test_registry(Registry),
+    % Exact match on unit atom (no substring/path matching)
     findall(Unit, (
-        member(Unit-File, Registry),
-        atom_string(File, FileStr),
-        atom_string(Entity, EntityStr),
-        sub_string(FileStr, _, _, _, EntityStr)
-    ), Tests).
+        member(Unit-_, Registry),
+        Unit = Entity
+    ), ExactUnits),
+    % Special-case: when selecting the golems entity, also include all per-golem units
+    % discovered as 'golem(Id)' atoms using term_to_atom and exact registry membership.
+    (   Entity == golems
+    ->  findall(GolemUnitAtom, (
+            component(golems, instance, golem(Id)),
+            term_to_atom(golem(Id), GolemUnitAtom),
+            member(GolemUnitAtom-_, Registry)
+        ), GolemUnits),
+        append(ExactUnits, GolemUnits, UnitsDup),
+        sort(UnitsDup, Tests)
+    ;   Tests = ExactUnits
+    ).
 
 % === TEST EXECUTION ===
 
@@ -162,19 +173,8 @@ get_test_exclude_patterns(Patterns) :-
         split_string(ExcludeStr, ",", " ", PatternStrs),
         maplist(atom_string, Patterns, PatternStrs)
     ;
-        % Default exclude patterns for Phase 2 implementation
-        Patterns = [
-            project,            % Level 3 - not yet reimplemented
-            session_cli,        % Level 3 - not yet reimplemented
-            session_system,     % Level 3 - not yet reimplemented
-            golems,             % Level 3 - requires PydanticAI
-            integration_tests,  % Requires all levels
-            spell_system,       % Requires all levels
-            interface,          % Level 4 - not yet reimplemented
-            interface_session_integration,  % Level 4 - not yet reimplemented
-            self_entity,        % Legacy test
-            template_instantiation  % Level 3 - templates
-        ]
+        % No default excludes - all tests enabled
+        Patterns = []
     ).
 
 % Check if test should be excluded
@@ -213,15 +213,29 @@ run_all_tests :-
 run_specific_tests(TestArgs) :-
     format('~n=== Running Specific Tests: ~w ===~n', [TestArgs]),
     build_test_registry(Registry),
-    % Load all test files first
-    findall(File, (
-        member(TestArg, TestArgs),
-        atom(TestArg),
-        member(TestArg-File, Registry)
-    ), Files),
+    % Resolve requested args to concrete test units:
+    % - If Arg matches a unit name exactly, include it
+    % - Otherwise treat Arg as an entity/path substring and include all matching units
+    % Build units from both exact unit names and entity/path substring matches
+    findall(Exact, (
+        member(Arg, TestArgs),
+        atom(Arg),
+        member(Arg-_, Registry),
+        Exact = Arg
+    ), ExactUnits),
+    findall(U, (
+        member(Arg, TestArgs),
+        atom(Arg),
+        available_tests_for_entity(Arg, UnitsForArg),
+        member(U, UnitsForArg)
+    ), EntityUnits),
+    append(ExactUnits, EntityUnits, UnitsAllDup),
+    sort(UnitsAllDup, Units),
+    % Load files for all selected units
+    findall(File, (member(Unit, Units), member(Unit-File, Registry)), Files),
     maplist(ensure_test_file_loaded, Files),
-    % Then run all tests together
-    run_tests(TestArgs),
+    % Run the selected units together
+    run_tests(Units),
     test_summary.
 
 % Helper to run a single test argument (handles unit:test syntax)

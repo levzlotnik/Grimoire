@@ -32,12 +32,14 @@ system_prompt = get_readme()
 
 # Golem configuration
 config = Config(
-    model="anthropic:claude-sonnet-4-20250514",
+    model="openai:gpt-5-nano",
     system_prompt=system_prompt,
     output_type=CodeResponse,
     temperature=0.1,
     max_tokens=8192
 )
 
-# Instantiate the golem
+# Instantiate and register the golem
+from grimoire_golems.core import register_golem
 golem = Golem(golem_id="code_assistant", config=config, session_id="main")
+register_golem("code_assistant", golem)

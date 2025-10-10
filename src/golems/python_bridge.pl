@@ -2,13 +2,23 @@
 % All data passes as dicts between Prolog and Python
 
 :- module(python_bridge, [
+    % Registry and helpers
+    list_golem_ids/1,
     get_golem_tools/2,
+    golem_tools/2,
+    % Execution
     execute_golem_task/3,
     execute_golem_task_parsed/3,
+    % Instances
     get_golem_python_instance/2,
+    % Logging / session (stubbed)
     log_thought_to_session/2,
+    ensure_session_state_loaded/0,  % Stubbed - session being reworked
+    get_current_session_id/1,  % Stubbed - session being reworked
+    % Init and parsing
     ensure_python_grimoire_golems/0,
-    parse_golem_messages/2
+    parse_golem_messages/2,
+    decode_test_result/2
 ]).
 
 % Initialize janus with the correct Python from our environment immediately
@@ -23,35 +33,96 @@
 % Track whether grimoire_golems has been imported
 :- dynamic grimoire_golems_imported/0.
 
+% Minimal local resolver to avoid dependency on external grimoire_resolve_path/2
+% Resolves "./" to the directory of this source file; otherwise returns the path unchanged.
+grimoire_resolve_path('./', Resolved) :-
+    prolog_load_context(file, File),
+    file_directory_name(File, Resolved).
+grimoire_resolve_path(Path, Path).
+
 % Ensure grimoire_golems Python module is available (idempotent)
 ensure_python_grimoire_golems :-
     (   grimoire_golems_imported
     ->  true  % Already imported
-    ;   % Check Python environment (sys is already available in janus)
+    ;   % Import grimoire_golems from nix environment (already in Python path)
+        py_import(grimoire_golems, []),
         % Add current directory to Python path for golems module
         grimoire_resolve_path('./', GolemsPath),
         py_add_lib_dir(GolemsPath, first),
-        % py_call(sys:version, Version),
-        % py_call(sys:executable, Executable),
-        % py_call(sys:path, Path),
-        % format('DEBUG: Using Python ~w at ~w~n', [Version, Executable]),
-        % format('DEBUG: Python sys.path: ~w~n', [Path]),
-        % Import grimoire_golems and golems module
+        % Import golems module to trigger registration
         py_import(golems, []),
+        % Also import Python operator module for getitem()
+        py_import(operator, []),
         % Mark as imported
         assertz(grimoire_golems_imported)
     ).
 
-% Get or create a Python Golem instance from golems module
+% Get or create a Python Golem instance from grimoire_golems.core registry
 get_golem_python_instance(golem(Id), GolemObj) :-
     ensure_python_grimoire_golems,
-    py_call(golems:Id, GolemObj).
+    py_call(grimoire_golems:core:get_golem(Id), GolemObj).
 
-% Get current session ID from session system
-get_current_session_id(SessionId) :-
-    (   perceive(session(current(SessionId)))
-    ->  true
-    ;   SessionId = 'default'
+% === Registry and decoding helpers ===
+
+% List available golem IDs from the Python registry, decoded to a Prolog list of atoms
+list_golem_ids(Ids) :-
+    ensure_python_grimoire_golems,
+    catch(
+        (
+            py_call(grimoire_golems:core:list_golems(), PyIds),
+            py_list_to_atoms(PyIds, Ids)
+        ),
+        _,
+        Ids = []
+    ).
+
+% Decode a Python list[str] into a Prolog list[atom]
+py_list_to_atoms(PyList, Atoms) :-
+    % Obtain length
+    py_call(builtins:len(PyList), Len),
+    (   Len =:= 0
+    ->  Atoms = []
+    ;   H is Len - 1,
+        numlist(0, H, Indexes),
+        findall(A,
+            (
+                member(I, Indexes),
+                py_call(operator:getitem(PyList, I), PyItem),
+                py_call(str(PyItem), S),
+                atom_string(A, S)
+            ),
+            Atoms)
+    ).
+
+% golem_tools/2: Prolog-friendly decoded tools list
+% Falls back to [] if Python bridge fails
+golem_tools(Id, Tools) :-
+    catch(
+        (
+            get_golem_tools(golem(Id), PyTools),
+            py_tools_to_prolog(PyTools, Tools)
+        ),
+        _,
+        Tools = []
+    ).
+
+% For now, convert Python list to a list of opaque items by stringifying each
+% Adjust this to a structured decoding if tool schema is required
+py_tools_to_prolog(PyList, Tools) :-
+    py_call(builtins:len(PyList), Len),
+    (   Len =:= 0
+    ->  Tools = []
+    ;   H is Len - 1,
+        numlist(0, H, Indexes),
+        findall(Term,
+            (
+                member(I, Indexes),
+                py_call(operator:getitem(PyList, I), PyItem),
+                % Convert to string then to atom to avoid Python object leaking
+                py_call(str(PyItem), S),
+                atom_string(Term, S)
+            ),
+            Tools)
     ).
 
 % Get tools from instantiated Golem - returns list of dicts
@@ -59,20 +130,20 @@ get_golem_tools(golem(Id), Tools) :-
     get_golem_python_instance(golem(Id), GolemObj),
     py_call(GolemObj:get_tools(), Tools).
 
-% Execute a golem task via Python with structured response
+% Execute a golem task via Python with dict-encoded response (Janus maps Python dicts to SWI dicts)
 execute_golem_task(Id, InputDict, golem_response(Output, Messages, GolemId, SessionId)) :-
     ensure_python_grimoire_golems,
     % Get golem instance
     get_golem_python_instance(golem(Id), GolemObj),
-    % Execute task synchronously (returns GolemResponse)
+    % Execute task synchronously (returns a Python dict that Janus maps to a SWI dict)
     catch(
         (
-            py_call(GolemObj:execute_task_sync(InputDict), GolemResponse),
-            % Extract structured data from GolemResponse
-            py_call(GolemResponse:output, Output),
-            py_call(GolemResponse:messages, Messages),
-            py_call(GolemResponse:golem_id, GolemId),
-            py_call(GolemResponse:session_id, SessionId)
+            py_call(GolemObj:execute_task_sync_prolog(InputDict), Dict),
+            % Destructure SWI dict returned from Python using dot notation
+            Output = Dict.output,
+            Messages = Dict.messages,
+            GolemId = Dict.golem_id,
+            SessionId = Dict.session_id
         ),
         error(python_error(ErrorType, ExceptionObj), Context),
         (
@@ -90,24 +161,26 @@ translate_python_error(ErrorType, ExceptionObj, ErrorMessage) :-
         ErrorMessage = ErrorType
     ).
 
-% Log thoughts to session database using existing think command
+% Session state - stubbed out until session system is reworked
+ensure_session_state_loaded :-
+    % TODO: Re-enable when session system is reworked
+    true.
+
+% Get current session ID - stubbed out until session system is reworked
+get_current_session_id('main').
+
+% Log thoughts - stubbed out until session system is reworked
 log_thought_to_session(Content, RetVal) :-
-    % Use the existing think command from session.pl
-    magic_cast(conjure(think(Content)), RetVal).
+    % TODO: Re-enable when session system is reworked
+    RetVal = ok(thought_logged(Content)).
 
 % Execute a golem task with full parsing (output parser + message parsing)
-execute_golem_task_parsed(Id, InputDict, golem_response(ParsedOutput, ParsedMessages, GolemId, SessionId)) :-
+% Note: Output is already a typed dict from encode_to_prolog_dict, no custom parsing needed
+execute_golem_task_parsed(Id, InputDict, golem_response(Output, ParsedMessages, GolemId, SessionId)) :-
     % Execute raw task
-    execute_golem_task(Id, InputDict, golem_response(RawOutput, RawMessages, GolemId, SessionId)),
+    execute_golem_task(Id, InputDict, golem_response(Output, RawMessages, GolemId, SessionId)),
     % Parse messages to structured Prolog terms
-    parse_golem_messages(RawMessages, ParsedMessages),
-    % Check for output parser and apply it
-    (   component(golem(Id), output_parser, Parser)
-    ->  % Parse the output into Prolog term
-        call(Parser, RawOutput, ParsedOutput)
-    ;   % No parser, return raw output
-        ParsedOutput = RawOutput
-    ).
+    parse_golem_messages(RawMessages, ParsedMessages).
 
 % Parse messages from golem_response
 parse_golem_messages(Messages, ParsedMessages) :-
@@ -167,6 +240,19 @@ parse_request_part(Part, ParsedPart) :-
 % Parse response parts (TextPart, ToolCallPart, etc.)
 parse_response_parts(Parts, ParsedParts) :-
     maplist(parse_response_part, Parts, ParsedParts).
+
+% === Decoders for per-golem Python objects ===
+
+% Move decoding of TestRunner's TestResult object out of semantics.pl
+decode_test_result(PyObj, test_result(Passed, Failed, Skipped, Failures, Coverage, TestPlan, TestCases, Recommendations)) :-
+    catch(py_call(PyObj:passed, Passed), _, Passed = 0),
+    catch(py_call(PyObj:failed, Failed), _, Failed = 0),
+    catch(py_call(PyObj:skipped, Skipped), _, Skipped = 0),
+    catch(py_call(PyObj:failures, Failures), _, Failures = []),
+    catch(py_call(PyObj:coverage, Coverage), _, Coverage = 0),
+    catch(py_call(PyObj:test_plan, TestPlan), _, TestPlan = []),
+    catch(py_call(PyObj:test_cases, TestCases), _, TestCases = []),
+    catch(py_call(PyObj:recommendations, Recommendations), _, Recommendations = []).
 
 parse_response_part(Part, ParsedPart) :-
     catch(

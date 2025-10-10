@@ -6,17 +6,8 @@
 % Configuration now handled in Python __init__.py
 % No longer need config component here since golem is instantiated in Python
 
-% Structured output parser (optional)
-component(golem(code_reviewer), output_parser, parse_code_review).
-
-% Parser converts CodeReview Pydantic model to Prolog term
-parse_code_review(CodeReviewObj, code_review(Issues, Suggestions, Security, Performance, Quality)) :-
-    % Extract fields from CodeReview Pydantic model using py_call
-    py_call(CodeReviewObj:issues, Issues),
-    py_call(CodeReviewObj:suggestions, Suggestions),
-    py_call(CodeReviewObj:security_concerns, Security),
-    py_call(CodeReviewObj:performance_notes, Performance),
-    py_call(CodeReviewObj:overall_quality, Quality).
+% Output is already a typed dict from Python (via encode_to_prolog_dict)
+% No custom parser needed - access fields directly with dot notation (Dict.field)
 
 % Delegation relationships
 component(golem(code_reviewer), can_delegate_to, golem(architect)).

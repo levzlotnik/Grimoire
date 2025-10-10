@@ -6,16 +6,8 @@
 % Configuration now handled in Python __init__.py
 % No longer need config component here since golem is instantiated in Python
 
-% Structured output parser (optional)
-component(golem(test_planner), output_parser, parse_test_plan).
-
-% Parser converts TestPlan Pydantic model to Prolog term
-parse_test_plan(TestPlanObj, test_plan(TestCases, CoverageAreas, EdgeCases, Strategy)) :-
-    % Extract fields from TestPlan Pydantic model using py_call
-    py_call(TestPlanObj:test_cases, TestCases),
-    py_call(TestPlanObj:coverage_areas, CoverageAreas),
-    py_call(TestPlanObj:edge_cases, EdgeCases),
-    py_call(TestPlanObj:test_strategy, Strategy).
+% Output is already a typed dict from Python (via encode_to_prolog_dict)
+% No custom parser needed - access fields directly with dot notation (Dict.field)
 
 % Delegation relationships
 component(golem(test_planner), can_delegate_to, golem(code_assistant)).

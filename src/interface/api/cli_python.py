@@ -72,7 +72,7 @@ class GrimoireCLI:
             print('  load         - Load entity into current session')
             print('  read_file    - Read lines from a file')
             print('  edit_file    - Edit file with operations')
-            print('  exec         - Execute arbitrary Prolog query (not implemented in Python CLI)')
+            print('  exec         - Execute arbitrary Prolog query with variable bindings')
 
         print()
         print('Usage patterns:')
@@ -326,9 +326,26 @@ class GrimoireCLI:
             return 1
 
         query_str = args[0]
-        print(f"Error: exec command not yet implemented in Python CLI", file=sys.stderr)
-        print(f"Please use the Prolog CLI: ./grimoire exec \"{query_str}\"", file=sys.stderr)
-        return 1
+
+        try:
+            result = self.grimoire.exec(query_str)
+            # Format output similar to Prolog CLI - emit variable bindings
+            if result.solutions:
+                for solution in result.solutions:
+                    if solution:
+                        # Solution has variable bindings
+                        for key, value in solution.items():
+                            print(f"{key} = {value}")
+                    else:
+                        # Solution with no variables (e.g., "true")
+                        print("true")
+            else:
+                # No solutions found - query failed
+                print("false")
+            return 0
+        except GrimoireError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            return 1
 
     def handle_read_file(self, args: List[str]) -> int:
         """Handle read_file command - read lines from a file"""

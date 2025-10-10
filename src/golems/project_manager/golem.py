@@ -32,12 +32,16 @@ system_prompt = get_readme()
 
 # Golem configuration
 config = Config(
-    model="openai:gpt-5-mini",
+    model="openai:gpt-5-nano",
     system_prompt=system_prompt,
     output_type=ProjectAnalysis,
-    temperature=0.2,
-    max_tokens=4096
+    temperature=0.4,
+    max_tokens=8192
 )
 
 # Instantiate the golem
 golem = Golem(golem_id="project_manager", config=config, session_id="main")
+
+# Register with grimoire_golems.core registry
+from grimoire_golems.core import register_golem
+register_golem("project_manager", golem)

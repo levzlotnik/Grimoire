@@ -1,10 +1,8 @@
 % Test entities for project domain tests
-% This file contains declarative entity/component definitions for testing
-
-:- self_entity(test_entity(project)).
+% Using self_entity pattern for proper entity introspection
 
 % Test web application project
-entity(test_web_app).
+:- self_entity(test_web_app).
 
 component(test_web_app, has(project(app)), project(app([
     type(web_service),
@@ -14,7 +12,7 @@ component(test_web_app, has(project(app)), project(app([
 ]))).
 
 % Test CLI tool project
-entity(test_cli_tool).
+:- self_entity(test_cli_tool).
 
 component(test_cli_tool, has(project(app)), project(app([
     type(cli_tool),
@@ -23,7 +21,7 @@ component(test_cli_tool, has(project(app)), project(app([
 ]))).
 
 % Test library project
-entity(test_library).
+:- self_entity(test_library).
 
 component(test_library, has(project(app)), project(app([
     type(library),
@@ -32,7 +30,7 @@ component(test_library, has(project(app)), project(app([
 ]))).
 
 % Test project with build context
-entity(test_project_with_context).
+:- self_entity(test_project_with_context).
 
 component(test_project_with_context, has(project(app)), project(app([
     type(web_service),
@@ -46,7 +44,7 @@ component(test_project_with_context, has(project(context(build))), project(conte
 ])))).
 
 % Test project without git (for negative testing)
-entity(test_project_no_git).
+:- self_entity(test_project_no_git).
 
 component(test_project_no_git, has(project(app)), project(app([
     type(cli_tool),
@@ -54,7 +52,7 @@ component(test_project_no_git, has(project(app)), project(app([
 ]))).
 
 % Test project with invalid type (for negative testing)
-entity(test_project_invalid_type).
+:- self_entity(test_project_invalid_type).
 
 component(test_project_invalid_type, has(project(app)), project(app([
     type(invalid_type),
@@ -66,7 +64,6 @@ component(test_project_invalid_type, has(project(app)), project(app([
 component(test_mkproject_target, test_path, '/tmp/grimoire_test_project_create').
 component(test_mkproject_magic_target, test_path, '/tmp/grimoire_test_magic_project').
 
-docstring(test_entity(project), "Test entity container for project domain verification tests").
 docstring(test_web_app, "Test web service project with full configuration").
 docstring(test_cli_tool, "Test CLI tool project").
 docstring(test_library, "Test library project").

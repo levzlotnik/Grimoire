@@ -6,17 +6,8 @@
 % Configuration now handled in Python __init__.py
 % No longer need config component here since golem is instantiated in Python
 
-% Structured output parser (optional)
-component(golem(project_manager), output_parser, parse_project_analysis).
-
-% Parser converts ProjectAnalysis Pydantic model to Prolog term
-parse_project_analysis(ProjectAnalysisObj, project_analysis(Structure, Dependencies, EntryPoints, ConfigFiles, Recommendations)) :-
-    % Extract fields from ProjectAnalysis Pydantic model using py_call
-    py_call(ProjectAnalysisObj:structure, Structure),
-    py_call(ProjectAnalysisObj:dependencies, Dependencies),
-    py_call(ProjectAnalysisObj:entry_points, EntryPoints),
-    py_call(ProjectAnalysisObj:configuration_files, ConfigFiles),
-    py_call(ProjectAnalysisObj:recommendations, Recommendations).
+% Output is already a typed dict from Python (via encode_to_prolog_dict)
+% No custom parser needed - access fields directly with dot notation (Dict.field)
 
 % Delegation relationships
 component(golem(project_manager), can_delegate_to, golem(architect)).

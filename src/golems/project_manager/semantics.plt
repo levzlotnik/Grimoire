@@ -3,7 +3,12 @@
 
 :- use_module(library(plunit)).
 
-:- begin_tests(project_manager_semantics).
+% Helper predicate: check if end-to-end tests should run
+:- multifile e2e_tests_enabled/0.
+e2e_tests_enabled :-
+    getenv('GRIMOIRE_RUN_E2E_TESTS', '1').
+
+:- begin_tests('golem(project_manager)').
 
 % === ENTITY TESTS ===
 
@@ -12,9 +17,6 @@ test(project_manager_entity_exists) :-
 
 % === COMPONENT TESTS ===
 
-test(project_manager_has_output_parser) :-
-    component(golem(project_manager), output_parser, parse_project_analysis).
-
 test(project_manager_delegation_relationships) :-
     component(golem(project_manager), can_delegate_to, golem(architect)),
     component(golem(project_manager), can_delegate_to, golem(semantics_verifier)).
@@ -22,35 +24,18 @@ test(project_manager_delegation_relationships) :-
 test(project_manager_has_available_tools) :-
     component(golem(project_manager), available_tools, _Tools).
 
-% === PARSER TESTS ===
+% === END-TO-END TESTS ===
 
-test(parse_project_analysis_with_full_dict) :-
-    Dict = _{
-        structure: _{src: ["main.py"], tests: ["test_main.py"]},
-        dependencies: ["requests", "numpy"],
-        entry_points: ["main.py", "cli.py"],
-        configuration_files: ["pyproject.toml", "setup.py"],
-        recommendations: ["Add type hints", "Improve test coverage"]
-    },
-    parse_project_analysis(Dict, project_analysis(Structure, Dependencies, EntryPoints, ConfigFiles, Recommendations)),
-    Structure = _{src: ["main.py"], tests: ["test_main.py"]},
-    Dependencies = ["requests", "numpy"],
-    EntryPoints = ["main.py", "cli.py"],
-    ConfigFiles = ["pyproject.toml", "setup.py"],
-    Recommendations = ["Add type hints", "Improve test coverage"].
+test(project_manager_end_to_end, [condition(e2e_tests_enabled)]) :-
+    Input = input{prompt: "Describe a basic Python project structure"},
+    magic_cast(conjure(golem_task(golem(project_manager), Input)), Result),
+    Result = ok(golem_response(ParsedOutput, _Messages, project_manager, _SessionId)),
+    % Use dot notation for dict access
+    assertion(ParsedOutput.type = 'ProjectAnalysis'),
+    assertion(is_dict(ParsedOutput.structure)),
+    assertion(is_list(ParsedOutput.dependencies)),
+    assertion(is_list(ParsedOutput.entry_points)),
+    assertion(is_list(ParsedOutput.configuration_files)),
+    assertion(is_list(ParsedOutput.recommendations)).
 
-test(parse_project_analysis_with_minimal_dict) :-
-    Dict = _{
-        structure: _{},
-        dependencies: [],
-        entry_points: [],
-        configuration_files: []
-    },
-    parse_project_analysis(Dict, project_analysis(Structure, Dependencies, EntryPoints, ConfigFiles, Recommendations)),
-    Structure = _{},
-    Dependencies = [],
-    EntryPoints = [],
-    ConfigFiles = [],
-    Recommendations = [].
-
-:- end_tests(project_manager_semantics).
+:- end_tests('golem(project_manager)').

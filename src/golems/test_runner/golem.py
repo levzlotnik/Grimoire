@@ -35,7 +35,7 @@ system_prompt = get_readme()
 
 # Golem configuration
 config = Config(
-    model="anthropic:claude-sonnet-4-20250514",
+    model="openai:gpt-5-nano",
     system_prompt=system_prompt,
     output_type=TestResult,
     temperature=0.0,
@@ -44,3 +44,7 @@ config = Config(
 
 # Instantiate the golem
 golem = Golem(golem_id="test_runner", config=config, session_id="main")
+
+# Register with grimoire_golems.core registry
+from grimoire_golems.core import register_golem
+register_golem("test_runner", golem)

@@ -4,6 +4,9 @@
 % Interface entity - now a folder entity
 :- self_entity(interface).
 
+% Load interface API submodule
+:- load_entity(semantic(folder("./api"))).
+
 % Interface subcommands (following git pattern)
 component(interface, subcommand, compt).
 component(interface, subcommand, comp).
@@ -12,12 +15,13 @@ component(interface, subcommand, entities).
 component(interface, subcommand, repl).
 component(interface, subcommand, status).
 component(interface, subcommand, test).
-component(interface, subcommand, session).
+% component(interface, subcommand, session).  % Disabled - session being reworked
 component(interface, subcommand, conjure).
 component(interface, subcommand, perceive).
 component(interface, subcommand, load).
 component(interface, subcommand, read_file).
 component(interface, subcommand, edit_file).
+component(interface, subcommand, exec).
 
 % Removed legacy command constructor - interface functions called directly by CLI
 
@@ -39,6 +43,7 @@ entity(interface(perceive)).
 entity(interface(load)).
 entity(interface(read_file)).
 entity(interface(edit_file)).
+entity(interface(exec)).
 
 % Docstrings follow namespacing pattern with detailed format information
 docstring(interface(compt), "List all component types of current entity. Format: interface(compt) or interface(compt(Entity)). Returns component_types(Entity, [Type1, Type2, ...]).").
@@ -55,6 +60,7 @@ docstring(interface(perceive), "Execute perception spells (query operations). Fo
 docstring(interface(load), "Load entity into current session for persistent access. Format: interface(load(EntitySpec)). EntitySpec examples: semantic(folder/file), system, etc.").
 docstring(interface(read_file), "Read lines from a file using 1-based indexing. Format: interface(read_file(FilePath, Start, End)). Returns file content with line numbers.").
 docstring(interface(edit_file), "Edit file with specified operations. Format: interface(edit_file(FilePath, Edits)). Edits is a list of edit operations.").
+docstring(interface(exec), "Execute arbitrary Prolog query with variable bindings. Format: interface(exec(QueryStr)). Returns solutions with variable bindings.").
 
 % Main interface docstring
 docstring(interface, S) :-
@@ -263,16 +269,9 @@ entity_to_semantic_spec(Entity, EntitySpec) :-
 
 % Note: get_current_session_id/1 is now defined in session.pl
 
-% Ensure session state is loaded before interface operations
+% Ensure session state is loaded before interface operations (stubbed during session rework)
 ensure_session_state_loaded :-
-    get_current_session_id(SessionId),
-    (SessionId \= main ->
-        % Load session state if in a session
-        load_session_state_file(SessionId)
-    ;
-        % In main session, no persistent state to load
-        true
-    ).
+    true.
 
 % === INTERFACE COMMAND IMPLEMENTATIONS ===
 
@@ -514,3 +513,21 @@ term_struct_to_python_dict(Term, Dict) :-
     ;   % Fallback for any other types
         Dict = _{type: "unknown", value: Term}
     ).
+
+% Execute arbitrary Prolog query from Python and collect solutions
+% Returns list of variable binding dictionaries
+python_exec_query(QueryStr, PyDictSolutions) :-
+    read_term_from_atom(QueryStr, QueryTerm, [variable_names(VarNames)]),
+    findall(VarNames, QueryTerm, Solutions),
+    maplist(varnames_to_pydict, Solutions, PyDictSolutions).
+
+% Convert a list of Name=Value pairs to a Python dictionary
+varnames_to_pydict(VarNames, PyDict) :-
+    varnames_to_dict_list(VarNames, DictList),
+    dict_create(PyDict, _, DictList).
+
+% Convert Name=Value pairs to Key-Value list for dict_create
+varnames_to_dict_list([], []).
+varnames_to_dict_list([Name=Value|Rest], [Name-ConvertedValue|RestDict]) :-
+    term_struct_to_python_dict(Value, ConvertedValue),
+    varnames_to_dict_list(Rest, RestDict).

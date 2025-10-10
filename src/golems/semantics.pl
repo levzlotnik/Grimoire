@@ -5,6 +5,7 @@
 
 % Import prolog-safe predicates from python bridge
 :- use_module('python_bridge.pl', [
+    list_golem_ids/1,
     get_golem_tools/2,
     execute_golem_task/3,
     execute_golem_task_parsed/3,
@@ -21,6 +22,32 @@
 :- load_entity(semantic(folder("./test_planner"))).
 :- load_entity(semantic(folder("./test_runner"))).
 :- load_entity(semantic(folder("./architect"))).
+
+% === Registry-driven instance enumeration ===
+% Expose available golem instances as components from the Python registry
+component(golems, instance, golem(Id)) :-
+    python_bridge:list_golem_ids(Ids),
+    member(Id, Ids).
+
+% === DSL Expansion for has(golems(instance)) ===
+% Declarative fact schema:
+%   component(Entity, has(golems(instance)), golems(instance(id(Id), options(Opts)))).
+% Expands into queryable primitives for verification composition.
+
+% Extract the instance id
+component(E, golems_instance_id, Id) :-
+    component(E, has(golems(instance)), golems(instance(id(Id), options(_)))).
+
+% Availability derived from the registry
+component(E, golems_instance_available, true) :-
+    component(E, has(golems(instance)), golems(instance(id(Id), options(_)))),
+    component(golems, instance, golem(Id)).
+
+% Fallback: consider a golem available if its Prolog entity exists
+% (useful in test environments where Python registry may be empty)
+component(E, golems_instance_available, true) :-
+    component(E, has(golems(instance)), golems(instance(id(Id), options(_)))),
+    entity(golem(Id)).
 
 % === SPELL REGISTRATIONS ===
 
@@ -71,8 +98,8 @@ cast(conjure(thought(Content)), RetVal) :-
 
 % Dynamic docstring formatting for golems
 format_golem_docstring(Config, Tools, DocString) :-
-    % Extract model from config dict
-    get_dict(model, Config, Model),
+    % Extract model from config dict using dot notation
+    Model = Config.model,
     format_model_section(Model, ModelSection),
     format_config_section(Config, ConfigSection),
     format_tools_section(Tools, ToolsSection),

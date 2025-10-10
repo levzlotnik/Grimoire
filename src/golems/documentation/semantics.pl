@@ -6,17 +6,8 @@
 % Configuration now handled in Python __init__.py
 % No longer need config component here since golem is instantiated in Python
 
-% Structured output parser (optional)
-component(golem(documentation), output_parser, parse_documentation).
-
-% Parser converts Documentation Pydantic model to Prolog term
-parse_documentation(DocumentationObj, documentation(Summary, Description, Parameters, Returns, Examples)) :-
-    % Extract fields from Documentation Pydantic model using py_call
-    py_call(DocumentationObj:summary, Summary),
-    py_call(DocumentationObj:description, Description),
-    py_call(DocumentationObj:parameters, Parameters),
-    py_call(DocumentationObj:returns, Returns),
-    py_call(DocumentationObj:examples, Examples).
+% Output is already a typed dict from Python (via encode_to_prolog_dict)
+% No custom parser needed - access fields directly with dot notation (Dict.field)
 
 % Delegation relationships
 component(golem(documentation), can_delegate_to, golem(code_assistant)).

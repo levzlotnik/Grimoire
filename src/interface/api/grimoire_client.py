@@ -669,10 +669,55 @@ NOTE: This system operates on Prolog terms. Tools accept Prolog syntax as string
         """Execute a conjure spell (mutable operation)"""
         return self.call_conjure_spell(spell_str)
     
+    def exec(self, query_str: str) -> PerceiveResponse:
+        """
+        Execute arbitrary Prolog query with variable bindings.
+
+        This executes a raw Prolog query using call/1 and returns all variable bindings.
+        Similar to perceive but without the perceive/1 wrapper.
+
+        Args:
+            query_str: Prolog query as a string (e.g., "member(X, [1,2,3])")
+
+        Returns:
+            PerceiveResponse with all solutions and their variable bindings
+        """
+        # Use the python_exec_query helper from interface/semantics.pl
+        query = "python_exec_query(QueryStr, Solutions)"
+
+        result = janus_swi.query_once(query, {"QueryStr": query_str})
+
+        if result and "Solutions" in result:
+            solutions_list = result["Solutions"]
+
+            # Convert solutions to dict format
+            solutions = []
+            if isinstance(solutions_list, list):
+                for solution in solutions_list:
+                    if isinstance(solution, dict):
+                        # Solution is a Python dict from Prolog
+                        sol_dict = {}
+                        for var_name, var_value in solution.items():
+                            # Convert the value from Python dict format
+                            parsed_value = self._parse_python_dict_result(var_value)
+                            sol_dict[var_name] = self._term_to_string(parsed_value)
+                        solutions.append(sol_dict)
+                    else:
+                        # Unexpected format - try to handle gracefully
+                        solutions.append({"result": str(solution)})
+
+            return PerceiveResponse(
+                solutions=solutions,
+                count=len(solutions),
+                query=query_str,
+            )
+
+        raise GrimoireError(f"Failed to execute query: {query_str}")
+
     def get_toolset(self) -> GrimoireToolset:
         """
         Return a comprehensive toolset for AI agent frameworks.
-        
+
         Returns a GrimoireToolset containing:
         - tools: List of callable methods with their names
         - system_prompt: System instructions for the agent
@@ -691,12 +736,13 @@ NOTE: This system operates on Prolog terms. Tools accept Prolog syntax as string
             self.read_file,
             self.edit_file,
             self.perceive,
-            self.conjure
+            self.conjure,
+            self.exec
         ]
-        
+
         # Get docstrings for interface commands
         docstrings = self.query_interface_docstrings()
-        
+
         # Build tool descriptions from docstrings and method __doc__
         tool_descriptions = {}
         for tool in tools:
@@ -708,7 +754,7 @@ NOTE: This system operates on Prolog terms. Tools accept Prolog syntax as string
                 tool_descriptions[name] = tool.__doc__
             else:
                 tool_descriptions[name] = f"Execute {name} operation"
-        
+
         return GrimoireToolset(
             tools=tools,
             system_prompt=self.system_instructions(),

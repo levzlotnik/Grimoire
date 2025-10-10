@@ -31,7 +31,7 @@ system_prompt = get_readme()
 
 # Golem configuration
 config = Config(
-    model="anthropic:claude-sonnet-4-20250514",
+    model="openai:gpt-5-nano",
     system_prompt=system_prompt,
     output_type=SemanticsVerification,
     temperature=0.2,
@@ -40,3 +40,7 @@ config = Config(
 
 # Instantiate the golem
 golem = Golem(golem_id="semantics_verifier", config=config, session_id="main")
+
+# Register with grimoire_golems.core registry
+from grimoire_golems.core import register_golem
+register_golem("semantics_verifier", golem)

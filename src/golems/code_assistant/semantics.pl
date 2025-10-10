@@ -6,17 +6,8 @@
 % Configuration now handled in Python __init__.py
 % No longer need config component here since golem is instantiated in Python
 
-% Structured output parser (optional)
-component(golem(code_assistant), output_parser, parse_code_response).
-
-% Parser converts CodeResponse Pydantic model to Prolog term
-parse_code_response(CodeResponseObj, code_response(Code, Language, Tests, Docs, Explanation)) :-
-    % Extract fields from CodeResponse Pydantic model using py_call
-    py_call(CodeResponseObj:code, Code),
-    py_call(CodeResponseObj:language, Language),
-    py_call(CodeResponseObj:tests, Tests),
-    py_call(CodeResponseObj:documentation, Docs),
-    py_call(CodeResponseObj:explanation, Explanation).
+% Output is already a typed dict from Python (via encode_to_prolog_dict)
+% No custom parser needed - access fields directly with dot notation (Dict.field)
 
 % Delegation relationships
 component(golem(code_assistant), can_delegate_to, golem(test_runner)).

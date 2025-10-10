@@ -85,10 +85,11 @@ component(Entity, git_repository_clean, Clean) :-
     component(Entity, has(git(repository)), git(repository(Spec))),
     member(clean(Clean), Spec).
 
-% Repository root path expansion
+% Repository root path expansion (only if entity has self component)
 component(Entity, git_repository_root, Root) :-
     component(Entity, has(git(repository)), _),
-    component(Entity, self, semantic(folder(Root))).
+    component(Entity, self, semantic(folder(Root))),
+    !.  % Cut to prevent backtracking to file variant
 
 component(Entity, git_repository_root, Root) :-
     component(Entity, has(git(repository)), _),

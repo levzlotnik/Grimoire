@@ -6,16 +6,8 @@
 % Configuration now handled in Python __init__.py
 % No longer need config component here since golem is instantiated in Python
 
-% Structured output parser (optional)
-component(golem(semantics_verifier), output_parser, parse_semantics_verification).
-
-% Parser converts SemanticsVerification Pydantic model to Prolog term
-parse_semantics_verification(SemanticsVerificationObj, semantics_verification(CoveredFiles, MissingFiles, Suggestions, Coverage)) :-
-    % Extract fields from SemanticsVerification Pydantic model using py_call
-    py_call(SemanticsVerificationObj:covered_files, CoveredFiles),
-    py_call(SemanticsVerificationObj:missing_files, MissingFiles),
-    py_call(SemanticsVerificationObj:suggestions, Suggestions),
-    py_call(SemanticsVerificationObj:coverage_percentage, Coverage).
+% Output is already a typed dict from Python (via encode_to_prolog_dict)
+% No custom parser needed - access fields directly with dot notation (Dict.field)
 
 % Delegation relationships
 component(golem(semantics_verifier), can_delegate_to, golem(test_planner)).

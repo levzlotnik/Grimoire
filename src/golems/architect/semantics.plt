@@ -3,7 +3,12 @@
 
 :- use_module(library(plunit)).
 
-:- begin_tests(architect_semantics).
+% Helper predicate: check if end-to-end tests should run
+:- multifile e2e_tests_enabled/0.
+e2e_tests_enabled :-
+    getenv('GRIMOIRE_RUN_E2E_TESTS', '1').
+
+:- begin_tests('golem(architect)').
 
 % === ENTITY TESTS ===
 
@@ -12,9 +17,6 @@ test(architect_entity_exists) :-
 
 % === COMPONENT TESTS ===
 
-test(architect_has_output_parser) :-
-    component(golem(architect), output_parser, parse_architectural_plan).
-
 test(architect_delegation_relationships) :-
     component(golem(architect), can_delegate_to, golem(code_reviewer)),
     component(golem(architect), can_delegate_to, golem(documentation)).
@@ -22,35 +24,18 @@ test(architect_delegation_relationships) :-
 test(architect_has_available_tools) :-
     component(golem(architect), available_tools, _Tools).
 
-% === PARSER TESTS ===
+% === END-TO-END TESTS ===
 
-test(parse_architectural_plan_with_full_dict) :-
-    Dict = _{
-        patterns_used: ["MVC", "Observer"],
-        strengths: ["Good separation of concerns"],
-        weaknesses: ["Tight coupling in data layer"],
-        recommendations: ["Implement dependency injection"],
-        diagram: "ASCII diagram here"
-    },
-    parse_architectural_plan(Dict, architectural_plan(Patterns, Strengths, Weaknesses, Recommendations, Diagram)),
-    Patterns = ["MVC", "Observer"],
-    Strengths = ["Good separation of concerns"],
-    Weaknesses = ["Tight coupling in data layer"],
-    Recommendations = ["Implement dependency injection"],
-    Diagram = "ASCII diagram here".
+test(architect_end_to_end, [condition(e2e_tests_enabled)]) :-
+    Input = input{prompt: "Describe a simple client-server web application architecture"},
+    magic_cast(conjure(golem_task(golem(architect), Input)), Result),
+    Result = ok(golem_response(ParsedOutput, _Messages, architect, _SessionId)),
+    % Use dot notation for dict access
+    assertion(ParsedOutput.type = 'ArchitecturalPlan'),
+    assertion(is_list(ParsedOutput.patterns_used)),
+    assertion(is_list(ParsedOutput.strengths)),
+    assertion(is_list(ParsedOutput.weaknesses)),
+    assertion(is_list(ParsedOutput.recommendations)),
+    assertion(atom(ParsedOutput.diagram)).
 
-test(parse_architectural_plan_with_minimal_dict) :-
-    Dict = _{
-        patterns_used: [],
-        strengths: [],
-        weaknesses: [],
-        recommendations: []
-    },
-    parse_architectural_plan(Dict, architectural_plan(Patterns, Strengths, Weaknesses, Recommendations, Diagram)),
-    Patterns = [],
-    Strengths = [],
-    Weaknesses = [],
-    Recommendations = [],
-    Diagram = "".
-
-:- end_tests(architect_semantics).
+:- end_tests('golem(architect)').
