@@ -14,7 +14,7 @@ test(test_runner_entity_exists) :-
 
 % Test that test_runner has supervisor relationship
 test(test_runner_has_supervisor) :-
-    component(golem(test_runner), supervisor, golem(project_manager)).
+    user:please_verify(component(golem(test_runner), supervisor, golem(project_manager))).
 
 % === END-TO-END TESTS ===
 

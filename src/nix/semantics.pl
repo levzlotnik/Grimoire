@@ -1,8 +1,5 @@
 :- use_module(library(http/json)).
 
-% Declare run/2 as discontiguous since it's spread throughout the file
-:- discontiguous run/2.
-
 % Core Nix entity with automatic self-location
 :- self_entity(nix, {|string(_)||
     Symbolic configuration, package management, and build subsystem.

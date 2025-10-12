@@ -29,16 +29,6 @@ test(cast_single_conjure_spell) :-
     cast(conjure(shell(['echo', 'test'])), Result),
     Result = ok(result("test\n", "")).
 
-test(cast_ritual_multiple_spells, [cleanup(cleanup_test_files)]) :-
-    % Test casting a ritual (multiple spells)
-    cast(ritual([
-        conjure(mkfile('/tmp/test1.txt')),
-        conjure(mkfile('/tmp/test2.txt'))
-    ]), Result),
-    Result = ok([ok(""), ok("")]),
-    exists_file('/tmp/test1.txt'),
-    exists_file('/tmp/test2.txt').
-
 test(cast_invalid_spell_fails) :-
     % Test that invalid spells fail gracefully
     \+ cast(conjure(completely_nonexistent_spell_12345), ok(_)).
@@ -47,7 +37,7 @@ test(cast_invalid_spell_fails) :-
 
 test(perceive_git_status) :-
     % Test git status perception
-    perceive(git(status(Branch, Status, Files))), !,
+    magic_cast(perceive(git(status)), ok(status_info(branch(Branch), working_status(Status), files(Files)))),
     atom(Branch),
     atom(Status),
     is_list(Files).
@@ -95,76 +85,62 @@ test(perceive_entities_exists) :-
 
 test(perceive_entities_returns_list) :-
     % Test that entities perceive returns a list
-    perceive(entities(Entities)),
+    magic_cast(conjure(interface(entities)), ok(entities(Entities))),
     is_list(Entities), !.
 
 test(perceive_entities_includes_system) :-
     % Test that system entity is included
-    perceive(entities(Entities)),
+    magic_cast(conjure(interface(entities)), ok(entities(Entities))),
     member(system, Entities), !.
 
 test(perceive_read_file_exists) :-
     % Test read_file perceive constructor exists
-    component(perceive, ctor, read_file), !.
+    user:please_verify(component(perceive, ctor, fs(read_file))).
 
 test(perceive_read_file_basic, [cleanup(delete_file('/tmp/test_read.txt'))]) :-
     % Test basic file reading with line numbers
     write_file('/tmp/test_read.txt', "Line 1\nLine 2\nLine 3"),
-    perceive(read_file('/tmp/test_read.txt', 1, 3, Content)),
+    magic_cast(perceive(fs(read_file('/tmp/test_read.txt', 1, 3))), ok(file_content(Content))),
     Content = [line(1, "Line 1"), line(2, "Line 2"), line(3, "Line 3")], !.
 
 test(perceive_read_file_range, [cleanup(delete_file('/tmp/test_read.txt'))]) :-
     % Test reading specific line range
     write_file('/tmp/test_read.txt', "Line 1\nLine 2\nLine 3\nLine 4\nLine 5"),
-    perceive(read_file('/tmp/test_read.txt', 2, 4, Content)),
+    magic_cast(perceive(fs(read_file('/tmp/test_read.txt', 2, 4))), ok(file_content(Content))),
     Content = [line(2, "Line 2"), line(3, "Line 3"), line(4, "Line 4")], !.
 
 test(perceive_read_file_start_end, [cleanup(delete_file('/tmp/test_read.txt'))]) :-
     % Test reading entire file (1 to -1)
     write_file('/tmp/test_read.txt', "First\nMiddle\nLast"),
-    perceive(read_file('/tmp/test_read.txt', 1, -1, Content)),
+    magic_cast(perceive(fs(read_file('/tmp/test_read.txt', 1, -1))), ok(file_content(Content))),
     length(Content, 3),
     Content = [line(1, "First")|_], !.
 
 test(perceive_search_regex_exists) :-
     % Test search_regex perceive constructor exists
-    component(perceive, ctor, search_regex), !.
+    user:please_verify(component(perceive, ctor, search_regex)).
 
 test(perceive_search_regex_basic, [cleanup(delete_file('/tmp/test_search.txt'))]) :-
     % Test basic regex search
     write_file('/tmp/test_search.txt', "apple\nbanana\napricot\norange"),
-    perceive(read_file('/tmp/test_search.txt', 1, -1, Content)),
-    perceive(search_regex(Content, "^a", Found)),
+    magic_cast(perceive(fs(read_file('/tmp/test_search.txt', 1, -1))), ok(file_content(Content))),
+    magic_cast(perceive(search_regex(Content, "^a")), ok(search_results(Found))),
     length(Found, 2),
     Found = [line(1, "apple"), line(3, "apricot")], !.
 
 test(perceive_search_regex_pattern, [cleanup(delete_file('/tmp/test_search.txt'))]) :-
     % Test more complex regex pattern
     write_file('/tmp/test_search.txt', "test123\nhello\ntest456\nworld"),
-    perceive(read_file('/tmp/test_search.txt', 1, -1, Content)),
-    perceive(search_regex(Content, "test[0-9]+", Found)),
+    magic_cast(perceive(fs(read_file('/tmp/test_search.txt', 1, -1))), ok(file_content(Content))),
+    magic_cast(perceive(search_regex(Content, "test[0-9]+")), ok(search_results(Found))),
     length(Found, 2),
     Found = [line(1, "test123"), line(3, "test456")], !.
-
-test(session_conjure_ctors_exist) :-
-    % Test session conjure constructors
-    component(conjure, ctor, session(start)),
-    component(conjure, ctor, session(close)),
-    component(conjure, ctor, session(switch)),
-    component(conjure, ctor, session(commit)),
-    component(conjure, ctor, session(rollback)), !.
-
-test(session_perceive_ctors_exist) :-
-    % Test session perceive constructors
-    component(perceive, ctor, session(current)),
-    component(perceive, ctor, session(list)),
-    component(perceive, ctor, session(status)), !.
 
 % === GIT STATUS PARSING TESTS ===
 
 test(git_status_file_terms) :-
     % Test that git status returns clean file terms
-    perceive(git(status(_, _, Files))), !,
+    magic_cast(perceive(git(status)), ok(status_info(branch(_), working_status(_), files(Files)))),
     is_list(Files),
     (Files = [] ->
         true  % No files is valid
@@ -190,7 +166,7 @@ test(conjure_shell_works) :-
 
 test(perceive_git_status_works) :-
     % Test perceive git status works
-    perceive(git(status(Branch, _, _))),
+    magic_cast(perceive(git(status)), ok(status_info(branch(Branch), working_status(_), files(_)))),
     atom(Branch), !.
 
 % === DOCSTRING TESTS ===

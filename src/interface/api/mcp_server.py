@@ -19,27 +19,9 @@ grimoire = GrimoireClient()
 # Create FastMCP server with proper instructions
 mcp = FastMCP("Grimoire Interface", instructions=grimoire.system_instructions())
 
-# Get interface docstrings from Prolog (defer until after initialization)
-# Fallback to generic descriptions if Prolog query fails
-try:
-    interface_docs = grimoire.query_interface_docstrings()
-except Exception as e:
-    # Provide fallback descriptions if Prolog query fails
-    interface_docs = {
-        "compt": "List component types for entity",
-        "comp": "List components of specific type for entity",
-        "doc": "Get documentation for entity",
-        "status": "Get session status",
-        "perceive": "Execute perceive query",
-        "conjure": "Execute conjure spell",
-        "entities": "List all entities",
-        "test": "Run test suite",
-        "session": "Execute session command",
-        "load": "Load entity into current session",
-        "read_file": "Read lines from a file",
-        "edit_file": "Edit file with specified operations",
-    }
-    print(f"Warning: Failed to query interface docstrings, using fallbacks: {e}")
+# Get interface docstrings from Prolog - these define which tools are available
+# Only expose tools for subcommands that are actually registered in Prolog
+interface_docs = grimoire.query_interface_docstrings()
 
 
 def _model_to_string(model: Any) -> str:
@@ -95,16 +77,6 @@ def entities():
 @mcp.tool(description=interface_docs["test"])
 def test(args: Optional[List[str]] = None):
     return _model_to_string(grimoire.test(args))
-
-
-@mcp.tool(description=interface_docs["session"])
-def session(args: List[str]):
-    return _model_to_string(grimoire.session(args))
-
-
-@mcp.tool(description=interface_docs["load"])
-def load(entity_spec: str):
-    return _model_to_string(grimoire.load(entity_spec))
 
 
 @mcp.tool(description=interface_docs["read_file"])

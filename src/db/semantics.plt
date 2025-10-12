@@ -14,9 +14,9 @@
 % Verify SQLite database DSL pattern
 verify(component(Entity, has(db(sqlite)), db(sqlite(database_id(_Id), file(DbPath), schema(SchemaPath))))) :-
     % Verify expanded components exist and are valid
-    please_verify(component(Entity, db_sqlite_file, DbPath)),
-    please_verify(component(Entity, db_sqlite_schema, SchemaPath)),
-    please_verify(component(Entity, db_sqlite_valid, true)).
+    user:please_verify(component(Entity, db_sqlite_file, DbPath)),
+    user:please_verify(component(Entity, db_sqlite_schema, SchemaPath)),
+    user:please_verify(component(Entity, db_sqlite_valid, true)).
 
 % Verify database file component
 verify(component(_Entity, db_sqlite_file, DbPath)) :-
@@ -29,7 +29,7 @@ verify(component(_Entity, db_sqlite_file, DbPath)) :-
 
 % Verify database tables component
 verify(component(Entity, db_sqlite_tables, Tables)) :-
-    component(Entity, db_sqlite_file, DbPath),
+    user:please_verify(component(Entity, db_sqlite_file, DbPath)),
     get_database_tables(DbPath, ActualTables),
     (Tables = ActualTables ->
         true
@@ -39,7 +39,7 @@ verify(component(Entity, db_sqlite_tables, Tables)) :-
 
 % Verify table DSL pattern
 verify(component(Entity, has(db(table)), db(table(TableName)))) :-
-    component(Entity, db_sqlite_file, DbPath),
+    user:please_verify(component(Entity, db_sqlite_file, DbPath)),
     get_database_tables(DbPath, TableStrings),
     (   (atom(TableName) -> atom_string(TableName, TableString) ; TableString = TableName),
         member(TableString, TableStrings)

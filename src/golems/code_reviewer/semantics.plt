@@ -18,11 +18,11 @@ test(code_reviewer_entity_exists) :-
 % === COMPONENT TESTS ===
 
 test(code_reviewer_delegation_relationships) :-
-    component(golem(code_reviewer), can_delegate_to, golem(architect)),
-    component(golem(code_reviewer), can_delegate_to, golem(test_planner)).
+    user:please_verify(component(golem(code_reviewer), can_delegate_to, golem(architect))),
+    user:please_verify(component(golem(code_reviewer), can_delegate_to, golem(test_planner))).
 
 test(code_reviewer_has_available_tools) :-
-    component(golem(code_reviewer), available_tools, _Tools).
+    user:please_verify(component(golem(code_reviewer), available_tools, _Tools)).
 
 % === END-TO-END TESTS ===
 

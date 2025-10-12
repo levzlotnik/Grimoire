@@ -20,6 +20,7 @@
               fastapi,
               uvicorn,
               pydantic,
+              pyyaml,
               mcp,
               janus-swi
             }: buildPythonPackage {
@@ -34,6 +35,7 @@
                 fastapi
                 uvicorn
                 pydantic
+                pyyaml
                 mcp
                 janus-swi
               ];
@@ -77,6 +79,7 @@
             fastapi
             uvicorn
             pydantic
+            pyyaml
             mcp
             # Include janus-swi from grimoireEnv
             grimoireEnv.janus-swi

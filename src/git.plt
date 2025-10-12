@@ -8,8 +8,8 @@
 
 % Main repository verification overload
 verify(component(Entity, has(git(repository)), git(repository(Spec)))) :-
-    please_verify(component(Entity, git_repository_root, Root)),
-    please_verify(component(Entity, git_repository_verified, true)),
+    user:please_verify(component(Entity, git_repository_root, Root)),
+    user:please_verify(component(Entity, git_repository_verified, true)),
     verify_git_repository_spec(Entity, Spec, Root).
 
 % Repository specification verification helper
@@ -33,15 +33,15 @@ verify(component(_Entity, git_repository_root, Root)) :-
 
 % Repository verified flag verification
 verify(component(Entity, git_repository_verified, true)) :-
-    component(Entity, git_repository_root, Root),
+    user:please_verify(component(Entity, git_repository_root, Root)),
     exists_directory(Root),
     atomic_list_concat([Root, '/.git'], GitDir),
     exists_directory(GitDir).
 
 % Repository remote URL verification
 verify(component(Entity, git_repository_remote_url, URL)) :-
-    component(Entity, git_repository_root, Root),
-    component(Entity, git_repository_remote_name, RemoteName),
+    user:please_verify(component(Entity, git_repository_root, Root)),
+    user:please_verify(component(Entity, git_repository_remote_name, RemoteName)),
     working_directory(OldCwd, Root),
     cast(conjure(git(remote(['get-url', RemoteName]))), Result),
     working_directory(_, OldCwd),
@@ -60,7 +60,7 @@ verify(component(Entity, git_repository_remote_url, URL)) :-
 
 % Repository current branch verification
 verify(component(Entity, git_repository_current_branch, Branch)) :-
-    component(Entity, git_repository_root, Root),
+    user:please_verify(component(Entity, git_repository_root, Root)),
     working_directory(OldCwd, Root),
     cast(conjure(git(branch(['--show-current']))), Result),
     working_directory(_, OldCwd),
@@ -77,7 +77,7 @@ verify(component(Entity, git_repository_current_branch, Branch)) :-
 
 % Repository working status verification
 verify(component(Entity, git_repository_working_status, Status)) :-
-    component(Entity, git_repository_root, Root),
+    user:please_verify(component(Entity, git_repository_root, Root)),
     working_directory(OldCwd, Root),
     cast(perceive(git(status(_, ActualStatus, Files))), ok(_)),
     working_directory(_, OldCwd),
@@ -98,11 +98,11 @@ verify_git_repository_remotes(Entity, Spec) :-
     maplist(verify_single_remote(Entity), Remotes).
 
 verify_single_remote(Entity, remote(_Name, URL)) :-
-    please_verify(component(Entity, git_repository_remote_url, URL)).
+    user:please_verify(component(Entity, git_repository_remote_url, URL)).
 
 verify_git_repository_clean_state(Entity, Spec) :-
     (member(clean(true), Spec) ->
-        please_verify(component(Entity, git_repository_working_status, clean))
+        user:please_verify(component(Entity, git_repository_working_status, clean))
     ;
         true  % clean(false) or not specified - allow dirty state
     ).
@@ -147,9 +147,9 @@ test(git_args_parsing, [true]) :-
 test(git_command_validation, [true]) :-
     % Test that we can validate git commands exist
     functor(clone("url", "path"), clone, 2),
-    component(git, subcommand, clone), !,
+    user:please_verify(component(git, subcommand, clone)), !,
     functor(status, status, 0),
-    component(git, subcommand, status), !.
+    user:please_verify(component(git, subcommand, status)), !.
 
 % Test spell format registrations exist
 test(git_spell_formats_exist, [true]) :-

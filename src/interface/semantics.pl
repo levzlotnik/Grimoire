@@ -13,12 +13,9 @@ component(interface, subcommand, comp).
 component(interface, subcommand, doc).
 component(interface, subcommand, entities).
 component(interface, subcommand, repl).
-component(interface, subcommand, status).
 component(interface, subcommand, test).
-% component(interface, subcommand, session).  % Disabled - session being reworked
 component(interface, subcommand, conjure).
 component(interface, subcommand, perceive).
-component(interface, subcommand, load).
 component(interface, subcommand, read_file).
 component(interface, subcommand, edit_file).
 component(interface, subcommand, exec).
@@ -34,13 +31,10 @@ entity(interface(comp)).
 entity(interface(doc)).
 entity(interface(entities)).
 entity(interface(repl)).
-entity(interface(status)).
 entity(interface(test)).
 entity(interface(test_files)).
-entity(interface(session)).
 entity(interface(conjure)).
 entity(interface(perceive)).
-entity(interface(load)).
 entity(interface(read_file)).
 entity(interface(edit_file)).
 entity(interface(exec)).
@@ -51,13 +45,10 @@ docstring(interface(comp), "List components of specific type for current entity.
 docstring(interface(doc), "Show docstring of current entity. Format: interface(doc) or interface(doc(Entity)). Returns documentation(Entity, DocString).").
 docstring(interface(entities), "List all entities in the system. Format: interface(entities). Returns entities([Entity1, Entity2, ...]).").
 docstring(interface(repl), "Start interactive REPL with context awareness. Format: interface(repl). Interactive command that starts a Prolog REPL.").
-docstring(interface(status), "Show session/transaction status. Format: interface(status). Returns session_status(status_info(Branch, WorkingStatus, Sessions)).").
 docstring(interface(test), "Run the test suite. Format: interface(test) or interface(test([TestName1, TestName2, ...]). Returns test results.").
 docstring(interface(test_files), "Run tests from specific files. Format: interface(test_files(TestNames, FilePaths)). Returns test results.").
-docstring(interface(session), "File-based session management with SQLite command logging. Format: interface(session([SubCommand, ...])) - use 'grimoire comp session subcommand' to see available subcommands.").
 docstring(interface(conjure), "Execute conjuration spells (mutable operations). Format: interface(conjure(SpellTerm)) - use 'grimoire comp conjure ctor' to see available spells.").
 docstring(interface(perceive), "Execute perception spells (query operations). Format: interface(perceive(QueryTerm)) - use 'grimoire comp perceive ctor' to see available queries.").
-docstring(interface(load), "Load entity into current session for persistent access. Format: interface(load(EntitySpec)). EntitySpec examples: semantic(folder/file), system, etc.").
 docstring(interface(read_file), "Read lines from a file using 1-based indexing. Format: interface(read_file(FilePath, Start, End)). Returns file content with line numbers.").
 docstring(interface(edit_file), "Edit file with specified operations. Format: interface(edit_file(FilePath, Edits)). Edits is a list of edit operations.").
 docstring(interface(exec), "Execute arbitrary Prolog query with variable bindings. Format: interface(exec(QueryStr)). Returns solutions with variable bindings.").
@@ -92,90 +83,6 @@ component(Entity, interface_can_cast_spell, Spell) :-
 % Subcommand availability
 component(interface, available_subcommands, Subcommands) :-
     findall(Cmd, component(interface, subcommand, Cmd), Subcommands).
-
-% === SPELL REGISTRATIONS ===
-
-register_spell(conjure(interface(entities)), input(interface(entities)), output(ok(entities('EntityList'))), "List all entities").
-register_spell(conjure(interface(compt)), input(interface(compt)), output(ok(component_types('Entity', 'TypeList'))), "Query component types").
-register_spell(conjure(interface(comp('E','T'))), input(interface(comp('E','T'))), output(ok(components('E','T','List'))), "Query components").
-register_spell(conjure(interface(doc)), input(interface(doc)), output(ok(documentation('Entity', 'Doc'))), "Get documentation").
-
-register_spell(
-    conjure(interface(conjure('SpellTerm'))),
-    input(interface(conjure('SpellTerm'))),
-    output('DomainDependentResult'),
-    "Delegate conjure spell to appropriate domain"
-).
-
-register_spell(
-    perceive(interface(perceive('QueryTerm'))),
-    input(interface(perceive('QueryTerm'))),
-    output(either(ok(query_succeeded), error(query_failed))),
-    "Delegate perceive query to appropriate domain"
-).
-
-register_spell(
-    conjure(interface(test)),
-    input(interface(test)),
-    output(either(ok(tests_passed), error(tests_failed('Reason')))),
-    docstring("Run all tests")
-).
-
-register_spell(
-    conjure(interface(test('TestArgs'))),
-    input(interface(test('TestArgs'))),
-    output(either(ok(tests_passed), error(tests_failed('Reason')))),
-    docstring("Run tests with optional filtering arguments")
-).
-
-register_spell(
-    conjure(interface(test_files('TestNames', 'FilePaths'))),
-    input(interface(test_files('TestNames', 'FilePaths'))),
-    output(either(ok(tests_passed), error(tests_failed('Reason')))),
-    docstring("Run tests from specific .plt files")
-).
-
-register_spell(
-    conjure(interface(load('EntitySpec'))),
-    input(interface(load('EntitySpec'))),
-    output(either(ok(entity_loaded('Entity')), error(entity_load_failed('Entity', 'Spec', 'Msg')))),
-    docstring("Load entity from semantic source (file or folder)")
-).
-
-register_spell(
-    conjure(interface(read_file('FilePath', 'Start', 'End'))),
-    input(interface(read_file('FilePath', 'Start', 'End'))),
-    output(either(ok(lines('ContentWithLineNumbers')), error(read_file_failed))),
-    docstring("Read lines from a file with 1-based indexing (delegated to fs domain)")
-).
-
-register_spell(
-    conjure(interface(edit_file('FilePath', 'Edits'))),
-    input(interface(edit_file('FilePath', 'Edits'))),
-    output('FsDomainResult'),
-    docstring("Edit file with specified operations (delegated to fs domain)")
-).
-
-register_spell(
-    conjure(interface(repl)),
-    input(interface(repl)),
-    output(either(ok(repl_completed), error(repl_failed('Error')))),
-    docstring("Start interactive REPL with context awareness")
-).
-
-register_spell(
-    conjure(interface(status)),
-    input(interface(status)),
-    output(ok(session_status('Status'))),
-    docstring("Show session/transaction status")
-).
-
-register_spell(
-    conjure(interface(session('Args'))),
-    input(interface(session('Args'))),
-    output('SessionDomainResult'),
-    docstring("File-based session management with SQLite command logging (delegated to session domain)")
-).
 
 % === CONTEXT MANAGEMENT ===
 
@@ -217,103 +124,52 @@ ensure_local_project_loaded(ProjectEntity) :-
         load_entity(semantic(file('./semantics.pl')))
     ).
 
-% Load entity into current session state
-load_entity_in_session(Entity) :-
-    % Get current session ID
-    get_current_session_id(SessionId),
-    % Create a semantic specification for the entity
-    entity_to_semantic_spec(Entity, EntitySpec),
-    % Validate that the entity exists before adding to session
-    (validate_entity_exists(Entity, EntitySpec) ->
-        % Store the load in persistent session file for future operations
-        (SessionId \= main ->
-            add_entity_load_to_session(SessionId, EntitySpec)
-        ;
-            % In main session, just succeed (no persistent storage)
-            true
-        )
-    ;
-        % Entity doesn't exist - throw error
-        format(atom(ErrorMsg), 'Entity ~w not found', [Entity]),
-        throw(entity_load_failed(Entity, EntitySpec, ErrorMsg))
-    ).
-
-% Validate that an entity exists and can be loaded
-validate_entity_exists(Entity, EntitySpec) :-
-    % Check if entity already exists in the system
-    (entity(Entity) ->
-        true
-    ;
-        % Try to load the semantic specification to see if it's valid
-        catch(
-            load_entity(EntitySpec),
-            _,
-            fail
-        )
-    ).
-
-% Convert entity to semantic specification
-entity_to_semantic_spec(Entity, EntitySpec) :-
-    % Map entities to proper semantic specifications
-    (Entity = '/' ->
-        EntitySpec = semantic(system)
-    ; Entity = '.' ->
-        EntitySpec = semantic(folder(.))
-    ; atom_string(Entity, EntityStr),
-      (sub_string(EntityStr, _, _, _, '/') ->
-          EntitySpec = semantic(folder(Entity))
-      ;
-          EntitySpec = semantic(entity(Entity))
-      )
-    ).
-
-% Note: get_current_session_id/1 is now defined in session.pl
-
-% Ensure session state is loaded before interface operations (stubbed during session rework)
-ensure_session_state_loaded :-
-    true.
 
 % === INTERFACE COMMAND IMPLEMENTATIONS ===
 
 % Component types listing
+register_spell(conjure(interface(compt)), input(interface(compt)), output(ok(component_types('Entity', 'TypeList'))), docstring("Query component types")).
 cast(conjure(interface(compt)), RetVal) :-
-    ensure_session_state_loaded,
     current_entity(Entity),
     interface_compt(Entity, Types),
     RetVal = ok(component_types(Entity, Types)).
 
 cast(conjure(interface(compt(EntityPath))), RetVal) :-
-    ensure_session_state_loaded,
     resolve_entity_path(EntityPath, Entity),
     interface_compt(Entity, Types),
     RetVal = ok(component_types(Entity, Types)).
 
 % Component listing with new argument order: entity first, then type
+register_spell(conjure(interface(comp('E','T'))), input(interface(comp('E','T'))), output(ok(components('E','T','List'))), docstring("Query components")).
 cast(conjure(interface(comp(EntityPath, Type))), RetVal) :-
-    ensure_session_state_loaded,
     resolve_entity_path(EntityPath, Entity),
     interface_comp(Entity, Type, Components),
     RetVal = ok(components(Entity, Type, Components)).
 
 % Documentation retrieval
+register_spell(conjure(interface(doc)), input(interface(doc)), output(ok(documentation('Entity', 'Doc'))), docstring("Get documentation")).
 cast(conjure(interface(doc)), RetVal) :-
-    ensure_session_state_loaded,
     current_entity(Entity),
     interface_doc(Entity, Doc),
     RetVal = ok(documentation(Entity, Doc)).
 
 cast(conjure(interface(doc(Entity))), RetVal) :-
-    ensure_session_state_loaded,
     interface_doc(Entity, Doc),
     RetVal = ok(documentation(Entity, Doc)).
 
 % Entities listing
+register_spell(conjure(interface(entities)), input(interface(entities)), output(ok(entities('EntityList'))), docstring("List all entities")).
 cast(conjure(interface(entities)), RetVal) :-
-    ensure_session_state_loaded,
     interface_entities(Entities),
     RetVal = ok(entities(Entities)).
 
 % REPL command - delegate to existing implementation
+register_spell(
+    conjure(interface(repl)),
+    input(interface(repl)),
+    output(either(ok(repl_completed), error(repl_failed('Error')))),
+    docstring("Start interactive REPL with context awareness")
+).
 cast(conjure(interface(repl)), RetVal) :-
     % Load and call existing REPL functionality
     catch(
@@ -323,12 +179,13 @@ cast(conjure(interface(repl)), RetVal) :-
         RetVal = error(repl_failed(Error))
     ).
 
-% Status command - show session/transaction status
-cast(conjure(interface(status)), RetVal) :-
-    get_session_status(Status),
-    RetVal = ok(session_status(Status)).
-
 % Test command - delegate to existing implementation
+register_spell(
+    conjure(interface(test)),
+    input(interface(test)),
+    output(either(ok(tests_passed), error(tests_failed('Reason')))),
+    docstring("Run all tests")
+).
 cast(conjure(interface(test)), RetVal) :-
     catch(
         (grimoire_ensure_loaded('@/src/run_tests.pl'), run_all_tests, RetVal = ok(tests_passed))
@@ -338,6 +195,12 @@ cast(conjure(interface(test)), RetVal) :-
     ).
 
 % Test command with specific test arguments
+register_spell(
+    conjure(interface(test('TestArgs'))),
+    input(interface(test('TestArgs'))),
+    output(either(ok(tests_passed), error(tests_failed('Reason')))),
+    docstring("Run tests with optional filtering arguments")
+).
 cast(conjure(interface(test(TestArgs))), RetVal) :-
     catch(
         (grimoire_ensure_loaded('@/src/run_tests.pl'),
@@ -354,6 +217,12 @@ cast(conjure(interface(test(TestArgs))), RetVal) :-
     ).
 
 % Test files command - run tests from specific .plt files
+register_spell(
+    conjure(interface(test_files('TestNames', 'FilePaths'))),
+    input(interface(test_files('TestNames', 'FilePaths'))),
+    output(either(ok(tests_passed), error(tests_failed('Reason')))),
+    docstring("Run tests from specific .plt files")
+).
 cast(conjure(interface(test_files(TestNames, FilePaths))), RetVal) :-
     catch(
         (grimoire_ensure_loaded('@/src/run_tests.pl'),
@@ -364,15 +233,23 @@ cast(conjure(interface(test_files(TestNames, FilePaths))), RetVal) :-
         RetVal = error(tests_failed(Error))
     ).
 
-% Session commands - forward to session.pl
-cast(conjure(interface(session(Args))), RetVal) :-
-    magic_cast(conjure(session(Args)), RetVal).
-
 % Conjure command - execute conjuration spells
+register_spell(
+    conjure(interface(conjure('SpellTerm'))),
+    input(interface(conjure('SpellTerm'))),
+    output('DomainDependentResult'),
+    docstring("Delegate conjure spell to appropriate domain")
+).
 cast(conjure(interface(conjure(SpellTerm))), RetVal) :-
     magic_cast(conjure(SpellTerm), RetVal).
 
 % Perceive command - execute perception spells directly
+register_spell(
+    perceive(interface(perceive('QueryTerm'))),
+    input(interface(perceive('QueryTerm'))),
+    output(either(ok(query_succeeded), error(query_failed))),
+    docstring("Delegate perceive query to appropriate domain")
+).
 cast(conjure(interface(perceive(QueryTerm))), RetVal) :-
     magic_cast(perceive(QueryTerm), Result),
     (Result = ok(_) ->
@@ -381,24 +258,24 @@ cast(conjure(interface(perceive(QueryTerm))), RetVal) :-
         RetVal = error(query_failed)
     ).
 
-% Load command - load entity into current session
-cast(conjure(interface(load(EntitySpec))), RetVal) :-
-    resolve_entity_path(EntitySpec, Entity),
-    catch(
-        (load_entity_in_session(Entity),
-         RetVal = ok(entity_loaded(Entity))),
-        entity_load_failed(E, Spec, Msg),
-        RetVal = error(entity_load_failed(E, Spec, Msg))
-    ).
-
 % Read file command - delegate to fs domain
+register_spell(
+    conjure(interface(read_file('FilePath', 'Start', 'End'))),
+    input(interface(read_file('FilePath', 'Start', 'End'))),
+    output(either(ok(lines('ContentWithLineNumbers')), error(read_file_failed))),
+    docstring("Read lines from a file with 1-based indexing (delegated to fs domain)")
+).
 cast(conjure(interface(read_file(FilePath, Start, End))), RetVal) :-
-    ensure_session_state_loaded,
     magic_cast(perceive(fs(read_file(FilePath, Start, End))), RetVal).
 
 % Edit file command - delegate to fs domain
+register_spell(
+    conjure(interface(edit_file('FilePath', 'Edits'))),
+    input(interface(edit_file('FilePath', 'Edits'))),
+    output('FsDomainResult'),
+    docstring("Edit file with specified operations (delegated to fs domain)")
+).
 cast(conjure(interface(edit_file(FilePath, Edits))), RetVal) :-
-    ensure_session_state_loaded,
     magic_cast(conjure(fs(edit_file(file(FilePath), Edits))), RetVal).
 
 % === CORE INTERFACE FUNCTIONS ===
@@ -424,52 +301,6 @@ interface_doc(Entity, Doc) :-
 interface_entities(Entities) :-
     findall(E, entity(E), Entities).
 
-% Get comprehensive session status
-get_session_status(Status) :-
-    % Use git status spell via magic_cast
-    magic_cast(perceive(git(status)), GitResult),
-    (GitResult = ok(status_info(branch(Branch), working_status(WorkingStatus), files(_))) ->
-        CurrentBranch = Branch,
-        CurrentStatus = WorkingStatus
-    ;
-        CurrentBranch = main,
-        CurrentStatus = unknown
-    ),
-    % Get list of sessions - use direct helper for now since perceive(session(list)) isn't wrapped in cast
-    % TODO: This should be magic_cast once session.pl is updated to use cast/perceive pattern
-    (catch(perceive(session(list(Sessions))), _, fail) ->
-        true
-    ;
-        Sessions = []
-    ),
-    Status = status_info(CurrentBranch, CurrentStatus, Sessions).
-
-% Find all session branches
-find_all_sessions(Sessions) :-
-    magic_cast(perceive(git(branch)), BranchResult),
-    (BranchResult = ok(result(BranchOutput, _)) ->
-        string_lines(BranchOutput, BranchLines),
-        include_session_branches(BranchLines, Sessions)
-    ;
-        Sessions = []
-    ).
-
-% Filter branch list to only session branches
-include_session_branches([], []).
-include_session_branches([Line|Rest], Sessions) :-
-    atom_string(LineAtom, Line),
-    include_session_branches(Rest, RestSessions),  % Process rest first to avoid issues
-    (atom_concat('  session-', SessionId, LineAtom) ->
-        Sessions = [SessionId|RestSessions]
-    ; atom_concat('* session-', SessionId, LineAtom) ->
-        Sessions = [active(SessionId)|RestSessions]
-    ; atom_string('  main', Line) ->
-        Sessions = [main|RestSessions]
-    ; atom_string('* main', Line) ->
-        Sessions = [active(main)|RestSessions]
-    ;
-        Sessions = RestSessions
-    ).
 
 % === PYTHON INTERFACE SUPPORT ===
 

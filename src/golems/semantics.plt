@@ -108,10 +108,10 @@ test(thought_constructor_exists) :-
 
 test(delegation_relationships) :-
     % Test some basic delegation relationships from the new structure
-    component(golem(code_assistant), can_delegate_to, golem(test_runner)),
-    component(golem(code_assistant), can_delegate_to, golem(documentation)),
-    component(golem(architect), can_delegate_to, golem(code_reviewer)),
-    component(golem(architect), can_delegate_to, golem(documentation)), !.
+    user:please_verify(component(golem(code_assistant), can_delegate_to, golem(test_runner))),
+    user:please_verify(component(golem(code_assistant), can_delegate_to, golem(documentation))),
+    user:please_verify(component(golem(architect), can_delegate_to, golem(code_reviewer))),
+    user:please_verify(component(golem(architect), can_delegate_to, golem(documentation))), !.
 
 % === DOCSTRING TESTS ===
 

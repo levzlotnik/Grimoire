@@ -1,10 +1,125 @@
 # Grimoire
 
-A knowledge-based operating system built on Entity-Component-System (ECS) architecture. Grimoire treats semantic knowledge as first-class citizens, storing it in Prolog files and integrating domain-specific tools through common patterns.
+A knowledge-based operating system built on Entity-Component-System (ECS) architecture with a mathematically principled dual kernel: **generative** (expansion) and **discriminative** (verification) flows unified through composable predicates.
+
+## Core Architecture
+
+Grimoire operates on a fundamental **generative-discriminative duality**:
+
+```
+ecs_kernel.pl (Generative)  ⊣  ecs_kernel.plt (Discriminative)
+     ↓                              ↓
+semantics.pl (Expansion)     ⊣  semantics.plt (Verification)
+```
+
+### The Dual Pattern
+
+Every domain follows this exact pattern:
+
+- **`semantics.pl`** (Generative): Entity declarations, component expansion rules, spell implementations
+- **`semantics.plt`** (Discriminative): Verification predicates via `verify/1`, PLUnit tests
+
+**Example - Git Domain:**
+
+```prolog
+% src/git.pl - GENERATIVE FLOW
+:- self_entity(git).
+
+% Component expansion: has(git(...)) → rich properties
+component(Entity, git_repository_remote_url, RemoteURL) :-
+    component(Entity, has(git(repository)), git(repository(Spec))),
+    member(remote(_, RemoteURL), Spec).
+
+% src/git.plt - DISCRIMINATIVE FLOW
+% Verify composite fact by composing primitive verifications
+verify(component(Entity, has(git(repository)), git(repository(Spec)))) :-
+    please_verify(component(Entity, git_repository_remote_url, URL)),
+    please_verify(component(Entity, git_repository_branch, Branch)),
+    % Then check OS reality
+    verify_git_repository_exists(URL, Branch).
+```
+
+### Critical Distinctions
+
+#### `cast` vs `magic_cast`
+
+- **`cast/2`** - Spell **IMPLEMENTATION** (appears in HEAD of clauses)
+  ```prolog
+  % ✅ CORRECT - declaring a spell
+  cast(conjure(git(commit(Message))), Result) :- ...
+  ```
+
+- **`magic_cast/2`** - Spell **INVOCATION** (appears in BODY of clauses)
+  ```prolog
+  % ✅ CORRECT - invoking a spell
+  do_something(Result) :-
+      magic_cast(conjure(git(commit("message"))), Result).
+
+  % ❌ WRONG - bypasses hooks and grounding
+  do_something(Result) :-
+      cast(conjure(git(commit("message"))), Result).
+  ```
+
+**Why**: `magic_cast` ensures terms are grounded (no uninstantiated variables) and executes pre/post hooks (logging, monitoring, session integration).
+
+#### `verify` vs `please_verify`
+
+- **`verify/1`** - Verification **IMPLEMENTATION** (appears in HEAD)
+  ```prolog
+  % ✅ CORRECT - declaring how to verify
+  verify(component(Entity, git_repository_root, Root)) :-
+      exists_directory(Root) -> true
+      ; throw(verification_error(git, missing_repository(Root))).
+  ```
+
+- **`please_verify/1`** - Verification **INVOCATION** (appears in BODY)
+  ```prolog
+  % ✅ CORRECT - invoking verification
+  verify(component(E, has(project(app)), project(app(Spec)))) :-
+      please_verify(component(E, project_git_repo, GitRepo)),
+      please_verify(component(E, project_nix_flake, NixFlake)),
+      verify_combination(GitRepo, NixFlake).
+
+  % ❌ WRONG - doesn't ensure grounding
+  verify(component(E, has(project(app)), project(app(Spec)))) :-
+      component(E, project_git_repo, GitRepo),  % Not grounded!
+      component(E, project_nix_flake, NixFlake).
+  ```
+
+**Why**: `please_verify` ensures component exists AND is grounded before verification, enables composable verification chains, and executes verification hooks.
+
+### Spell Registration
+
+**Every spell MUST have `register_spell/4` immediately above its `cast/2` implementation:**
+
+```prolog
+% Registration with input/output formats and docstring
+register_spell(
+    conjure(git(commit)),
+    input(git(commit(message('Message')))),
+    output(either(
+        ok(committed(hash('Hash'))),
+        error(commit_failed('Reason'))
+    )),
+    docstring("Create a git commit with the given message")
+).
+
+% Implementation immediately follows
+cast(conjure(git(commit(Message))), Result) :-
+    % Implementation here
+    ...
+```
+
+**What `register_spell/4` provides:**
+- Automatic component registration: `component(conjure, ctor, git(commit))`
+- Input/output format specifications for introspection
+- Self-documenting spell system via docstrings
+- Type safety and validation
 
 ## Installation
 
-**Primary Method: Nix Develop**
+### Nix Flakes (Recommended)
+
 ```bash
 # Clone and enter development environment
 git clone <repository-url>
@@ -15,13 +130,15 @@ nix develop
 nix develop github:your-org/grimoire
 ```
 
-**MCP Server Setup**
-Add to your MCP configuration (`.mcp.json` or similar):
+### MCP Server Setup
+
+Add to your MCP configuration (`.mcp.json`):
+
 ```json
 {
   "mcpServers": {
     "Grimoire": {
-      "type": "stdio", 
+      "type": "stdio",
       "command": "./grimoire",
       "args": ["mcp"],
       "env": {
@@ -34,7 +151,8 @@ Add to your MCP configuration (`.mcp.json` or similar):
 
 ## Quick Start
 
-**Basic CLI Commands**
+### Basic CLI Commands
+
 ```bash
 # Interactive REPL with system loaded
 ./grimoire exec
@@ -43,212 +161,236 @@ Add to your MCP configuration (`.mcp.json` or similar):
 ./grimoire test
 
 # Run specific tests
-./grimoire test session_management
+./grimoire test git
 
-# Cast conjuration spells (mutations)
-./grimoire conjure "git(commit('fix: update documentation'))"
-./grimoire conjure "mkproject"
-./grimoire conjure "session(start('my-session'))"
-
-# Cast perception spells (queries)
+# Cast spells via CLI
+./grimoire conjure "git(commit('fix: update'))"
 ./grimoire perceive "git(status)"
-./grimoire perceive "entities"
-./grimoire perceive "session(current)"
 ```
 
-**Environment Variables**
-- `GRIMOIRE_ROOT` - Project directory (auto-detected from script location)
-- `GRIMOIRE_DATA` - Data storage directory (defaults to `$HOME/.grimoire`)
+### Environment Variables
 
-## Core Philosophy
-
-**ECS Architecture**
-```prolog
-% Entities - things that exist
-entity(something).
-
-% Components - relationships and properties  
-component(entity_name, component_type, value).
-
-% Documentation - self-documenting knowledge
-docstring(entity_name, "Description of the entity").
-```
-
-**Component Type Diversity**
-The system uses various component types beyond just constructors:
-- `ctor` - Constructors (what can be created/called)
-- `subcommand` - Available subcommands
-- `concept` - Conceptual relationships
-- `self` - Self-referential metadata
-- `source` - Source code and data references
-- `subsystem` - System subsystem relationships
-
-**Self-Entity Declaration Pattern**
-```prolog
-:- self_entity(entity_name).
-```
-
-**Loading System**
-```prolog
-:- load_entity(semantic(folder("path/to/semantics"))).
-```
-
-**Semantics + Testing Duality**
-- `semantics.pl` - Contains logic and knowledge
-- `semantics.plt` - Contains tests for the semantics
-- This pattern ensures every semantic domain has corresponding tests
+- **`GRIMOIRE_ROOT`** - Project directory (auto-detected from script location)
+- **`GRIMOIRE_DATA`** - Data storage directory (defaults to `$HOME/.grimoire`)
 
 ## Spell System
 
-Grimoire uses a magic-inspired command system with two categories:
+Grimoire provides two spell categories:
 
-| Operation Type | Description | Example with Proper Syntax |
-|----------------|-------------|----------------------------|
-| **Conjure (Mutations)** | Require `cast/2` for safety | See examples below |
-| `edit_file` | File editing operations | `cast(conjure(edit_file(file(Path), [Edit1, Edit2, ...])), Result)` |
-| `git(clone)` | Clone repository | `cast(conjure(git(clone(Url, Path))), Result)` |
-| `nix(run)` | Run Nix application | `cast(conjure(nix(run(Installable, Args))), Result)` |
-| `mkproject` | Create new project | `cast(conjure(mkproject(FolderPath, ProjectName, Options)), Result)` |
-| **Perceive (Queries)** | Direct calls, read-only | Variables unified with results |
-| `read_file` | Read file lines | `perceive(read_file(FilePath, LineNumbers, Content))` |
-| `git(status)` | Git working tree status | `perceive(git(status))` |
-| `nix(flake(show))` | Show flake info | `perceive(nix(flake(show(FlakeRef, Apps, Packages, DevShells)))` |
-| `entities` | List all entities | `perceive(entities)` |
+### Conjure (Mutations)
 
-**Conjure Examples (Mutations with Proper Syntax)**
+State-changing operations, always invoked via `magic_cast`:
+
 ```prolog
-% Project creation with full parameters
-cast(conjure(mkproject('/home/user/projects', 'my_project', [git(true), template(python)])), Result)
-cast(conjure(mkproject('.', 'grimoire_app', [])), Result)  % Current dir, default options
+% Project creation
+magic_cast(conjure(mkproject('/projects', 'myapp', [template(rust)])), Result).
 
-% File editing with proper operations
-cast(conjure(edit_file(file('README.md'), [
-    insert(1, "# New Header"),
-    replace(2, 4, "Updated content"),
-    append("Final line")
-])), Result)
+% Git operations
+magic_cast(conjure(git(commit("Initial commit"))), Result).
+magic_cast(conjure(git(push(origin, main))), Result).
 
-% Git operations with parameters
-cast(conjure(git(clone('https://github.com/user/repo', './local-repo'))), Result)
-cast(conjure(git(commit('feat: add new feature'))), Result)
-cast(conjure(git(push(origin, main))), Result)
-
-% Session management
-cast(conjure(session(start('my-session'))), Result)  % Named session
-cast(conjure(session(start)), Result)                % Auto-generated ID
-
-% Nix operations
-cast(conjure(nix(run('.#python'))), Result)
-cast(conjure(nix(run('.#python', ['script.py', '--help']))), Result)
-cast(conjure(nix(build('.'))), Result)
+% File operations
+magic_cast(conjure(fs(mkfile(path('/tmp/test.txt'), content("Hello")))), Result).
 ```
 
-**Perceive Examples (Queries with Variables)**
+### Perceive (Queries)
+
+Read-only operations for querying system state:
+
 ```prolog
-% Read file with line numbers (variables get unified)
-perceive(read_file('file.txt', [1, 2, 3], Content))     % Read lines 1-3
-perceive(read_file('file.txt', [1, -1], Content))       % First and last line
-perceive(read_file('file.txt', [-3, -2, -1], Content))  % Last 3 lines
+% Git status
+magic_cast(perceive(git(status)), Result).
 
-% Git status - simple query
-perceive(git(status))
+% List entities
+magic_cast(perceive(entities), Result).
 
-% Nix flake show with variable unification
-perceive(nix(flake(show('.', Apps, Packages, DevShells)))
-% After execution: Apps = [app1, app2], Packages = [...], DevShells = [...]
-
-% Session queries
-perceive(session(current))
-perceive(session(list))
-perceive(session(status))
-
-% System exploration
-perceive(entities)  % Lists all entities in the system
+% File reading
+magic_cast(perceive(fs(read_file(path('file.txt')))), Result).
 ```
 
-## CLI/MCP Usage
+## Core Domains
 
-**Interface Command Patterns**
-All interface operations follow the pattern: `interface(command(...))`
+### Level 2: System Domains
 
-```bash
-# List all entities in the system
-./grimoire entities
+- **`git`** - Version control with structured repository modeling
+- **`nix`** - Package management and reproducible builds via flakes
+- **`fs`** - Filesystem operations with pattern matching
+- **`db`** - SQLite integration with automatic schema discovery
+- **`utils`** - Tree building and collection utilities
 
-# Show component types for an entity
-./grimoire compt system
+### Level 3: Coordination Domains
 
-# List components of specific type
-./grimoire comp system subsystem
+- **`project`** - Project structure composing git+nix+fs patterns
+- **`interface`** - Multi-frontend access (CLI/HTTP/MCP)
+- **`protocol_clients`** - External service consumption (HTTP/MCP clients)
 
-# Get entity documentation
-./grimoire doc git
+### Level 5: External Interfaces
 
-# Show system status
-./grimoire status
+- **`golems`** - AI agents with PydanticAI integration
 
-# Load entity into session
-./grimoire load semantic(folder/file)
+## ECS Patterns
 
-# Read file with line numbers
-./grimoire read_file "README.md" 1 20
+### Entity Declaration
 
-# Session management
-./grimoire session start my-session
-./grimoire session list
-./grimoire session commit
+```prolog
+:- self_entity(my_domain).  % Auto-creates entity and self component
+
+entity(my_thing).  % Explicit entity declaration
 ```
 
-**System Exploration Workflow**
-1. Start with `./grimoire entities` to see what exists
-2. Use `./grimoire compt EntityName` to see component types  
-3. Use `./grimoire comp EntityName ctor` to see available operations
-4. Use `./grimoire doc EntityName` for detailed documentation
+### Component Expansion Pattern
 
-## System Overview
+```prolog
+% User declares high-level fact
+component(my_project, has(git(repository)), git(repository([
+    remote(origin, 'https://github.com/user/repo'),
+    branch(main)
+]))).
 
-**Core Subsystems**
-- `git` - Version control and knowledge evolution tracking
-- `nix` - Package management and reproducible environments  
-- `fs` - Filesystem operations and pattern matching
-- `project` - Project structure and dependency management
-- `session` - Transaction and workspace management with SQLite logging
-- `agent` - AI-powered task automation and assistance
+% Domain expands into queryable properties
+component(Entity, git_repository_remote_url, URL) :-
+    component(Entity, has(git(repository)), git(repository(Spec))),
+    member(remote(_, URL), Spec).
+```
 
-**Available Templates** (via `nix run .#<template>`)
-- `cpp` - C++ projects with CMake
-- `haskell` - Haskell projects with Cabal
-- `lean4` - Lean 4 theorem proving projects
-- `mkdocs` - Documentation sites with MkDocs
-- `python` - Python projects with modern tooling
-- `python-rest-api` - REST API projects
-- `python-bridge-pattern` - Bridge pattern implementations
-- `rust` - Rust projects with Cargo
-- `database` - Database projects with schema management
+### Verification Pattern
 
-**File Structure Conventions**
-- `semantics.pl/semantics.plt` - Logic and tests pattern
-- `:- self_entity(EntityName).` - Self-entity declarations  
-- Single-arity loading API: `load_entity(semantic(folder/file(...)))`
-- Explicit entity declarations, no magic binding
-- Git-like distributed knowledge patterns
+```prolog
+% Verify composite by composing primitives
+verify(component(Entity, has(git(repository)), git(repository(Spec)))) :-
+    please_verify(component(Entity, git_repository_remote_url, URL)),
+    please_verify(component(Entity, git_repository_branch, Branch)),
+    % Check OS reality
+    verify_git_accessible(URL, Branch).
 
-**Session-Based Workflows**
-- Each session is a git branch with workspace directory
-- SQLite command logging for transaction history
-- Atomic commit/rollback operations
-- File-based workspaces under `${GRIMOIRE_DATA}/sessions/`
+% Verify primitive property against OS reality
+verify(component(Entity, git_repository_root, Root)) :-
+    % Component existence already proven by please_verify
+    exists_directory(Root) -> true
+    ; throw(verification_error(git, missing_repository(Root))).
+```
 
-**Documentation Structure**
+## Testing Patterns
+
+### File-Based Test Entities
+
+**CRITICAL**: Tests NEVER use `assertz`/`retract` for component facts. All test knowledge lives in `.pl` files:
+
+```prolog
+% src/tests/git_test_entity.pl
+:- self_entity(test_entities(git)).
+
+entity(test_basic_git).
+
+component(test_basic_git, has(git(repository)), git(repository([
+    root('/tmp/test_repo'),
+    branch(main)
+]))).
+```
+
+### Test Pattern
+
+```prolog
+% src/git.plt
+:- begin_tests(git_semantics).
+
+% Test component verification
+test(git_repository_verification, [
+    setup(setup_test_repo),
+    cleanup(cleanup_test_repo)
+]) :-
+    % Use user: prefix in tests
+    user:please_verify(component(test_basic_git, has(git(repository)), _)),
+    user:please_verify(component(test_basic_git, git_repository_root, Root)),
+    assertion(Root = '/tmp/test_repo').
+
+% Test spell invocation
+test(git_commit_spell) :-
+    % Use user:magic_cast in tests
+    user:magic_cast(conjure(git(commit("test message"))), Result),
+    assertion(Result = ok(_)).
+
+:- end_tests(git_semantics).
+```
+
+### Setup/Cleanup Rules
+
+- ✅ Create/delete directories and files
+- ✅ Run `process_create` for git init, sqlite3, etc.
+- ❌ NEVER `assertz(component(...))`
+- ❌ NEVER `retract(entity(...))`
+- ❌ NEVER modify ECS state at runtime in tests
+
+## Python Bridge Pattern
+
+For domains integrating with Python (golems, protocol_clients):
+
+**Structure:**
+```
+domain/
+├── semantics.pl        # Pure Prolog (NO py_call)
+├── python_bridge.pl    # ALL py_call + decoding
+├── client.py          # Python implementation
+└── semantics.plt      # Tests
+```
+
+**Critical**: Python objects NEVER appear in `semantics.pl`. The `python_bridge.pl` decodes everything to pure Prolog terms.
+
+```prolog
+% semantics.pl - PURE PROLOG ONLY
+:- use_module('python_bridge.pl', [python_function/2]).
+
+cast(conjure(domain(operation(Args))), Result) :-
+    python_function(Args, DecodedResult),  % Already Prolog!
+    Result = ok(DecodedResult).
+
+% python_bridge.pl - ALL py_call + DECODING
+python_function(Args, DecodedResult) :-
+    py_call(module:function(Args), PyResult),
+    decode_result(PyResult, DecodedResult).  % Convert to Prolog
+```
+
+## System Architecture Benefits
+
+### Mathematical Correctness
+
+The generative-discriminative duality ensures:
+- Everything generated must be verifiable
+- Everything verified must have been generated
+- No inconsistent knowledge can exist
+
+### Composability
+
+`please_verify/1` enables clean composition:
+- Domains verify sub-components recursively
+- Cross-domain dependencies work naturally
+- Verification is complete and composable
+
+### Simplicity
+
+Users only need to:
+- Declare facts in `semantics.pl`
+- Declare `verify/1` predicates in `semantics.plt` that check OS reality
+- System handles expansion and verification automatically
+
+## Documentation
+
 For deeper technical details:
-- `CLAUDE.md` - Core philosophy and development patterns
-- `DESIGN.md` - System architecture and ECS design
-- `src/*/semantics.pl` - Domain-specific knowledge and APIs
-- `src/nix/templates/*/semantics.pl` - Template-specific semantics
+- **`CLAUDE.md`** - Development patterns and conventions
+- **`DESIGN.md`** - System architecture deep dive
+- **`overhaul-plan.md`** - Complete architectural specification
+- **`review_instructions.md`** - Domain review checklist
 
-**Key Features**
-- No runtime asserts - all knowledge persists in files
-- Reproducible environments via Nix flakes
-- Self-documenting system through `docstring/2` predicates
-- Integration of domain tools through common ECS patterns
-- Transaction safety through git-backed session management
+## Key Principles
+
+1. **No runtime asserts** - All knowledge lives in files
+2. **Dual kernel** - Generative and discriminative flows are complementary
+3. **Composable verification** - Use `please_verify` to compose checks
+4. **Spell registration** - Every `cast` has `register_spell/4` above it
+5. **Grounding** - `magic_cast` and `please_verify` ensure grounded terms
+6. **File-based tests** - No `assertz`/`retract` in tests, only filesystem setup
+7. **Python isolation** - Python objects never leak into `semantics.pl`
+
+## License
+
+[Your License Here]

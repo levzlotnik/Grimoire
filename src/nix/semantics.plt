@@ -27,7 +27,7 @@ verify(component(_Entity, nix_flake_ref, FlakeRef)) :-
 
 % Flake targets component verification - verify targets exist in actual flake
 verify(component(Entity, nix_flake_targets, ClaimedTargets)) :-
-    component(Entity, nix_flake_ref, FlakeRef),
+    user:please_verify(component(Entity, nix_flake_ref, FlakeRef)),
     magic_cast(perceive(nix(flake(show(FlakeRef)))), Result),
     (Result = ok(flake_info(apps(Apps), packages(Packages), dev_shells(DevShells))) ->
         (% Collect all actual targets from the flake
@@ -42,10 +42,10 @@ verify(component(Entity, nix_flake_targets, ClaimedTargets)) :-
 
 % Build target declaration verification - verify target is buildable
 verify(component(Entity, has(nix(build_target)), nix(build_target(Target)))) :-
-    component(Entity, nix_build_target_path, Target),
+    user:please_verify(component(Entity, nix_build_target_path, Target)),
     % Actually attempt to evaluate the build (nix build --dry-run could work too)
     % For now, verify the target exists in the flake
-    component(Entity, nix_flake_ref, FlakeRef),
+    user:please_verify(component(Entity, nix_flake_ref, FlakeRef)),
     magic_cast(perceive(nix(flake(show(FlakeRef)))), Result),
     (Result = ok(flake_info(apps(Apps), packages(Packages), dev_shells(_DevShells))) ->
         (append(Apps, Packages, AllBuildables),
@@ -69,7 +69,7 @@ verify(component(Entity, has(nix(build_target)), nix(build_target(Target)))) :-
 
 % Build target path verification - verify target exists in flake
 verify(component(Entity, nix_build_target_path, Target)) :-
-    component(Entity, nix_flake_ref, FlakeRef),
+    user:please_verify(component(Entity, nix_flake_ref, FlakeRef)),
     magic_cast(perceive(nix(flake(show(FlakeRef)))), Result),
     (Result = ok(flake_info(apps(Apps), packages(Packages), dev_shells(_))) ->
         (append(Apps, Packages, AllTargets),
@@ -94,11 +94,11 @@ verify(component(Entity, nix_build_target_path, Target)) :-
 
 % Build target buildable flag verification
 verify(component(Entity, nix_build_target_buildable, true)) :-
-    please_verify(component(Entity, nix_build_target_path, _Target)).
+    user:please_verify(component(Entity, nix_build_target_path, _Target)).
 
 % Dev environment declaration verification - verify devShell exists
 verify(component(Entity, has(nix(dev_env)), nix(dev_env(shell(Shell))))) :-
-    component(Entity, nix_flake_ref, FlakeRef),
+    user:please_verify(component(Entity, nix_flake_ref, FlakeRef)),
     magic_cast(perceive(nix(flake(show(FlakeRef)))), Result),
     (Result = ok(flake_info(apps(_Apps), packages(_Packages), dev_shells(DevShells))) ->
         (% Extract just the shell names
@@ -120,7 +120,7 @@ verify(component(Entity, has(nix(dev_env)), nix(dev_env(shell(Shell))))) :-
 
 % Dev env shell verification - verify shell exists in flake
 verify(component(Entity, nix_dev_env_shell, Shell)) :-
-    component(Entity, nix_flake_ref, FlakeRef),
+    user:please_verify(component(Entity, nix_flake_ref, FlakeRef)),
     magic_cast(perceive(nix(flake(show(FlakeRef)))), Result),
     (Result = ok(flake_info(apps(_Apps), packages(_Packages), dev_shells(DevShells))) ->
         (% Extract just the shell names from devShell(..., 'devShells.system.name')
@@ -142,7 +142,7 @@ verify(component(Entity, nix_dev_env_shell, Shell)) :-
 
 % Dev env available flag verification
 verify(component(Entity, nix_dev_env_available, true)) :-
-    please_verify(component(Entity, nix_dev_env_shell, _Shell)).
+    user:please_verify(component(Entity, nix_dev_env_shell, _Shell)).
 
 % === PLUNIT TESTS ===
 

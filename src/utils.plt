@@ -12,28 +12,28 @@
 % File processor verification
 verify(component(Entity, has(utils(file_processor)), utils(file_processor(type(Type), filters(Filters))))) :-
     % Already exists via please_verify, now verify semantics
-    please_verify(component(Entity, utils_processor_type, Type)),
+    user:please_verify(component(Entity, utils_processor_type, Type)),
     verify_file_processor_config(Type, Filters).
 
 % Tree builder verification
 verify(component(Entity, has(utils(tree_builder)), utils(tree_builder(root(Root), relationship(Rel), options(Options))))) :-
     % Already exists via please_verify, now verify semantics
-    please_verify(component(Entity, utils_tree_root, Root)),
-    please_verify(component(Entity, utils_tree_relationship, Rel)),
+    user:please_verify(component(Entity, utils_tree_root, Root)),
+    user:please_verify(component(Entity, utils_tree_relationship, Rel)),
     verify_tree_builder_config(Root, Rel, Options).
 
 % Validator verification
 verify(component(Entity, has(utils(validator)), utils(validator(rules(Rules), on_error(ErrorMode))))) :-
     % Already exists via please_verify, now verify semantics
-    please_verify(component(Entity, utils_validation_rules, Rules)),
-    please_verify(component(Entity, utils_error_handling, ErrorMode)),
+    user:please_verify(component(Entity, utils_validation_rules, Rules)),
+    user:please_verify(component(Entity, utils_error_handling, ErrorMode)),
     verify_validator_config(Rules, ErrorMode).
 
 % Collection verification
 verify(component(Entity, has(utils(collection)), utils(collection(type(Type), operations(Operations), predicate(Predicate))))) :-
     % Already exists via please_verify, now verify semantics
-    please_verify(component(Entity, utils_collection_type, Type)),
-    please_verify(component(Entity, utils_collection_operations, Operations)),
+    user:please_verify(component(Entity, utils_collection_type, Type)),
+    user:please_verify(component(Entity, utils_collection_operations, Operations)),
     verify_collection_config(Type, Operations, Predicate).
 
 % === DOMAIN-SPECIFIC VERIFICATION PREDICATES ===

@@ -2,11 +2,11 @@
 
 % Test suite for self_entity introspection mechanism
 % Ensure relevant semantics are loaded for the tests
-:- begin_tests(self_entity).
-
 :- load_entity(semantic(file('@/src/grimoire.pl'))).
 :- load_entity(semantic(file('@/src/project/semantics.pl'))).
 :- load_entity(semantic(file('@/src/db/semantics.pl'))).
+
+:- begin_tests(self_entity).
 % Templates moved to external flake - disabled
 % :- load_entity(semantic(file('@/src/nix/templates/python/semantics.pl'))).
 % :- load_entity(semantic(file('@/src/nix/templates/cpp/semantics.pl'))).
@@ -68,15 +68,15 @@ test(self_components_are_values) :-
 
 % Additional tests for other semantics files
 test(system_has_self_component) :-
-    component(system, self, Self),
+    user:please_verify(component(system, self, Self)),
     Self = semantic(file(_)).
 
 test(project_has_self_component) :-
-    component(project, self, Self),
+    user:please_verify(component(project, self, Self)),
     ( Self = semantic(folder(_)) ; Self = semantic(file(_)) ).
 
 test(db_has_self_component) :-
-    component(db, self, Self),
+    user:please_verify(component(db, self, Self)),
     Self = semantic(folder(_)).
 
 % Templates moved to external flake - disabled

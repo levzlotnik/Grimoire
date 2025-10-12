@@ -28,77 +28,89 @@ class GrimoireCLI:
         self.grimoire = GrimoireClient()
         self.session_id = os.getenv('GRIMOIRE_SESSION_ID')
 
-    def show_usage(self):
-        """Show usage information - mirrors cli.pl format"""
-        print()
-        print('🔮 Grimoire - Knowledge-Based Operating System')
-        print()
+    def create_parser(self) -> argparse.ArgumentParser:
+        """Create argument parser with all subcommands"""
+        parser = argparse.ArgumentParser(
+            prog='grimoire-py',
+            description='🔮 Grimoire - Knowledge-Based Operating System',
+            formatter_class=argparse.RawDescriptionHelpFormatter
+        )
 
-        # Get current context
-        try:
-            # Try to get current entity, default to system
-            context = "system"
-            print(f'Context: {context}\n')
-        except:
-            print('Context: system\n')
+        subparsers = parser.add_subparsers(dest='command', help='Available commands')
 
-        print('Available commands:')
+        # compt command
+        compt_parser = subparsers.add_parser('compt', help='List component types')
+        compt_parser.add_argument('entity', nargs='?', default=None,
+                                 help='Entity to query (default: current context)')
 
-        # Get docstrings from Prolog
-        try:
-            docs = self.grimoire.query_interface_docstrings()
-            commands = ['compt', 'comp', 'doc', 'entities', 'repl', 'status',
-                       'test', 'session', 'conjure', 'perceive', 'load',
-                       'read_file', 'edit_file', 'exec']
+        # comp command
+        comp_parser = subparsers.add_parser('comp', help='List components of specific type')
+        comp_parser.add_argument('entity', help='Entity to query')
+        comp_parser.add_argument('comp_type', help='Component type to list')
 
-            for cmd in commands:
-                doc = docs.get(cmd, "No documentation available")
-                # Truncate long docs
-                if len(doc) > 80:
-                    doc = doc[:77] + "..."
-                print(f'  {cmd:12} - {doc}')
-        except:
-            # Fallback if docstring query fails
-            print('  compt        - List all component types of current entity')
-            print('  comp         - List components of specific type')
-            print('  doc          - Show docstring of current entity')
-            print('  entities     - List all entities in the system')
-            print('  repl         - Start interactive REPL (not implemented in Python CLI)')
-            print('  status       - Show session/transaction status')
-            print('  test         - Run the test suite')
-            print('  session      - Session management commands')
-            print('  conjure      - Execute conjuration spells')
-            print('  perceive     - Execute perception spells')
-            print('  load         - Load entity into current session')
-            print('  read_file    - Read lines from a file')
-            print('  edit_file    - Edit file with operations')
-            print('  exec         - Execute arbitrary Prolog query with variable bindings')
+        # doc command
+        doc_parser = subparsers.add_parser('doc', help='Show entity documentation')
+        doc_parser.add_argument('entity', nargs='?', default=None,
+                               help='Entity to document (default: current context)')
 
-        print()
-        print('Usage patterns:')
-        print('  grimoire-py compt [entity]         # List component types')
-        print('  grimoire-py comp <entity> <type>   # List components of entity')
-        print('  grimoire-py doc [entity]           # Show documentation')
-        print()
-        print('Entity paths:')
-        print('  /                               # System entity')
-        print('  .                               # Current directory entity')
-        print('  path/to/semantic/folder         # Custom semantic entity')
-        print()
-        print('Spell-based commands:')
-        print('  grimoire-py conjure "operation"    # Cast conjuration spells')
-        print('  grimoire-py perceive "query(...)"  # Execute perception queries')
-        print()
-        print('Server commands:')
-        print('  grimoire-py serve [args]           # Start REST API server')
-        print('  grimoire-py mcp [args]             # Start MCP server')
-        print()
+        # entities command
+        subparsers.add_parser('entities', help='List all entities in the system')
 
-    def handle_compt(self, args: List[str]) -> int:
+        # status command
+        subparsers.add_parser('status', help='Show session/transaction status')
+
+        # test command
+        test_parser = subparsers.add_parser('test', help='Run test suite')
+        test_parser.add_argument('test_names', nargs='*',
+                               help='Specific tests to run (default: all)')
+
+        # session command
+        session_parser = subparsers.add_parser('session', help='Session management')
+        session_parser.add_argument('args', nargs='+', help='Session command arguments')
+
+        # conjure command
+        conjure_parser = subparsers.add_parser('conjure', help='Cast conjuration spells')
+        conjure_parser.add_argument('spell', help='Spell to cast (or --list to show available)')
+
+        # perceive command
+        perceive_parser = subparsers.add_parser('perceive', help='Execute perception queries')
+        perceive_parser.add_argument('query', help='Query to execute (or --list to show available)')
+
+        # load command
+        load_parser = subparsers.add_parser('load', help='Load entity into current session')
+        load_parser.add_argument('entity_spec', help='Entity specification to load')
+
+        # serve command
+        serve_parser = subparsers.add_parser('serve', help='Start REST API server')
+        serve_parser.add_argument('args', nargs='*', help='Additional uvicorn arguments')
+
+        # mcp command
+        mcp_parser = subparsers.add_parser('mcp', help='Start MCP server')
+        mcp_parser.add_argument('args', nargs='*', help='Additional MCP server arguments')
+
+        # repl command
+        subparsers.add_parser('repl', help='Start interactive REPL')
+
+        # exec command
+        exec_parser = subparsers.add_parser('exec', help='Execute arbitrary Prolog query')
+        exec_parser.add_argument('query', help='Prolog query to execute')
+
+        # read_file command
+        read_parser = subparsers.add_parser('read_file', help='Read lines from a file')
+        read_parser.add_argument('file_path', help='Path to file')
+        read_parser.add_argument('start', type=int, help='Start line number')
+        read_parser.add_argument('end', type=int, help='End line number')
+
+        # edit_file command
+        edit_parser = subparsers.add_parser('edit_file', help='Edit file with operations')
+        edit_parser.add_argument('args', nargs='+', help='Edit operation arguments')
+
+        return parser
+
+    def handle_compt(self, args: argparse.Namespace) -> int:
         """Handle compt command - list component types"""
         try:
-            entity = args[0] if args else None
-            result = self.grimoire.compt(entity)
+            result = self.grimoire.compt(args.entity)
 
             print(f"{result.entity} component types:")
             for comp_type in result.component_types:
@@ -108,16 +120,10 @@ class GrimoireCLI:
             print(f"Error: {e}", file=sys.stderr)
             return 1
 
-    def handle_comp(self, args: List[str]) -> int:
+    def handle_comp(self, args: argparse.Namespace) -> int:
         """Handle comp command - list components"""
-        if len(args) < 2:
-            print("Error: comp requires entity and type arguments", file=sys.stderr)
-            print("Usage: grimoire-py comp <entity> <type>", file=sys.stderr)
-            return 1
-
         try:
-            entity, comp_type = args[0], args[1]
-            result = self.grimoire.comp(entity, comp_type)
+            result = self.grimoire.comp(args.entity, args.comp_type)
 
             print(f"{result.entity} components of type {result.component_type}:")
             print(f"{'Component':<40} | {'v/e'}")
@@ -132,11 +138,10 @@ class GrimoireCLI:
             print(f"Error: {e}", file=sys.stderr)
             return 1
 
-    def handle_doc(self, args: List[str]) -> int:
+    def handle_doc(self, args: argparse.Namespace) -> int:
         """Handle doc command - show documentation"""
         try:
-            entity = args[0] if args else None
-            result = self.grimoire.doc(entity)
+            result = self.grimoire.doc(args.entity)
 
             print(f"{result.entity}:")
             print(result.docstring)
@@ -145,7 +150,7 @@ class GrimoireCLI:
             print(f"Error: {e}", file=sys.stderr)
             return 1
 
-    def handle_entities(self, args: List[str]) -> int:
+    def handle_entities(self, args: argparse.Namespace) -> int:
         """Handle entities command - list all entities"""
         try:
             result = self.grimoire.entities()
@@ -158,7 +163,7 @@ class GrimoireCLI:
             print(f"Error: {e}", file=sys.stderr)
             return 1
 
-    def handle_status(self, args: List[str]) -> int:
+    def handle_status(self, args: argparse.Namespace) -> int:
         """Handle status command - show session status"""
         try:
             result = self.grimoire.status()
@@ -176,10 +181,10 @@ class GrimoireCLI:
             print(f"Error: {e}", file=sys.stderr)
             return 1
 
-    def handle_test(self, args: List[str]) -> int:
+    def handle_test(self, args: argparse.Namespace) -> int:
         """Handle test command - run tests"""
         try:
-            result = self.grimoire.test(args if args else None)
+            result = self.grimoire.test(args.test_names if args.test_names else None)
             print(result.result)
             # Return 0 for success - GrimoireClient will raise exception on failure
             return 0
@@ -187,30 +192,20 @@ class GrimoireCLI:
             print(f"Error: {e}", file=sys.stderr)
             return 1
 
-    def handle_session(self, args: List[str]) -> int:
+    def handle_session(self, args: argparse.Namespace) -> int:
         """Handle session command - session management"""
-        if not args:
-            print("Error: session command requires arguments", file=sys.stderr)
-            return 1
-
         try:
-            result = self.grimoire.session(args)
+            result = self.grimoire.session(args.args)
             print(result.result)
             return 0
         except GrimoireError as e:
             print(f"Error: {e}", file=sys.stderr)
             return 1
 
-    def handle_conjure(self, args: List[str]) -> int:
+    def handle_conjure(self, args: argparse.Namespace) -> int:
         """Handle conjure command - cast spells"""
-        if not args:
-            print("Error: conjure requires a spell argument", file=sys.stderr)
-            return 1
-
-        spell = args[0]
-
         # Handle --list flag
-        if spell == "--list":
+        if args.spell == "--list":
             try:
                 # Query conjure constructors
                 comp_result = self.grimoire.comp("conjure", "ctor")
@@ -223,23 +218,17 @@ class GrimoireCLI:
                 return 1
 
         try:
-            result = self.grimoire.call_conjure_spell(spell)
+            result = self.grimoire.call_conjure_spell(args.spell)
             print(result.result)
             return 0
         except GrimoireError as e:
             print(f"Error: {e}", file=sys.stderr)
             return 1
 
-    def handle_perceive(self, args: List[str]) -> int:
+    def handle_perceive(self, args: argparse.Namespace) -> int:
         """Handle perceive command - execute queries"""
-        if not args:
-            print("Error: perceive requires a query argument", file=sys.stderr)
-            return 1
-
-        query = args[0]
-
         # Handle --list flag
-        if query == "--list":
+        if args.query == "--list":
             try:
                 # Query perceive constructors
                 comp_result = self.grimoire.comp("perceive", "ctor")
@@ -252,7 +241,7 @@ class GrimoireCLI:
                 return 1
 
         try:
-            result = self.grimoire.call_perceive_query(query)
+            result = self.grimoire.call_perceive_query(args.query)
             # Format output similar to Prolog CLI
             if result.solutions:
                 for solution in result.solutions:
@@ -265,21 +254,17 @@ class GrimoireCLI:
             print(f"Error: {e}", file=sys.stderr)
             return 1
 
-    def handle_load(self, args: List[str]) -> int:
+    def handle_load(self, args: argparse.Namespace) -> int:
         """Handle load command - load entity"""
-        if not args:
-            print("Error: load requires an entity spec argument", file=sys.stderr)
-            return 1
-
         try:
-            result = self.grimoire.load(args[0])
+            result = self.grimoire.load(args.entity_spec)
             print(f"Loaded entity: {result.entity}")
             return 0
         except GrimoireError as e:
             print(f"Error: {e}", file=sys.stderr)
             return 1
 
-    def handle_serve(self, args: List[str]) -> int:
+    def handle_serve(self, args: argparse.Namespace) -> int:
         """Handle serve command - start REST API server"""
         try:
             # Find rest_api.py
@@ -289,14 +274,14 @@ class GrimoireCLI:
             print(f"Starting REST API server from {rest_api_path}...")
 
             # Run uvicorn with rest_api
-            cmd = ['uvicorn', 'rest_api:app'] + args
+            cmd = ['uvicorn', 'rest_api:app'] + args.args
             result = subprocess.run(cmd, cwd=api_dir)
             return result.returncode
         except Exception as e:
             print(f"Error starting server: {e}", file=sys.stderr)
             return 1
 
-    def handle_mcp(self, args: List[str]) -> int:
+    def handle_mcp(self, args: argparse.Namespace) -> int:
         """Handle mcp command - start MCP server"""
         try:
             # Find mcp_server.py
@@ -305,30 +290,24 @@ class GrimoireCLI:
 
             print(f"Starting MCP server from {mcp_server_path}...")
 
-            # Run mcp server
-            cmd = ['python', mcp_server_path] + args
+            # Run mcp server using the same Python interpreter as this script
+            cmd = [sys.executable, mcp_server_path] + args.args
             result = subprocess.run(cmd, cwd=api_dir)
             return result.returncode
         except Exception as e:
             print(f"Error starting MCP server: {e}", file=sys.stderr)
             return 1
 
-    def handle_repl(self, args: List[str]) -> int:
+    def handle_repl(self, args: argparse.Namespace) -> int:
         """Handle repl command - start interactive REPL"""
         print("Error: REPL command not yet implemented in Python CLI", file=sys.stderr)
         print("Please use the Prolog CLI: ./grimoire repl", file=sys.stderr)
         return 1
 
-    def handle_exec(self, args: List[str]) -> int:
+    def handle_exec(self, args: argparse.Namespace) -> int:
         """Handle exec command - execute arbitrary Prolog query"""
-        if not args:
-            print("Error: exec requires a query argument", file=sys.stderr)
-            return 1
-
-        query_str = args[0]
-
         try:
-            result = self.grimoire.exec(query_str)
+            result = self.grimoire.exec(args.query)
             # Format output similar to Prolog CLI - emit variable bindings
             if result.solutions:
                 for solution in result.solutions:
@@ -347,18 +326,10 @@ class GrimoireCLI:
             print(f"Error: {e}", file=sys.stderr)
             return 1
 
-    def handle_read_file(self, args: List[str]) -> int:
+    def handle_read_file(self, args: argparse.Namespace) -> int:
         """Handle read_file command - read lines from a file"""
-        if len(args) < 3:
-            print("Error: read_file requires file_path, start, and end arguments", file=sys.stderr)
-            print("Usage: grimoire-py read_file <file_path> <start> <end>", file=sys.stderr)
-            return 1
-
         try:
-            file_path = args[0]
-            start = int(args[1])
-            end = int(args[2])
-            result = self.grimoire.read_file(file_path, start, end)
+            result = self.grimoire.read_file(args.file_path, args.start, args.end)
 
             for line in result.lines:
                 print(f"{line.line_number}\t{line.content}")
@@ -366,24 +337,24 @@ class GrimoireCLI:
         except GrimoireError as e:
             print(f"Error: {e}", file=sys.stderr)
             return 1
-        except ValueError as e:
-            print(f"Error: start and end must be integers: {e}", file=sys.stderr)
-            return 1
 
-    def handle_edit_file(self, args: List[str]) -> int:
+    def handle_edit_file(self, args: argparse.Namespace) -> int:
         """Handle edit_file command - edit file with operations"""
         print("Error: edit_file command not yet fully implemented in Python CLI", file=sys.stderr)
         print("Please use the Prolog CLI or the REST API", file=sys.stderr)
         return 1
 
-    def run(self, args: List[str]) -> int:
+    def run(self, argv: Optional[List[str]] = None) -> int:
         """Main entry point - dispatch to command handlers"""
-        if not args:
-            self.show_usage()
-            return 1
+        parser = self.create_parser()
 
-        command = args[0]
-        cmd_args = args[1:]
+        # Parse arguments
+        args = parser.parse_args(argv)
+
+        # If no command provided, show help
+        if not args.command:
+            parser.print_help()
+            return 1
 
         # Dispatch to command handlers
         handlers = {
@@ -405,19 +376,19 @@ class GrimoireCLI:
             'edit_file': self.handle_edit_file,
         }
 
-        handler = handlers.get(command)
+        handler = handlers.get(args.command)
         if handler:
-            return handler(cmd_args)
+            return handler(args)
         else:
-            print(f"Unknown command: {command}", file=sys.stderr)
-            self.show_usage()
+            print(f"Unknown command: {args.command}", file=sys.stderr)
+            parser.print_help()
             return 1
 
 
 def main():
     """Main entry point for grimoire-py CLI"""
     cli = GrimoireCLI()
-    sys.exit(cli.run(sys.argv[1:]))
+    sys.exit(cli.run())
 
 
 if __name__ == "__main__":

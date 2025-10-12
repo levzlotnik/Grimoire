@@ -18,7 +18,7 @@ ensure_python_http_client :-
     ->  true
     ;   grimoire_resolve_path('./', HttpPath),
         py_add_lib_dir(HttpPath, first),
-        py_import(client, [as(http_client)]),
+        py_import(http_client, [as(http_client)]),
         assertz(http_client_imported)
     ).
 

@@ -18,11 +18,11 @@ test(test_planner_entity_exists) :-
 % === COMPONENT TESTS ===
 
 test(test_planner_delegation_relationships) :-
-    component(golem(test_planner), can_delegate_to, golem(code_assistant)),
-    component(golem(test_planner), can_delegate_to, golem(semantics_verifier)).
+    user:please_verify(component(golem(test_planner), can_delegate_to, golem(code_assistant))),
+    user:please_verify(component(golem(test_planner), can_delegate_to, golem(semantics_verifier))).
 
 test(test_planner_has_available_tools) :-
-    component(golem(test_planner), available_tools, _Tools).
+    user:please_verify(component(golem(test_planner), available_tools, _Tools)).
 
 % === END-TO-END TESTS ===
 

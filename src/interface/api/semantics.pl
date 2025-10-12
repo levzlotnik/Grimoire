@@ -12,29 +12,47 @@ component(interface_api, build_system, nix).
 component(interface_api, language, python).
 component(interface_api, framework, fastapi).
 
-% Make this entity available as a command
-component(conjure, ctor, interface_api).
-
-% Nix-provided subcommands (from flake apps)
-component(interface_api, subcommand, run).
-component(interface_api, subcommand, test).
-component(interface_api, subcommand, develop).
-
-% Docstrings for Nix-based subcommands
-docstring(interface_api(run), "Run the FastAPI server using 'nix run .#run'").
-docstring(interface_api(test), "Run API tests using 'nix run .#test'").
-docstring(interface_api(develop), "Enter development shell using 'nix develop'").
+% Infer subcommands from spell constructors
+component(interface_api, subcommand, SubCmd) :- component(conjure, ctor, interface_api(SubCmd)).
 
 % Make subcommands available as ctors too
 component(interface_api, ctor, C) :- component(interface_api, subcommand, C).
 
-% Command implementations using Nix
+% Command implementations using Nix with register_spell/4
+
+register_spell(
+    conjure(interface_api(run)),
+    input(interface_api(run)),
+    output(either(
+        ok(result(stdout('StdOut'), stderr('StdErr'))),
+        error(nix_error('Reason'))
+    )),
+    docstring("Run the FastAPI server using 'nix run .#run'")
+).
 cast(conjure(interface_api(run)), RetVal) :-
     cast(conjure(nix(run(['.#run']))), RetVal).
 
+register_spell(
+    conjure(interface_api(test)),
+    input(interface_api(test)),
+    output(either(
+        ok(result(stdout('StdOut'), stderr('StdErr'))),
+        error(nix_error('Reason'))
+    )),
+    docstring("Run API tests using 'nix run .#test'")
+).
 cast(conjure(interface_api(test)), RetVal) :-
     cast(conjure(nix(run(['.#test']))), RetVal).
 
+register_spell(
+    conjure(interface_api(develop)),
+    input(interface_api(develop)),
+    output(either(
+        ok(result(stdout('StdOut'), stderr('StdErr'))),
+        error(nix_error('Reason'))
+    )),
+    docstring("Enter development shell using 'nix develop'")
+).
 cast(conjure(interface_api(develop)), RetVal) :-
     cast(conjure(nix(develop(['.']))), RetVal).
 
@@ -50,7 +68,8 @@ component(interface_api, api_endpoint, endpoint(get, "/doc", "Show documentation
 component(interface_api, api_endpoint, endpoint(get, "/doc/{entity}", "Show entity documentation → interface(doc(Entity))")).
 component(interface_api, api_endpoint, endpoint(get, "/perceive", "Perception query endpoint → interface(perceive(Query))")).
 component(interface_api, api_endpoint, endpoint(post, "/conjure", "Conjuration spell endpoint → interface(conjure(Spell))")).
-component(interface_api, api_endpoint, endpoint(get, "/status", "Session status → interface(status)")).
+component(interface_api, api_endpoint, endpoint(get, "/entities", "List all entities → interface(entities)")).
+component(interface_api, api_endpoint, endpoint(get, "/test", "Run tests → interface(test)")).
 component(interface_api, api_endpoint, endpoint(get, "/health", "Health check endpoint")).
 
 % Endpoint documentation
@@ -60,9 +79,10 @@ docstring(endpoint(get, "/compt/{entity}", _), "Lists component types for a spec
 docstring(endpoint(get, "/comp/{entity}/{comp_type}", _), "Lists components of a specific type for an entity").
 docstring(endpoint(get, "/doc", _), "Shows system documentation").
 docstring(endpoint(get, "/doc/{entity}", _), "Shows documentation for a specific entity").
-docstring(endpoint(get, "/perceive", _), "Executes perception queries with optional session management").
-docstring(endpoint(post, "/conjure", _), "Executes conjuration spells with session tracking").
-docstring(endpoint(get, "/status", _), "Returns session and system status").
+docstring(endpoint(get, "/perceive", _), "Executes perception queries").
+docstring(endpoint(post, "/conjure", _), "Executes conjuration spells").
+docstring(endpoint(get, "/entities", _), "Lists all entities in the system").
+docstring(endpoint(get, "/test", _), "Runs the test suite").
 docstring(endpoint(get, "/health", _), "Returns API health status").
 
 % Project structure expectations

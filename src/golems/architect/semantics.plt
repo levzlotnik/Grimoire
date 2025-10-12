@@ -18,11 +18,11 @@ test(architect_entity_exists) :-
 % === COMPONENT TESTS ===
 
 test(architect_delegation_relationships) :-
-    component(golem(architect), can_delegate_to, golem(code_reviewer)),
-    component(golem(architect), can_delegate_to, golem(documentation)).
+    user:please_verify(component(golem(architect), can_delegate_to, golem(code_reviewer))),
+    user:please_verify(component(golem(architect), can_delegate_to, golem(documentation))).
 
 test(architect_has_available_tools) :-
-    component(golem(architect), available_tools, _Tools).
+    user:please_verify(component(golem(architect), available_tools, _Tools)).
 
 % === END-TO-END TESTS ===
 

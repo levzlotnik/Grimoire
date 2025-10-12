@@ -1,1347 +1,787 @@
 # Grimoire System Design
 
-## Project Overview
+## Executive Summary
 
-Grimoire is a knowledge-based operating system built on Entity-Component-System (ECS) architecture. It treats semantic knowledge as first-class entities stored in distributed Prolog files, integrating domain-specific tools through common patterns while maintaining their natural interfaces. The system currently runs with Prolog backend and Janus Python integration at version 0.1.0.
+Grimoire is a knowledge-based operating system built on Entity-Component-System (ECS) architecture with a mathematically principled **dual kernel**: a generative flow (expansion) and a discriminative flow (verification), unified through composable predicates. The system treats semantic knowledge as first-class entities, stored declaratively in files, with verification against operating system reality.
 
-**Current Functional Status**: Production-ready core with all subsystems operational. The system passes comprehensive test suites covering ECS semantics, spell execution, domain integrations, session management, and multi-frontend interfaces. Git-backed session management provides atomic operations with rollback capabilities.
-
-**Vision and Scope**: Grimoire aims to be a reproducible, declarative development environment where knowledge, tools, and processes are semantically interconnected. Unlike traditional operating systems that manage files and processes, Grimoire manages semantic relationships and knowledge transformations. The system enables developers to work with projects, templates, and tools through a unified semantic layer while maintaining full reproducibility through Nix integration.
+**Current Status**: v0.1.0 - Production-ready core with all subsystems operational. The system passes comprehensive test suites covering ECS semantics, spell execution, domain integrations, and multi-frontend interfaces.
 
 ---
 
-## Core ECS Architecture
+## Part 1: Core Architecture
 
-### Fundamental Predicates
+### The Fundamental Duality
 
-The ECS system rests on three foundational predicates that form the semantic backbone:
+Grimoire operates on a **generative-discriminative duality**, a pattern inspired by machine learning where:
 
-**`entity/1`** - Declares atomic identifiers for things that exist in the system. Entities represent concepts, tools, files, projects, or any meaningful unit within Grimoire's knowledge space.
+- **Generative Flow** (Covariant): Expands high-level facts into rich component graphs
+- **Discriminative Flow** (Contravariant): Verifies components exist and match OS reality
 
-```prolog
-entity(system).
-entity(git).
-entity(nix(flake(template(rust)))).
-entity(database(session_commands)).
+```
+ecs_kernel.pl (Generative Kernel)  ⊣  ecs_kernel.plt (Discriminative Kernel)
+            ↓                                    ↓
+    semantics.pl (Expansion)            ⊣   semantics.plt (Verification)
 ```
 
-**`component/3`** - Expresses typed relationships between entities using the pattern `component(Entity, Type, Value)`. This predicate enables flexible, extensible data modeling where new relationship types can be introduced without schema changes.
+This duality ensures:
+- Everything generated must be verifiable
+- Everything verified must have been generated
+- No inconsistent knowledge can exist in the system
+
+### The ECS Kernel
+
+#### `ecs_kernel.pl` - Generative Kernel
+
+The generative kernel provides the foundational predicates:
 
 ```prolog
-component(system, concept, spell).
-component(git, subcommand, commit).
-component(conjure, ctor, mkproject).
-component(nix(flake(template)), instance, nix(flake(template(rust)))).
+% Core ECS predicates
+:- multifile entity/1.
+:- multifile component/3.
+:- multifile docstring/2.
+
+% Self-entity pattern for automatic entity detection
+:- multifile self_entity/1.
+
+% Component integration for baseline predicates
+component(Entity, docstring, Doc) :-
+    docstring(Entity, Doc).
+
+component(Entity, defined, true) :-
+    entity(Entity).
+
+% Entity registry
+component(entity_registry, entity, Entity) :-
+    entity(Entity).
 ```
 
-**`docstring/2`** - Documents entities and components with human-readable descriptions. Documentation is embedded directly in the semantic layer, ensuring it remains synchronized with implementation.
+**Loading Mechanism:**
 
 ```prolog
-docstring(spell, "The fundamental magic system of Grimoire").
-docstring(conjure, "Conjuration spells that modify system state").
+% Single-arity loading API
+load_entity(semantic(folder(Path))) :- ...
+load_entity(semantic(file(Path))) :- ...
+
+% Self-entity auto-detection
+% Detects semantic source from prolog_load_context/2
+% Creates component(Entity, self, semantic(file/folder(...))) automatically
 ```
 
-### Component Type Patterns
+#### `ecs_kernel.plt` - Discriminative Kernel
 
-Grimoire uses a rich vocabulary of component types to model different kinds of relationships:
-
-**`ctor`** - Constructor types for sum types and extensible enumerations. Used extensively in the spell system to define available operations.
+The discriminative kernel provides composable verification through `please_verify/1`:
 
 ```prolog
-component(conjure, ctor, git(commit)).
-component(perceive, ctor, git(status)).
-component(edit_file, ctor, insert).
+% The composable verification primitive with hooks and grounding
+please_verify(component(A, B, C)) :-
+    component(A, B, C),                    % Component exists (may unify vars)
+    ground(component(A, B, C)),            % NOW ground after unification
+    verify_pre_hooks(component(A, B, C)),
+    verify(component(A, B, C)), !,         % Try domain verification
+    verify_post_hooks(component(A, B, C)).
+
+please_verify(component(A, B, C)) :-
+    component(A, B, C),                    % Base case - existence is enough
+    ground(component(A, B, C)).            % Ground after unification
+
+please_verify(component(A, B, C)) :-
+    \+ component(A, B, C),                 % Component doesn't exist
+    format(string(E), "Component not found: ~w", [component(A, B, C)]),
+    throw(verification_error(missing_component, E)).
 ```
 
-**`subcommand`** - Command hierarchies within domain entities. Provides structured command namespacing.
+**Key Properties:**
 
+1. **Free Existence Proofs**: When `verify/1` is called, `component(A, B, C)` is already proven
+2. **Grounding Requirement**: All terms must be ground (no uninstantiated variables)
+3. **Hook Infrastructure**: Extensible behavior through pre/post hooks
+4. **Composability**: `please_verify` calls can be nested and composed
+
+---
+
+## Part 2: Domain Pattern
+
+Every domain in Grimoire follows an identical pattern, creating consistency across the system.
+
+### Domain Generative Flow (`semantics.pl`)
+
+**Structure:**
 ```prolog
-component(git, subcommand, clone).
-component(session, subcommand, start).
-component(interface, subcommand, entities).
+:- self_entity(domain).
+
+% Entity declarations for domain concepts
+entity(domain(concept1)).
+entity(domain(concept2)).
+
+% Documentation
+docstring(domain, "Domain description").
+
+% Component expansion rules: has(domain(...)) → rich components
+component(Entity, domain_prop1, Value) :-
+    component(Entity, has(domain(fact)), domain(fact(Spec))),
+    member(prop1(Value), Spec).
+
+component(Entity, domain_prop2, Value) :-
+    component(Entity, has(domain(fact)), domain(fact(Spec))),
+    derive_prop2(Spec, Value).
 ```
 
-**`concept`** - High-level conceptual relationships expressing domain knowledge.
+**The `has(domain(...))` Pattern:**
+
+Users declare high-level facts using `has(domain(...))`:
 
 ```prolog
-component(system, concept, transaction).
-component(nix, concept, nix(flake)).
-component(project, concept, application).
+% User declares this
+component(my_project, has(git(repository)), git(repository([
+    remote(origin, 'https://github.com/user/repo'),
+    branch(main),
+    root('/path/to/repo')
+]))).
 ```
 
-**`self`** - Self-referential components indicating entity location and metadata.
+The domain **expands** this into queryable properties:
 
 ```prolog
-component(git, self, semantic(file("git.pl"))).
-component(nix, self, semantic(folder("nix"))).
+% Domain provides these expansions
+component(Entity, git_repository_remote_name, origin) :-
+    component(Entity, has(git(repository)), git(repository(Spec))),
+    member(remote(origin, _), Spec).
+
+component(Entity, git_repository_remote_url, URL) :-
+    component(Entity, has(git(repository)), git(repository(Spec))),
+    member(remote(_, URL), Spec).
+
+component(Entity, git_repository_branch, Branch) :-
+    component(Entity, has(git(repository)), git(repository(Spec))),
+    member(branch(Branch), Spec).
+
+component(Entity, git_repository_root, Root) :-
+    component(Entity, has(git(repository)), git(repository(Spec))),
+    member(root(Root), Spec).
 ```
 
-**`source`** - Source code and knowledge provenance tracking.
+### Domain Discriminative Flow (`semantics.plt`)
 
+**Structure:**
 ```prolog
-component(system, source, source(semantic(file("grimoire.pl")))).
-component(rust_template, source, source(semantic(file("semantics.pl")))).
+:- use_module(library(plunit)).
+
+% Load test entities from file-based knowledge
+:- load_entity(semantic(file('@/src/tests/domain_test_entities.pl'))).
+
+% High-level fact verification (composite)
+verify(component(Entity, has(domain(fact)), domain(fact(Spec)))) :-
+    % component(...) already proven to exist via please_verify!
+    % Compose primitive verifications
+    please_verify(component(Entity, domain_prop1, DP1)),
+    please_verify(component(Entity, domain_prop2, DP2)),
+    % Then verify the combination against OS reality
+    verify_os_reality_combination(DP1, DP2).
+
+% Primitive verifications (check OS reality)
+verify(component(Entity, domain_prop1, Value)) :-
+    % Already proven: component(Entity, domain_prop1, Value)
+    % Just check OS reality
+    check_os_reality_prop1(Value) -> true
+    ; throw(verification_error(domain, failed_prop1(Value))).
+
+% PLUnit tests
+:- begin_tests(domain_semantics).
+
+test(domain_component_verification) :-
+    % Use user: prefix in tests
+    user:please_verify(component(domain_entity, has(domain(fact)), _)),
+    user:please_verify(component(domain_entity, domain_prop1, _)).
+
+test(domain_spell) :-
+    user:magic_cast(conjure(domain(operation(args))), Result),
+    assertion(Result = ok(_)).
+
+:- end_tests(domain_semantics).
 ```
 
-**`subsystem`** - Major architectural components of Grimoire.
+**Verification Layers:**
+
+1. **Composite Verification**: Verifies `has(domain(...))` by composing primitive verifications
+2. **Primitive Verification**: Each expanded property verified against OS reality
+3. **PLUnit Tests**: Comprehensive test coverage using `user:please_verify` and `user:magic_cast`
+
+---
+
+## Part 3: The Spell System
+
+### Spell Categories
+
+Grimoire provides two spell categories inspired by fantasy magic systems:
+
+- **`conjure`** - State-changing operations (mutations)
+- **`perceive`** - Read-only operations (queries)
+
+### Spell Declaration and Invocation
+
+#### **`cast/2`** - Spell Implementation (HEAD)
 
 ```prolog
-component(system, subsystem, git).
-component(system, subsystem, nix).
-component(system, subsystem, session).
+% Declaring a spell implementation
+cast(conjure(git(commit(Message))), Result) :-
+    % Implementation logic
+    ...
 ```
 
-### Entity and Loading Patterns
-
-**`:- self_entity(EntityName).`** - Declares the primary entity that a semantic file represents. This pattern enables automatic entity discovery and loading.
+#### **`magic_cast/2`** - Spell Invocation (BODY)
 
 ```prolog
-:- self_entity(git).
-:- self_entity(nix).
-:- self_entity(rust_template).
+% Invoking a spell (correct)
+do_task(Result) :-
+    magic_cast(conjure(git(commit("message"))), Result).
+
+% Invoking a spell (WRONG - bypasses hooks)
+do_task(Result) :-
+    cast(conjure(git(commit("message"))), Result).  % ❌ WRONG!
 ```
 
-**`:- load_entity(semantic(Source)).`** - Single-arity loading API that resolves and loads semantic knowledge from files or folders. The `@/` prefix resolves to `GRIMOIRE_ROOT`.
+**Why `magic_cast`?**
 
 ```prolog
-:- load_entity(semantic(file("@/src/git.pl"))).
-:- load_entity(semantic(folder("@/src/nix"))).
-:- load_entity(semantic(folder("@/src/project"))).
+magic_cast(Term, Result, CastPreOuts, CastPostOuts) :-
+    ground(Term),  % Ensures all variables instantiated
+    cast_pre_hooks(Term, CastPreOuts),
+    catch(
+        cast(Term, Result),
+        E,
+        Result = error(cast_failed(E))
+    ),
+    cast_post_hooks(Term, CastPostOuts).
 ```
 
-### ECS Relationship Modeling
+**Benefits:**
+- **Grounding Check**: Ensures no uninstantiated variables
+- **Pre/Post Hooks**: Session logging, monitoring, validation
+- **Error Handling**: Standardized error propagation
+- **Atomic Operations**: Integration with transaction system
 
-The ECS system enables complex relationship modeling through component composition:
+### Spell Registration - `register_spell/4`
 
-```prolog
-% Hierarchical relationships
-entity(nix(target)).
-component(nix(target), ctor, package).
-component(nix(target), ctor, app).
-entity(nix(target(package))).
-entity(nix(target(app))).
-
-% Cross-domain relationships  
-component(context(build), requires, config(build)).
-component(context(build), requires, deps(build)).
-component(application, requires, context(C)) :- component(context, ctor, C).
-
-% Dynamic discovery relationships
-component(database(Db), table, table(TableName)) :-
-    registered_db_table(database(Db), table(TableName)).
-```
-
-### Semantics and Testing System
-
-Each domain follows the `.pl/.plt` pattern where `semantics.pl` contains the logic and `semantics.plt` contains comprehensive tests. This ensures semantic knowledge remains verifiable and correct.
+**Every spell MUST be registered immediately above its implementation:**
 
 ```prolog
-% In semantics.pl
-component(git, subcommand, commit).
-cast(conjure(git(commit(Message))), RetVal) :-
+% Registration with format specification and docstring
+register_spell(
+    conjure(git(commit)),
+    input(git(commit(message('Message')))),
+    output(either(
+        ok(committed(hash('Hash'))),
+        error(commit_failed('Reason'))
+    )),
+    docstring("Create a git commit with the given message")
+).
+
+% Implementation immediately follows
+cast(conjure(git(commit(Message))), Result) :-
     phrase(git_args(commit(Message)), Args),
-    cast(conjure(executable_program(git, Args)), RetVal).
+    magic_cast(conjure(executable_program(git, Args)), Result).
+```
 
-% In semantics.plt  
-test(git_commit_entity_exists) :-
-    entity(git(commit)).
-test(git_commit_conjure_ctor_exists) :-
-    component(conjure, ctor, git(commit)).
+**Auto-Generated Components:**
+
+```prolog
+% From register_spell/4, system auto-generates:
+component(conjure, ctor, git(commit)).
+component(git(commit), format_input, git(commit(message('Message')))).
+component(git(commit), format_output, either(ok(committed(hash('Hash'))), error(commit_failed('Reason')))).
+component(git(commit), docstring, "Create a git commit with the given message").
+```
+
+**Benefits:**
+- Self-documenting spell system
+- Type safety through format specifications
+- Introspection capabilities for tooling
+- Automatic constructor registration
+
+---
+
+## Part 4: Composable Verification
+
+### The `please_verify/1` Primitive
+
+`please_verify/1` is the cornerstone of Grimoire's verification system:
+
+```prolog
+% Three cases for please_verify:
+
+% Case 1: Component exists, is grounded, verify/1 exists and succeeds
+please_verify(component(A, B, C)) :-
+    component(A, B, C),                    % May unify variables
+    ground(component(A, B, C)),            % NOW ground
+    verify_pre_hooks(component(A, B, C)),
+    verify(component(A, B, C)), !,         % Domain verification
+    verify_post_hooks(component(A, B, C)).
+
+% Case 2: Component exists, is grounded, no verify/1 needed
+please_verify(component(A, B, C)) :-
+    component(A, B, C),
+    ground(component(A, B, C)).
+
+% Case 3: Component doesn't exist - error
+please_verify(component(A, B, C)) :-
+    \+ component(A, B, C),
+    throw(verification_error(missing_component, component(A, B, C))).
+```
+
+### Verification Composition Pattern
+
+**Example - Git Domain:**
+
+```prolog
+% Composite verification using please_verify
+verify(component(Entity, has(git(repository)), git(repository(Spec)))) :-
+    % Component existence already proven by please_verify
+    % Verify all expanded primitive components
+    please_verify(component(Entity, git_repository_remote_url, URL)),
+    please_verify(component(Entity, git_repository_branch, Branch)),
+    please_verify(component(Entity, git_repository_root, Root)),
+    % Then check OS reality
+    exists_directory(Root),
+    git_repository_accessible(URL).
+
+% Primitive verification against OS reality
+verify(component(Entity, git_repository_root, Root)) :-
+    % Component existence proven - just check OS
+    exists_directory(Root) -> true
+    ; throw(verification_error(git, missing_repository(Root))).
+
+verify(component(Entity, git_repository_remote_url, URL)) :-
+    % Validate URL format against OS reality
+    atom_string(URL, URLStr),
+    valid_git_url(URLStr) -> true
+    ; throw(verification_error(git, invalid_url(URL))).
+```
+
+**Pattern:**
+1. Composite `verify/1` uses `please_verify` to check all sub-components
+2. After all sub-components verified, check their combination
+3. Each primitive component has its own `verify/1` checking OS reality
+
+### Cross-Domain Verification
+
+Domains can compose verifications from other domains:
+
+```prolog
+% Project domain composes git + nix verifications
+verify(component(Entity, has(project(app)), project(app(Spec)))) :-
+    please_verify(component(Entity, has(git(repository)), _)),
+    please_verify(component(Entity, has(nix(flake)), _)),
+    please_verify(component(Entity, project_source_dir, SourceDir)),
+    % Verify combination
+    exists_directory(SourceDir),
+    directory_has_source_files(SourceDir).
 ```
 
 ---
 
-## Spell System Implementation
+## Part 5: Testing Architecture
 
-The spell system provides a fantasy-themed interface that separates query operations (perception) from mutation operations (conjuration), ensuring clear distinction between safe and potentially dangerous operations.
+### File-Based Test Entities
 
-### Conjure/Perceive Architecture
+**CRITICAL PRINCIPLE: NO `assertz`/`retract` in tests.**
 
-**Conjure Spells** - Mutable operations that modify system state. All conjure operations must be executed through the `cast/2` predicate for safety and transaction support.
-
-```prolog
-% Must use cast/2 wrapper
-cast(conjure(git(commit("Initial commit"))), Result).
-cast(conjure(mkproject("/projects", "myapp", [template(rust)])), Result).
-cast(conjure(session(start("experimental"))), Result).
-```
-
-**Perceive Spells** - Query operations that read system state without modification. Called directly with variable unification for results.
+All test knowledge lives in declarative `.pl` files:
 
 ```prolog
-% Direct calls with unification
-perceive(git(status(Branch, Status, Files))).
-perceive(entities(EntityList)).
-perceive(nix(flake(show(FlakeRef, Apps, Packages, DevShells)))).
+% src/tests/git_test_entity.pl
+:- self_entity(test_entities(git)).
+
+entity(test_basic_git).
+entity(test_advanced_git).
+
+% Static test components - declared as facts
+component(test_basic_git, has(git(repository)), git(repository([
+    root('/tmp/test_repo'),
+    branch(main),
+    remote(origin, 'https://test.example.com/repo.git')
+]))).
+
+component(test_basic_git, test_path, '/tmp/test_repo').
+
+% Advanced test entity
+component(test_advanced_git, has(git(repository)), git(repository([
+    root('/tmp/advanced_repo'),
+    branch(development),
+    clean(false)
+]))).
+
+docstring(test_entities(git), "Test entities for git domain").
 ```
 
-### Cast/2 Safety Mechanism
-
-The `cast/2` predicate provides essential safety features for mutable operations:
-
-**Transaction Support** - Enables atomic operations and rollback capabilities through session integration.
-
-**Error Handling** - Standardized error reporting with structured `ok(Result)` and `error(Details)` returns.
-
-**Command Logging** - Automatic logging to session databases for audit trails and replay capabilities.
-
-**Process Isolation** - Safe execution of external programs with proper output capture and error handling.
+### Test Implementation Pattern
 
 ```prolog
-cast(conjure(executable_program(Program, Args)), RetVal) :-
-    setup_call_cleanup(
-        process_create(path(Program), Args, [
-            stdout(pipe(Out)), 
-            stderr(pipe(Err)), 
-            process(PID)
-        ]),
-        (read_string(Out, _, Stdout),
-         read_string(Err, _, Stderr),
-         process_wait(PID, exit(ExitCode))),
-        (close(Out), close(Err))
-    ),
-    (ExitCode = 0 ->
-        RetVal = ok(result(Stdout, Stderr))
-    ;
-        RetVal = error(process_error(Program, exit(ExitCode), Stdout, Stderr))
-    ).
-```
-
-### Direct Predicate Calls for Queries
-
-Perceive operations bypass the cast mechanism for efficiency, allowing direct predicate calls with Prolog's native unification:
-
-```prolog
-% Core perceive implementations
-perceive(entities(Entities)) :-
-    findall(Entity, entity(Entity), Entities).
-
-perceive(git(status(Branch, WorkingStatus, Files))) :-
-    cast(conjure(git(branch(['--show-current']))), BranchResult),
-    (BranchResult = ok(result(BranchOutput, _)) ->
-        string_concat(BranchStr, "\n", BranchOutput),
-        atom_string(Branch, BranchStr)
-    ;
-        Branch = unknown
-    ),
-    cast(conjure(git(status(['--porcelain']))), StatusResult),
-    (StatusResult = ok(result(StatusOutput, _)) ->
-        (StatusOutput = "" ->
-            WorkingStatus = clean, Files = []
-        ;
-            WorkingStatus = dirty,
-            parse_git_status_output(StatusOutput, Files)
-        )
-    ;
-        WorkingStatus = unknown, Files = []
-    ).
-```
-
-### Ritual System for Atomic Operations
-
-The `ritual/1` constructor enables atomic execution of multiple conjure spells, ensuring all-or-nothing semantics:
-
-```prolog
-cast(ritual([
-    conjure(mkdir('/project/new-feature')),
-    conjure(mkfile('/project/new-feature/main.rs')),
-    conjure(git(add(['/project/new-feature']))),
-    conjure(git(commit("Add new feature scaffolding")))
-]), Result).
-```
-
----
-
-## Git Domain
-
-The Git domain provides version control operations with session integration and structured data parsing. It models Git as both a tool for code versioning and a foundation for Grimoire's transactional session system.
-
-### Version Control Operations
-
-Git operations are split between conjure (state-changing) and perceive (query) operations:
-
-**Conjure Operations:**
-- `git(clone(Url, Path))` - Clone remote repositories
-- `git(init(Path))` - Initialize new repositories  
-- `git(add(Paths))` - Stage files for commit
-- `git(commit(Message))` - Record changes
-- `git(push(Remote, Branch))` - Push to remote
-- `git(pull(Remote, Branch))` - Pull from remote
-- `git(checkout(Branch))` - Switch branches
-- `git(reset(Args))` - Reset repository state
-- `git(merge(Args))` - Merge branches
-
-**Perceive Operations:**
-- `git(status(Branch, WorkingStatus, Files))` - Structured repository status
-- `git(diff)` - Show changes
-- `git(log)` - Commit history
-- `git(branch)` - Branch listing
-- `git(rev_parse(Args))` - Parse revision information
-
-### Command Modeling and Execution
-
-Git commands follow a consistent pattern using DCG (Definite Clause Grammar) for argument construction:
-
-```prolog
-% Command argument generation
-git_args(clone(Url, Path)) --> ["clone", Url, Path].
-git_args(commit(Message)) --> ["commit", "-m", Message].
-git_args(add(all_tracked)) --> ["add", "-u"].
-git_args(add(Paths)) --> ["add"|Paths].
-
-% Execution through conjure system
-cast(conjure(git(Term)), RetVal) :-
-    functor(Term, SubCmdType, _),
-    component(git, subcommand, SubCmdType),
-    phrase(git_args(Term), Args),
-    cast(conjure(executable_program(git, Args)), RetVal).
-```
-
-### Session Integration and Transaction Support
-
-Git provides the transactional foundation for Grimoire's session system. Each session corresponds to a Git branch, enabling atomic commits and rollbacks:
-
-```prolog
-% Session-based git workflow
-perceive(git(status(Branch, WorkingStatus, Files))) :-
-    % Current branch detection for session correlation
-    cast(conjure(git(branch(['--show-current']))), BranchResult),
-    % Parse porcelain output for structured file status
-    cast(conjure(git(status(['--porcelain']))), StatusResult),
-    parse_git_status_output(StatusOutput, Files).
-
-% Structured file status parsing
-parse_status_line(Line, FileStatus) :-
-    atom_codes(Line, [S1, S2, 32 | FileCodes]),
-    atom_codes(File, FileCodes),
-    status_code_to_term([S1, S2], File, FileStatus).
-
-status_code_to_term([32, 77], File, modified(File)).     % " M"
-status_code_to_term([77, 32], File, staged(File)).       % "M "  
-status_code_to_term([63, 63], File, created(File)).      % "??"
-status_code_to_term([65, 32], File, created(File)).      % "A "
-status_code_to_term([68, 32], File, deleted(File)).      % "D "
-```
-
----
-
-## Nix Domain
-
-The Nix domain manages package dependencies, build environments, and the template system through flake-based reproducible builds. It provides the foundation for Grimoire's reproducible development environments.
-
-### Package Management and Flakes
-
-Nix operations center around flakes for reproducible package management:
-
-**Core Concepts:**
-- `nix(store)` - Immutable package store management
-- `nix(flake)` - Reproducible project specifications
-- `nix(target)` - Buildable outputs (packages, apps, devShells)
-- `nix(derivation)` - Build specifications
-
-**Conjure Operations:**
-- `nix(build(Installable))` - Build packages or flakes
-- `nix(develop(Options))` - Enter development environments
-- `nix(run(Installable, Args))` - Execute applications
-- `nix(store(gc))` - Garbage collect unused packages
-- `nix(flake(new(Template, Path)))` - Create projects from templates
-
-**Perceive Operations:**
-- `nix(flake(show(FlakeRef, Apps, Packages, DevShells)))` - Discover flake outputs
-- `nix(search(Query, Results))` - Search package repositories
-- `nix(log(Installable, BuildLog))` - View build logs
-- `nix(why_depends(Pkg1, Pkg2, Trace))` - Dependency analysis
-
-### Build System Integration
-
-Nix commands integrate with Grimoire's execution system while preserving Nix's reproducibility guarantees:
-
-```prolog
-% Build operations with artifact tracking
-cast(conjure(nix(build(Installable))), RetVal) :-
-    Args = ["nix", "build", Installable],
-    cast(conjure(shell(Args)), RetVal),
-    (RetVal = ok(Output) ->
-        assertz(entity(nix(derivation(Output)))),
-        assertz(component(build_result, output_path, Output))
-    ; true).
-
-% Development environments with phase control
-cast(conjure(nix(develop(Options))), RetVal) :-
-    findall(OptionArgs, (
-        member(Option, Options),
-        (Option = shell_cmd(Args) -> OptionArgs = ["--command" | Args]
-        ;Option = phase(Phase) -> OptionArgs = ["--phase", Phase]
-        )
-    ), AllOptionArgs),
-    flatten([["nix", "develop"] | AllOptionArgs], Args),
-    cast(conjure(shell(Args, interactive)), RetVal).
-```
-
-### Template Framework Architecture
-
-The template system provides project scaffolding with automatic discovery and instantiation:
-
-**Template Discovery:**
-```prolog
-% Automatic template discovery from flake outputs
-nix_flake_templates(Pairs) :-
-    nix_templates_path(TemplatePath),
-    format(string(PathExpr), "path:~w", [TemplatePath]),
-    process_create(path(nix), ["flake","show","--json",PathExpr], [stdout(pipe(Out))]),
-    json_read_dict(Out, JsonDict),
-    close(Out),
-    dict_pairs(JsonDict.templates, _Tag, Pairs).
-
-% Dynamic template entities
-entity(nix(flake(template(Id)))) :-
-    nix_flake_templates(Pairs),
-    member(Id-_, Pairs).
-
-% Component instance discovery
-component(nix(flake(template)), instance, nix(flake(template(Id)))) :-
-    nix_flake_templates(Pairs),
-    member(Id-_V, Pairs).
-```
-
-**Available Templates:**
-- `rust` - Rust project with Cargo integration
-- `python` - Python project with Poetry/pip integration  
-- `cpp` - C++ project with CMake build system
-- `haskell` - Haskell project with Cabal/Stack support
-- `lean4` - Lean 4 theorem prover projects
-- `mkdocs` - Documentation sites with MkDocs
-- `python-bridge-pattern` - Python-Prolog integration example
-- `python-rest-api` - REST API service template
-- `database` - Database project with SQLite integration
-
-### Dynamic Target Discovery
-
-Nix flakes expose their outputs dynamically, which Grimoire discovers and models as ECS entities:
-
-```prolog
-% Flake target discovery through nix flake show
-get_nix_flake_targets(FlakeRef, Targets) :-
-    process_create(path(nix), ["flake", "show", "--json", FlakeRef], [stdout(pipe(Out))]),
-    json_read_dict(Out, JsonDict),
-    close(Out),
-    findall(Target, extract_flake_target(JsonDict, FlakeRef, Target), Targets).
-
-% Extract different target types
-extract_flake_target(JsonDict, FlakeRef, Target) :-
-    get_dict(packages, JsonDict, Packages),
-    dict_pairs(Packages, _, SystemPairs),
-    member(System-SystemPackages, SystemPairs),
-    dict_pairs(SystemPackages, _, PackagePairs),
-    member(PackageName-_, PackagePairs),
-    format(atom(AttrPath), 'packages.~w.~w', [System, PackageName]),
-    Target = nix(target(package(FlakeRef, AttrPath))).
-
-% Dynamic entity generation
-entity(nix(target(package(FlakeRef, AttrPath)))) :-
-    entity(nix(flake(_, FlakeRef))),
-    get_nix_flake_targets(FlakeRef, Targets),
-    member(nix(target(package(FlakeRef, AttrPath))), Targets).
-```
-
----
-
-## Session Domain
-
-The Session domain provides workspace management with SQLite command logging and Git-backed transactionality. Sessions enable atomic operations across multiple tools while maintaining complete audit trails.
-
-### Workspaces and Command Logging
-
-Each session creates an isolated workspace with dedicated SQLite database for command logging:
-
-**Session Structure:**
-- `${GRIMOIRE_DATA}/sessions/{SessionId}/` - Workspace directory
-- `commands.db` - SQLite database with command log
-- `commands.schema.sql` - Database schema definition  
-- `state.pl` - Persistent Prolog state file
-
-**Command Logging Schema:**
-```sql
-CREATE TABLE commands (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    timestamp TEXT NOT NULL,
-    command_type TEXT NOT NULL,
-    command_term TEXT NOT NULL,
-    result TEXT,
-    source TEXT DEFAULT 'user'
-);
-```
-
-### SQLite Integration and State Persistence
-
-Session commands are automatically logged to SQLite for replay and audit capabilities:
-
-```prolog
-% Automatic command logging for session operations
-log_command_to_session_db(SessionId, CommandType, CommandTerm, Result) :-
-    session_commands_db_path(SessionId, DbPath),
-    (exists_file(DbPath) ->
-        catch(
-            (get_time(TimeStamp),
-             format_time(atom(FormattedTime), '%Y-%m-%d %H:%M:%S', TimeStamp),
-             term_string(CommandTerm, CommandTermStr),
-             escape_sql_string(CommandTermStr, EscapedCommandTerm),
-             term_string(Result, ResultStr),
-             escape_sql_string(ResultStr, EscapedResult),
-             format(atom(InsertSQL),
-                'INSERT INTO commands (timestamp, command_type, command_term, result) VALUES (\'~w\', \'~w\', \'~w\', \'~w\')',
-                [FormattedTime, CommandType, EscapedCommandTerm, EscapedResult]),
-             sqlite3_exec(DbPath, InsertSQL)),
-            Error,
-            format('Warning: Failed to log command: ~w~n', [Error])
-        )
-    ; true).
-```
-
-### Transaction Model and Git Integration
-
-Sessions map to Git branches, providing atomic commit/rollback semantics:
-
-**Session Operations:**
-- `session(start)` - Create new session workspace and Git branch
-- `session(switch(SessionId))` - Change active session context
-- `session(commit(Message))` - Commit accumulated changes to Git
-- `session(rollback)` - Discard changes and reset to branch start
-- `session(delete(SessionId))` - Remove session and workspace completely
-
-**Session State Management:**
-```prolog
-% Dynamic session tracking
-:- dynamic current_session_id/1.
-
-get_current_session_id(SessionId) :-
-    (current_session_id(SessionId) -> true ; SessionId = main).
-
-% Session workspace initialization
-initialize_session_workspace(SessionId) :-
-    session_workspace_path(SessionId, WorkspacePath),
-    (exists_directory(WorkspacePath) -> true ; make_directory_path(WorkspacePath)).
-
-initialize_session_database(SessionId) :-
-    session_commands_db_path(SessionId, DbPath),
-    session_workspace_path(SessionId, WorkspacePath),
-    format(atom(SchemaFile), '~w/commands.schema.sql', [WorkspacePath]),
-    format(atom(SessionDbId), 'session_~w', [SessionId]),
-    cast(conjure(db(create(SessionDbId, DbPath, schema(file(SchemaFile))))), _).
-```
-
-### Think Command for AI Integration
-
-The `think` command provides thought logging for AI agent interactions:
-
-```prolog
-cast(conjure(think(ThoughtString)), RetVal) :-
-    string(ThoughtString),
-    log_command_to_session(think, ThoughtString, thought_recorded),
-    RetVal = ok(thought_recorded(ThoughtString)).
-```
-
----
-
-## Database Domain
-
-The Database domain provides SQLite integration with automatic schema discovery and ECS component mapping. It enables databases to be treated as first-class entities within Grimoire's semantic system.
-
-### SQLite Integration and Schema Tracking
-
-Databases are registered and discovered dynamically through the registration system:
-
-```prolog
-% Dynamic database registration
-:- dynamic registered_db/3.
-
-% Registration pattern: registered_db(database(Id), data(file(DbPath)), schema(file(SchemaPath)))
-registered_db(database(session_commands), 
-              data(file('/home/user/.grimoire/sessions/main/commands.db')),
-              schema(file('/home/user/.grimoire/sessions/main/commands.schema.sql'))).
-
-% Automatic entity generation
-entity(database(Db)) :-
-    registered_db(database(Db), data(file(_)), schema(file(_))).
-```
-
-### ECS Component Mapping for Database Structure
-
-Database tables and columns become queryable ECS components through reverse proxy patterns:
-
-```prolog
-% Table discovery through SQLite introspection
-component(database(Db), table, table(TableName)) :-
-    registered_db_table(database(Db), table(TableName)).
-
-registered_db_table(database(Db), table(TableName)) :-
-    registered_db(database(Db), data(file(DbFile)), schema(file(_))),
-    exists_file(DbFile),
-    get_database_tables(DbFile, TableStrings),
-    member(TableString, TableStrings),
-    atom_string(TableName, TableString).
-
-% Column discovery with type information
-component(database(Db), column, column(TableName, ColumnName, ColumnInfo)) :-
-    registered_db_column(database(Db), column(TableName, ColumnName, ColumnInfo)).
-
-registered_db_column(database(Db), column(TableName, ColumnName, ColumnInfo)) :-
-    registered_db(database(Db), data(file(DbFile)), schema(file(_))),
-    get_table_columns(DbFile, TableName, Columns),
-    member(ColumnInfo, Columns),
-    ColumnInfo = column(ColumnNameString, _, _, _, _),
-    atom_string(ColumnName, ColumnNameString).
-```
-
-### Database Creation and Schema Management
-
-Database creation integrates with the conjure system for safe database operations:
-
-```prolog
-% Database creation from schema file
-cast(conjure(db(create(DbId, DbPath, schema(file(SchemaFile))))), RetVal) :-
-    sqlite3_init_db(DbPath, SchemaFile),
-    assertz(registered_db(database(DbId), data(file(DbPath)), schema(file(SchemaFile)))),
-    RetVal = ok(database_created(DbId, DbPath)).
-
-% Database creation from SQL string
-cast(conjure(db(create(DbId, DbPath, schema(sql(SchemaSQL))))), RetVal) :-
-    file_name_extension(DbBaseName, db, DbPath),
-    format(atom(SchemaFile), '~w.schema.sql', [DbBaseName]),
-    open(SchemaFile, write, Stream),
-    write(Stream, SchemaSQL),
-    close(Stream),
-    sqlite3_init_db(DbPath, SchemaFile),
-    assertz(registered_db(database(DbId), data(file(DbPath)), schema(file(SchemaFile)))),
-    RetVal = ok(database_created(DbId, DbPath)).
-```
-
-### Automatic Structure Exposure Through Templates
-
-The database template demonstrates automatic discovery patterns:
-
-```prolog
-% Example database with automatic artifact discovery
-cast(conjure(example_db(inspect)), RetVal) :-
+% src/git.plt
+:- use_module(library(plunit)).
+:- load_entity(semantic(file('@/src/tests/git_test_entity.pl'))).
+
+:- begin_tests(git_semantics).
+
+% Test component expansion and verification
+test(git_repository_expansion, [
+    setup(setup_test_repo),
+    cleanup(cleanup_test_repo)
+]) :-
+    % Entities already loaded from file - just verify
+    user:please_verify(component(test_basic_git, has(git(repository)), _)),
+    user:please_verify(component(test_basic_git, git_repository_root, Root)),
+    assertion(Root = '/tmp/test_repo'),
+    user:please_verify(component(test_basic_git, git_repository_branch, Branch)),
+    assertion(Branch = main).
+
+% Test spell invocation
+test(git_commit_spell, [
+    setup(setup_test_repo),
+    cleanup(cleanup_test_repo)
+]) :-
+    user:magic_cast(conjure(git(commit("test commit"))), Result),
+    assertion(Result = ok(_)).
+
+% Test error conditions
+test(git_invalid_repository) :-
     catch(
-        (discover_database_artifacts(example_db),
-         findall(Table, component(example_db, table, Table), Tables),
-         findall(table_info(Table, Columns), (
-             member(Table, Tables),
-             TableEntity =.. [example_db, table(Table)],
-             component(TableEntity, columns, Columns)
-         ), TableInfos),
-         RetVal = ok(database_structure(TableInfos))),
-        Error,
-        RetVal = error(inspect_failed(Error))
-    ).
-```
-
----
-
-## Project Domain
-
-The Project domain handles artifact discovery, template instantiation, and build context management. It provides the organizational framework for software development within Grimoire.
-
-### Artifact Discovery and Build Contexts
-
-Projects organize software development through three primary contexts:
-
-**Context Types:**
-- `context(build)` - Compilation and build-time environment
-- `context(runtime)` - Execution environment and dependencies
-- `context(test)` - Testing framework and test-specific dependencies
-
-**Context Requirements:**
-```prolog
-component(context(build), requires, config(build)).
-component(context(build), requires, deps(build)).
-component(context(build), requires, source(code)).
-
-component(context(runtime), requires, config(runtime)).
-component(context(runtime), requires, deps(runtime)).
-component(context(runtime), requires, source(data)).
-
-component(context(test), requires, config(test)).
-component(context(test), requires, deps(test)).
-```
-
-### Template Instantiation Process
-
-The `mkproject` conjure operation provides comprehensive project creation with template support:
-
-```prolog
-cast(conjure(mkproject(FolderPath, ProjectName, Options)), RetVal) :-
-    catch(
-        (directory_file_path(FolderPath, ProjectName, ProjectPath),
-         (exists_directory(FolderPath) -> true ; make_directory_path(FolderPath)),
-         (exists_directory(ProjectPath) ->
-             RetVal = error(project_already_exists(ProjectPath))
-         ;
-             make_directory(ProjectPath),
-             % Apply template if specified
-             (member(template(Template), Options) ->
-                 cast(conjure(nix(flake(new(Template, ProjectPath)))), TemplateResult),
-                 (TemplateResult = ok(_) ->
-                     rename_project_entities(ProjectPath, Template, ProjectName, RenameResult)
-                 ;
-                     RenameResult = TemplateResult
-                 )
-             ;
-                 create_basic_semantics_file(ProjectPath, ProjectName),
-                 RenameResult = ok
-             ),
-             % Initialize git if requested
-             (member(git(false), Options) ->
-                 GitResult = ok
-             ;
-                 cast(conjure(git(init(ProjectPath))), GitResult)
-             ),
-             (GitResult = ok ->
-                 RetVal = ok(project_created(ProjectPath, ProjectName))
-             ;
-                 RetVal = GitResult
-             )
-         )),
-        Error,
-        RetVal = error(conjure_failed(Error))
-    ).
-```
-
-### Build Context Discovery
-
-Projects automatically discover their build artifacts and dependencies:
-
-```prolog
-discover_project_artifacts(Entity, Options) :-
-    discover_core_artifacts(Entity),
-    discover_nix_targets(Entity),
-    (member(fs_patterns(IncludePatterns, ExcludePatterns), Options) ->
-        discover_custom_artifacts(Entity, [IncludePatterns, ExcludePatterns])
-    ;
+        user:please_verify(component(nonexistent, git_repository_root, _)),
+        verification_error(missing_component, _),
         true
     ).
 
-discover_core_artifacts(Entity) :-
-    working_directory(CurrentDir, CurrentDir),
-    discover_flake_artifact(Entity, CurrentDir),
-    discover_git_artifact(Entity, CurrentDir),
-    discover_readme_artifact(Entity, CurrentDir),
-    discover_sources_artifact(Entity, CurrentDir).
+:- end_tests(git_semantics).
 
-discover_nix_targets(Entity) :-
-    working_directory(CurrentDir, CurrentDir),
-    process_create(path(nix), ['flake', 'show', '--json'], [
-        stdout(pipe(Out)),
-        cwd(CurrentDir)
-    ]),
-    read_string(Out, _, JsonString),
-    close(Out),
-    atom_string(JsonAtom, JsonString),
-    atom_json_term(JsonAtom, JsonDict, []),
-    extract_nix_apps(Entity, JsonDict, CurrentDir).
+% Setup creates ONLY filesystem resources matching entity declarations
+setup_test_repo :-
+    TestPath = '/tmp/test_repo',
+    (exists_directory(TestPath) ->
+        delete_directory_and_contents(TestPath)
+    ; true),
+    make_directory(TestPath),
+    process_create(path(git), ['init'], [cwd(TestPath)]),
+    process_create(path(git), ['config', 'user.name', 'Test'], [cwd(TestPath)]),
+    process_create(path(git), ['config', 'user.email', 'test@example.com'], [cwd(TestPath)]).
+
+% Cleanup removes ONLY filesystem resources
+cleanup_test_repo :-
+    TestPath = '/tmp/test_repo',
+    (exists_directory(TestPath) ->
+        delete_directory_and_contents(TestPath)
+    ; true).
 ```
 
-### Multi-Template Project Composition
+### Setup/Cleanup Rules
 
-Projects can compose multiple templates for full-stack development:
+**What Goes in Setup/Cleanup:**
+- ✅ Creating/deleting directories
+- ✅ Creating/deleting files
+- ✅ Running `process_create(path(git), ['init'], ...)`
+- ✅ Running `process_create(path(sqlite3), ...)`
+- ❌ NEVER `assertz(component(...))`
+- ❌ NEVER `retract(entity(...))`
+- ❌ NEVER `assertz(entity(...))`
 
-```prolog
-% Example: Backend + Frontend composition
-cast(conjure(mkproject("/projects", "webapp", [
-    template(python-rest-api),  % Backend API
-    template(rust),             % Frontend WASM
-    git(true),
-    composition(fullstack)
-])), Result).
-```
+**Rationale:**
+- Test entities declared in files are order-independent
+- No state pollution between tests
+- Declarative test data is visible and debuggable
+- Matches production pattern (all knowledge in files)
 
 ---
 
-## Golems Domain
+## Part 6: Hook System
 
-The Golems domain implements an AI agent framework with Python-Prolog bridge integration. It provides autonomous AI agents built on ECS architecture with structured input/output validation and multi-provider LLM support.
+### Hook Infrastructure
 
-### AI Agent Framework Architecture
-
-Golems are defined as ECS entities with role, configuration, and capability components:
-
-**Available Golems:**
-- `golem(code_assistant)` - Code generation and refactoring assistance
-- `golem(project_manager)` - Project organization and planning
-- `golem(test_runner)` - Automated testing and validation
-- `golem(documentation)` - Documentation generation and maintenance
-
-**Golem Components:**
-```prolog
-component(golem(code_assistant), role, "Assists with code generation, refactoring, and debugging").
-component(golem(code_assistant), llm_config, _{provider: anthropic, model: "claude-3-sonnet"}).
-component(golem(code_assistant), input, code_context).
-component(golem(code_assistant), input, user_request).
-component(golem(code_assistant), output, code_changes).
-component(golem(code_assistant), output, explanation).
-```
-
-### Python Bridge Integration and Provider Abstraction
-
-The Python bridge enables seamless integration with AI providers while maintaining Prolog's logical foundation:
+Grimoire provides extensible hook points for cross-cutting concerns:
 
 ```prolog
-% Import prolog-safe predicates from python bridge
-:- use_module('python_bridge.pl', [
-    get_golem_tools/2,
-    execute_golem_task/7,
-    get_golem_python_instance/2,
-    log_thought_to_session/2
+:- dynamic([
+    cast_pre_hook/3,
+    cast_post_hook/3,
+    verify_pre_hook/2,
+    verify_post_hook/2
+], [
+    discontiguous(true),
+    multifile(true)
 ]).
 
-% Execute golem task with full ECS configuration
-cast(conjure(golem_task(golem(Id), Inputs)), RetVal) :-
-    component(golem(Id), llm_config, LLMConfigDict),
-    component(golem(Id), role, Role),
-    findall(I, component(golem(Id), input, I), InputSchema),
-    findall(O, component(golem(Id), output, O), OutputSchema),
-    execute_golem_task(Id, LLMConfigDict, Role, InputSchema, OutputSchema, Inputs, RetVal).
+% Hook collection
+cast_pre_hooks(Term, Outs) :-
+    findall(Out, (is_hook(Hook), cast_pre_hook(Term, Hook, Out)), Outs).
+
+cast_post_hooks(Term, Outs) :-
+    findall(Out, (is_hook(Hook), cast_post_hook(Term, Hook, Out)), Outs).
+
+verify_pre_hooks(Term) :-
+    findall(_, (is_hook(Hook), verify_pre_hook(Term, Hook)), _).
+
+verify_post_hooks(Term) :-
+    findall(_, (is_hook(Hook), verify_post_hook(Term, Hook)), _).
 ```
 
-### Provider Factory and Multi-LLM Support
+### Hook Applications
 
-The system supports multiple LLM providers through a unified interface:
-
-**Supported Providers:**
-- `anthropic` - Claude models (Claude-3 Sonnet, Haiku, Opus)
-- `openai` - GPT models (GPT-4, GPT-3.5-turbo)
-- `ollama` - Local models (Llama 2, Code Llama, Mistral)
-- `groq` - High-speed inference (Llama 2, Mixtral)
-
-**Configuration Examples:**
+**Session Logging:**
 ```prolog
-component(golem(fast_coder), llm_config, _{
-    provider: groq,
-    model: "llama2-70b-4096",
-    temperature: 0.1,
-    max_tokens: 2048
-}).
-
-component(golem(thoughtful_architect), llm_config, _{
-    provider: anthropic,
-    model: "claude-3-opus-20240229",
-    temperature: 0.3,
-    max_tokens: 4096
-}).
+cast_pre_hook(Term, session_logger, logged(SessionId, Term)) :-
+    get_current_session(SessionId),
+    log_spell_to_session(SessionId, Term).
 ```
 
-### Structured Input/Output Validation
-
-Golems enforce structured schemas for reliable AI interactions:
-
+**Performance Monitoring:**
 ```prolog
-% Input validation example
-component(golem(test_runner), input, test_files).
-component(golem(test_runner), input, test_framework).
-component(golem(test_runner), input, coverage_threshold).
+cast_pre_hook(Term, timer, start_time(T)) :-
+    get_time(T).
 
-% Output validation example  
-component(golem(test_runner), output, test_results).
-component(golem(test_runner), output, coverage_report).
-component(golem(test_runner), output, recommendations).
+cast_post_hook(Term, timer, duration(D)) :-
+    get_time(T2),
+    cast_pre_hook(Term, timer, start_time(T1)),
+    D is T2 - T1.
 ```
 
-### Thought Logging and Session Integration
-
-Golems integrate with the session system for complete audit trails:
-
+**Validation:**
 ```prolog
-% Thought logging for debugging and audit
-cast(conjure(thought(Content)), RetVal) :-
-    log_thought_to_session(Content, RetVal).
+cast_pre_hook(conjure(git(commit(Msg))), validator, validated) :-
+    validate_commit_message(Msg).
+```
 
-% Dynamic docstring generation with live configuration
-docstring(golem(Id), DocString) :-
-    component(golem(Id), role, Role),
-    component(golem(Id), llm_config, Config),
-    findall(input(I), component(golem(Id), input, I), Inputs),
-    findall(output(O), component(golem(Id), output, O), Outputs),
-    (catch(get_golem_tools(golem(Id), Tools), _, Tools = []) -> true; Tools = []),
-    format_golem_docstring(Role, Config, Tools, Inputs, Outputs, DocString).
+**Permission Checks:**
+```prolog
+verify_pre_hook(component(Entity, _, _), permission_checker) :-
+    has_permission_to_verify(Entity).
 ```
 
 ---
 
-## Interface Domain
+## Part 7: Python Bridge Pattern
 
-The Interface domain provides CLI, API, and MCP multi-frontend access to Grimoire functionality. It maintains consistency across different interaction modalities while adapting to each medium's conventions.
+### Architecture
 
-### CLI/API/MCP Multi-Frontend Architecture
+For domains integrating with Python (golems, protocol_clients):
 
-The interface layer provides unified access through three primary frontends:
-
-**Command Line Interface (CLI)** - Direct command execution through `./grimoire` script
-**REST API** - HTTP-based access for web integration  
-**Model Context Protocol (MCP)** - Integration with AI development tools
-
-**Interface Commands:**
-- `interface(entities)` - List all entities in the system
-- `interface(compt(Entity))` - Show component types for entity
-- `interface(comp(Entity, Type))` - List components of specific type
-- `interface(doc(Entity))` - Show entity documentation
-- `interface(status)` - Display session and system status
-- `interface(conjure(Spell))` - Execute conjuration spells
-- `interface(perceive(Query))` - Execute perception queries
-
-### Command Routing and Context Management
-
-The interface layer provides automatic context detection and entity resolution:
-
-```prolog
-% Auto-detect current working context
-current_entity(Entity) :-
-    (exists_file('./semantics.pl') ->
-        working_directory(Cwd, Cwd),
-        file_base_name(Cwd, DirName),
-        atom_string(Entity, DirName),
-        ensure_local_project_loaded(Entity)
-    ;
-        Entity = system
-    ).
-
-% Entity path resolution with shortcuts
-resolve_entity_path(PathStr, Entity) :-
-    (PathStr = "/" ->
-        Entity = system
-    ;
-        catch(
-            (load_entity(semantic(folder(PathStr))),
-             file_base_name(PathStr, DirName),
-             atom_string(Entity, DirName)),
-            _,
-            atom_string(Entity, PathStr)
-        )
-    ).
+```
+domain/
+├── semantics.pl        # Pure Prolog (NO py_call)
+├── python_bridge.pl    # ALL py_call + decoding
+├── client.py          # Python implementation
+└── semantics.plt      # Tests
 ```
 
-### Session State Integration
+### Separation of Concerns
 
-Interface operations integrate with session state for persistent entity loading:
-
+**`semantics.pl` - PURE PROLOG:**
 ```prolog
-% Load entity into current session state
-load_entity_in_session(Entity) :-
-    get_current_session_id(SessionId),
-    entity_to_semantic_spec(Entity, EntitySpec),
-    (validate_entity_exists(Entity, EntitySpec) ->
-        (SessionId \= main ->
-            add_entity_load_to_session(SessionId, EntitySpec)
-        ;
-            true
-        )
-    ;
-        format(atom(ErrorMsg), 'Entity ~w not found', [Entity]),
-        throw(entity_load_failed(Entity, EntitySpec, ErrorMsg))
-    ).
+:- use_module('python_bridge.pl', [
+    mcp_call_tool/4,
+    mcp_list_tools/2
+]).
 
-% Ensure session state is loaded before operations
-ensure_session_state_loaded :-
-    get_current_session_id(SessionId),
-    (SessionId \= main ->
-        load_session_state_file(SessionId)
-    ;
-        true
-    ).
+cast(conjure(protocol_client(mcp(call(Server, Tool, Args)))), Result) :-
+    mcp_call_tool(Server, Tool, Args, DecodedResult),  % Already Prolog!
+    Result = ok(DecodedResult).
 ```
 
-### Python Interface Support for MCP Integration
-
-The interface provides Python-friendly data conversion for MCP protocol compatibility:
-
+**`python_bridge.pl` - ALL py_call + DECODING:**
 ```prolog
-% Python-specific cast that converts Prolog terms to Python dictionaries
-python_cast(conjure(ConjureStruct), PyResult) :-
-    (atom(ConjureStruct) ->
-        atom_to_term(ConjureStruct, Term, [])
-    ;
-        Term = ConjureStruct
-    ),
-    cast(conjure(Term), Result),
-    term_struct_to_python_dict(Result, PyResult).
+mcp_call_tool(Server, Tool, Args, DecodedResult) :-
+    py_call(mcp_client:call_tool(Server, Tool, Args), PyResult),
+    decode_mcp_result(PyResult, DecodedResult).  % Decode to Prolog terms
 
-% Recursive term to dictionary conversion
-term_struct_to_python_dict(Term, Dict) :-
-    (atomic(Term) ->
-        (atom(Term) ->
-            Dict = _{type: "atom", value: Term}
-        ; string(Term) ->
-            Dict = _{type: "string", value: Term}
-        ; number(Term) ->
-            Dict = _{type: "int", value: Term}
-        )
-    ; is_list(Term) ->
-        maplist(term_struct_to_python_dict, Term, Elements),
-        Dict = _{type: "list", elements: Elements}
-    ; compound(Term) ->
-        compound_name_arity(Term, Functor, Arity),
-        Term =.. [Functor|Args],
-        maplist(term_struct_to_python_dict, Args, ConvertedArgs),
-        Dict = _{type: "term_struct", functor: Functor, arity: Arity, args: ConvertedArgs}
-    ).
+decode_mcp_result(PyResult, mcp_result(Content, IsError)) :-
+    py_call(getattr(PyResult, 'content'), Content),
+    py_call(getattr(PyResult, 'isError'), IsError).
 ```
+
+**`client.py` - Python Implementation:**
+```python
+from fastmcp import FastMCPClient
+
+class MCPClientRegistry:
+    def __init__(self):
+        self.clients = {}
+
+    def call_tool(self, server, tool, args):
+        client = self.clients[server]
+        return client.call(tool, args)
+```
+
+**Key Principle:** Python objects NEVER leak into `semantics.pl` - all decoding happens in `python_bridge.pl`.
 
 ---
 
-## Template System
+## Part 8: Domain Levels
 
-The template system provides scaffolding for nine different project types, each with Nix-based build systems and flake app integration. Templates enable rapid project creation with reproducible development environments.
+Grimoire organizes domains into dependency levels:
 
-### Complete Template Catalog
+### Level 0: Foundation
+- **`ecs_kernel`** - Core ECS predicates and verification primitive
+- **`run_tests`** - Test infrastructure and PLUnit integration
 
-**Rust Template (`rust`):**
-- Build system: Nix + Cargo integration
-- Commands: `build`, `test`, `run`, `check`, `clippy`, `fmt`
-- Structure: `src/main.rs`, `Cargo.toml`, `flake.nix`
-- Usage: High-performance systems programming
+### Level 1: Orchestration
+- **`grimoire`** - Core system orchestration, spell system, domain loading
 
-**Python Template (`python`):**
-- Build system: Nix + pip/Poetry integration  
-- Commands: `run`, `build`, `develop`
-- Structure: `main.py`, `pyproject.toml`, `flake.nix`
-- Usage: General-purpose scripting and applications
+### Level 2: System Domains
+- **`git`** - Version control operations and repository modeling
+- **`nix`** - Package management and reproducible builds
+- **`fs`** - Filesystem operations and pattern matching
+- **`db`** - SQLite integration with schema discovery
+- **`utils`** - Utility predicates (tree building, collections)
 
-**C++ Template (`cpp`):**
-- Build system: Nix + CMake integration
-- Commands: `run`, `build`, `develop`
-- Structure: `src/main.cpp`, `CMakeLists.txt`, `include/`
-- Usage: High-performance native applications
+### Level 3: Coordination & Composition
+- **`interface`** - Multi-frontend access (CLI/HTTP/MCP)
+- **`protocol_clients`** - External service consumption (HTTP/MCP clients)
+- **`project`** - Project structure composing git+nix+fs
 
-**Haskell Template (`haskell`):**
-- Build system: Nix + Cabal/Stack integration
-- Commands: `build`, `test`, `run`, `ghci`, `hlint`
-- Structure: `*.hs`, `*.cabal`, `stack.yaml`
-- Usage: Functional programming and theorem proving
-
-**Lean 4 Template (`lean4`):**
-- Build system: Nix + Lake integration
-- Commands: `build`, `test`, `prove`
-- Structure: `*.lean`, `lakefile.lean`
-- Usage: Formal verification and mathematical proofs
-
-**MkDocs Template (`mkdocs`):**
-- Build system: Nix + MkDocs integration
-- Commands: `serve`, `build`, `deploy`
-- Structure: `docs/`, `mkdocs.yml`
-- Usage: Documentation websites and technical writing
-
-**Python Bridge Pattern Template (`python-bridge-pattern`):**
-- Build system: Nix + Python-Prolog integration
-- Commands: Domain-specific operations through bridge
-- Structure: `semantics.pl`, `python_bridge.pl`
-- Usage: Hybrid logic/computational systems
-
-**Python REST API Template (`python-rest-api`):**
-- Build system: Nix + FastAPI/Flask integration
-- Commands: `serve`, `test`, `deploy`
-- Structure: API endpoints, models, database integration
-- Usage: Web service backends and microservices
-
-**Database Template (`database`):**
-- Build system: Nix + SQLite integration
-- Commands: `setup`, `populate`, `inspect`
-- Structure: `schema.sql`, database discovery patterns
-- Usage: Data-centric applications with ECS integration
-
-### Template Structure and Instantiation Process
-
-All templates follow consistent patterns while providing language-specific optimizations:
-
-```prolog
-% Template instantiation through mkproject
-cast(conjure(mkproject(FolderPath, ProjectName, Options)), RetVal) :-
-    (member(template(Template), Options) ->
-        cast(conjure(nix(flake(new(Template, ProjectPath)))), TemplateResult),
-        (TemplateResult = ok(_) ->
-            rename_project_entities(ProjectPath, Template, ProjectName, RenameResult)
-        ;
-            RenameResult = TemplateResult
-        )
-    ;
-        create_basic_semantics_file(ProjectPath, ProjectName),
-        RenameResult = ok
-    ).
-
-% Entity renaming for project customization
-rename_project_entities(ProjectPath, TemplateId, ProjectName, Result) :-
-    directory_file_path(ProjectPath, 'semantics.pl', SemanticsFile),
-    (exists_file(SemanticsFile) ->
-        discover_template_entity_name(SemanticsFile, TemplateEntityName)
-    ;
-        format(atom(TemplateEntityName), '~w_template', [TemplateId])
-    ),
-    findall(File, (
-        member(FileName, ['semantics.pl', 'semantics.plt']),
-        directory_file_path(ProjectPath, FileName, File),
-        exists_file(File)
-    ), SemanticsFiles),
-    maplist(rename_entities_in_file(TemplateEntityName, ProjectName), SemanticsFiles, Results),
-    (member(error(_), Results) -> Result = error(Results) ; Result = ok).
-```
-
-### Nix Flake Apps Integration
-
-Templates integrate with Nix flake apps for reproducible command execution:
-
-```prolog
-% Example: Rust template command implementations
-cast(conjure(rust_template(build)), RetVal) :-
-    cast(conjure(nix(build(['.']))), RetVal).
-
-cast(conjure(rust_template(test)), RetVal) :-
-    cast(conjure(nix(flake(['check']))), RetVal).
-
-cast(conjure(rust_template(run)), RetVal) :-
-    cast(conjure(nix(run(['.#run']))), RetVal).
-
-% Python template with development environment
-cast(conjure(python_template(develop)), RetVal) :-
-    cast(conjure(nix(develop(['.']))), RetVal).
-```
-
-### Multi-Template Composition for Full-Stack Projects
-
-Templates can be composed to create complex project structures:
-
-**Backend + Frontend Composition:**
-```prolog
-% Create full-stack web application
-cast(conjure(mkproject("/projects", "webapp", [
-    template(python-rest-api),    % Backend API
-    template(rust),               % Frontend WASM
-    template(database),           % Data layer
-    composition(webapp)
-])), Result).
-```
-
-**Documentation + Code Composition:**
-```prolog
-% Create documented library project
-cast(conjure(mkproject("/projects", "mathlib", [
-    template(lean4),              % Formal proofs
-    template(mkdocs),             % Documentation
-    template(haskell),            % Reference implementation
-    composition(formal_library)
-])), Result).
-```
-
-### Template Discovery and Validation
-
-Templates are automatically discovered from the Nix flake outputs:
-
-```prolog
-% Template availability check
-discover_available_templates(Templates) :-
-    findall(TemplateId,
-            component(nix(flake(template)), instance, nix(flake(template(TemplateId)))),
-            Templates).
-
-% Template validation before instantiation
-validate_template_exists(TemplateId) :-
-    component(nix(flake(template)), instance, nix(flake(template(TemplateId)))).
-```
+### Level 5: External Interfaces
+- **`golems`** - AI agents with PydanticAI integration
 
 ---
 
-## Implementation Details
+## Part 9: Implementation Details
 
-### File Structure Conventions
+### Directory Structure
 
-Grimoire follows consistent file organization patterns across all domains:
-
-**Core Structure:**
 ```
-/home/levz/Projects/Grimoire/
+Grimoire/
 ├── src/
-│   ├── grimoire.pl           # Core system bootstrap
-│   ├── git.pl               # Git domain semantics
-│   ├── session.pl           # Session management
-│   ├── fs.pl                # Filesystem operations
-│   ├── nix/
-│   │   ├── semantics.pl     # Nix domain core
-│   │   └── templates/       # Project templates
-│   │       ├── rust/
-│   │       ├── python/
-│   │       └── ...
-│   ├── project/
-│   │   └── semantics.pl     # Project management
+│   ├── ecs_kernel.pl           # Generative kernel
+│   ├── ecs_kernel.plt          # Discriminative kernel
+│   ├── grimoire.pl             # Core orchestration
+│   ├── grimoire.plt            # Core tests
+│   ├── git.pl                  # Git domain
+│   ├── git.plt                 # Git tests
+│   ├── fs.pl                   # Filesystem domain
+│   ├── fs.plt                  # Filesystem tests
 │   ├── db/
-│   │   ├── semantics.pl     # Database integration
-│   │   └── sqlite3.pl       # SQLite interface
-│   ├── golems/
-│   │   ├── semantics.pl     # AI agent framework
-│   │   └── python_bridge.pl # Python integration
+│   │   ├── semantics.pl        # Database domain
+│   │   ├── semantics.plt       # Database tests
+│   │   └── sqlite3.pl          # SQLite interface
+│   ├── nix/
+│   │   ├── semantics.pl        # Nix domain
+│   │   └── semantics.plt       # Nix tests
+│   ├── project/
+│   │   ├── semantics.pl        # Project domain
+│   │   └── semantics.plt       # Project tests
 │   ├── interface/
-│   │   └── semantics.pl     # Multi-frontend interface
+│   │   ├── semantics.pl        # Interface domain
+│   │   ├── semantics.plt       # Interface tests
+│   │   └── api/
+│   │       ├── semantics.pl    # API implementation
+│   │       └── mcp_server.py   # MCP server
+│   ├── protocol_clients/
+│   │   ├── semantics.pl        # Protocol clients coordination
+│   │   ├── semantics.plt       # Tests
+│   │   ├── http/
+│   │   │   ├── semantics.pl    # HTTP client (pure Prolog)
+│   │   │   ├── python_bridge.pl # py_call + decoding
+│   │   │   └── http_client.py   # httpx implementation
+│   │   └── mcp/
+│   │       ├── semantics.pl    # MCP client (pure Prolog)
+│   │       ├── python_bridge.pl # py_call + FastMCP decoding
+│   │       └── mcp_client.py    # FastMCP implementation
+│   ├── golems/
+│   │   ├── semantics.pl        # Golems domain (pure Prolog)
+│   │   ├── semantics.plt       # Golems tests
+│   │   └── python_bridge.pl    # py_call + PydanticAI decoding
+│   ├── utils.pl                # Utility predicates
+│   ├── utils.plt               # Utility tests
 │   └── tests/
-│       ├── *.plt            # PLUnit test suites
-│       └── run_tests.pl     # Test runner
-├── flake.nix                # Nix package specification
-├── grimoire                 # CLI entry point script
-└── DESIGN.md               # This document
+│       ├── git_test_entity.pl  # Git test entities
+│       ├── fs_test_entity.pl   # Filesystem test entities
+│       └── ...
+├── README.md                   # User documentation
+├── CLAUDE.md                   # Development guide
+├── DESIGN.md                   # This document
+├── overhaul-plan.md            # Complete specification
+├── review_instructions.md      # Review checklist
+└── flake.nix                   # Nix package specification
 ```
 
-**Domain Pattern:**
-Each domain follows the `semantics.pl/semantics.plt` pattern:
-- `semantics.pl` - Core logic and entity definitions
-- `semantics.plt` - Comprehensive test coverage
-- `:- self_entity(DomainName).` - Entity self-declaration
-- Component definitions with docstrings
+### Environment Variables
 
-### Session Management Internals
+- **`GRIMOIRE_ROOT`** - Project directory (auto-detected from `./grimoire` script location)
+- **`GRIMOIRE_DATA`** - Data storage directory (defaults to `$HOME/.grimoire`)
 
-Session management integrates Git branches with workspace isolation:
-
-**Workspace Isolation:**
+Path resolution:
 ```prolog
-% Session paths relative to GRIMOIRE_DATA
-grimoire_data_directory(DataDir) :-
-    (getenv('GRIMOIRE_DATA', CustomDataDir) ->
-        DataDir = CustomDataDir
-    ;
-        getenv('HOME', HomeDir),
-        format(atom(DataDir), '~w/.grimoire', [HomeDir])
-    ).
-
-session_workspace_path(SessionId, WorkspacePath) :-
-    grimoire_data_directory(DataDir),
-    format(atom(WorkspacePath), '~w/sessions/~w', [DataDir, SessionId]).
+grimoire_resolve_path('@/src/git.pl', '/home/user/Projects/Grimoire/src/git.pl').
 ```
 
-**Command Logging Schema:**
-```sql
-CREATE TABLE commands (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    timestamp TEXT NOT NULL,
-    command_type TEXT NOT NULL,
-    command_term TEXT NOT NULL,
-    result TEXT,
-    source TEXT DEFAULT 'user'
-);
-CREATE INDEX idx_timestamp ON commands(timestamp);
-CREATE INDEX idx_command_type ON commands(command_type);
-CREATE INDEX idx_source ON commands(source);
-```
+---
 
-**State File Management:**
-```prolog
-initialize_session_state_file(SessionId) :-
-    session_state_file_path(SessionId, StatePath),
-    (exists_file(StatePath) ->
-        true
-    ;
-        open(StatePath, write, Stream),
-        format(Stream, '%% Session state file for session ~w~n', [SessionId]),
-        format(Stream, '%% Entity loads and persistent state~n~n', []),
-        close(Stream)
-    ).
-```
+## Part 10: Benefits of This Design
 
-### Database Integration Patterns
+### Mathematical Correctness
 
-Database entities use reverse proxy patterns for dynamic component generation:
+The generative-discriminative duality ensures:
+- **Consistency**: Everything generated must be verifiable
+- **Completeness**: Everything verified must have been generated
+- **No Contradictions**: Inconsistent knowledge cannot exist
 
-**Registration Pattern:**
-```prolog
-% Dynamic database registration
-:- dynamic registered_db/3.
-registered_db(database(Db), data(file(DbPath)), schema(file(SchemaPath))).
+### Composability
 
-% Automatic entity generation
-entity(database(Db)) :-
-    registered_db(database(Db), data(file(_)), schema(file(_))).
+`please_verify/1` enables clean composition:
+- Domains verify sub-components recursively
+- Cross-domain dependencies work naturally
+- Verification chains are composable and complete
 
-% Component proxy patterns
-component(database(Db), table, table(TableName)) :-
-    registered_db_table(database(Db), table(TableName)).
+### Simplicity for Users
 
-component(database(Db), column, column(TableName, ColumnName, ColumnInfo)) :-
-    registered_db_column(database(Db), column(TableName, ColumnName, ColumnInfo)).
-```
+Users only need to:
+1. Declare high-level facts using `has(domain(...))` in `semantics.pl`
+2. Domain automatically expands into queryable properties
+3. Tests verify properties using `user:please_verify`
+4. System handles verification automatically
 
-**SQLite Introspection:**
-```prolog
-% Table discovery through PRAGMA statements
-get_database_tables(DbFile, TableNames) :-
-    sqlite3_query(DbFile, "SELECT name FROM sqlite_master WHERE type='table'", Results),
-    maplist(extract_table_name, Results, TableNames).
+### Flexibility
 
-% Column information with types
-get_table_columns(DbFile, TableName, Columns) :-
-    format(atom(Query), 'PRAGMA table_info(~w)', [TableName]),
-    sqlite3_query(DbFile, Query, Results),
-    maplist(parse_column_info, Results, Columns).
-```
+The design allows:
+- Unification patterns in verification
+- Optional verification (base case in `please_verify`)
+- Cross-domain composition
+- Extensible hooks for custom behavior
 
-### Multi-Frontend Interface Architecture
+### Testability
 
-The interface layer abstracts Grimoire operations for different frontends:
+File-based test entities ensure:
+- Order-independent tests (no state pollution)
+- Declarative test data (visible in source)
+- Matches production patterns (knowledge in files)
+- Reproducible test runs
 
-**Frontend Abstraction:**
-```prolog
-% CLI interface through ./grimoire script
-% REST API through HTTP endpoints  
-% MCP through Model Context Protocol
+### Python Integration
 
-% Unified interface command pattern
-cast(conjure(interface(Command)), RetVal) :-
-    ensure_session_state_loaded,
-    interface_command_dispatch(Command, RetVal).
+Python bridge pattern provides:
+- Type safety (Python objects never leak to Prolog)
+- Clear separation of concerns
+- Easy debugging (Python and Prolog layers separate)
+- Flexible integration with external libraries
 
-% Context-aware entity resolution
-current_entity(Entity) :-
-    (exists_file('./semantics.pl') ->
-        working_directory(Cwd, Cwd),
-        file_base_name(Cwd, DirName),
-        atom_string(Entity, DirName),
-        ensure_local_project_loaded(Entity)
-    ;
-        Entity = system
-    ).
-```
+---
 
-**Python Compatibility Layer:**
-```prolog
-% Convert Prolog terms to Python-friendly structures
-term_struct_to_python_dict(Term, Dict) :-
-    (compound(Term) ->
-        compound_name_arity(Term, Functor, Arity),
-        Term =.. [Functor|Args],
-        maplist(term_struct_to_python_dict, Args, ConvertedArgs),
-        Dict = _{type: "term_struct", functor: Functor, arity: Arity, args: ConvertedArgs}
-    ; is_list(Term) ->
-        maplist(term_struct_to_python_dict, Term, Elements),
-        Dict = _{type: "list", elements: Elements}
-    ; atomic(Term) ->
-        Dict = _{type: "atom", value: Term}
-    ).
-```
+## Part 11: Future Directions
 
-### Environment Variable Integration
+### Planned Enhancements
 
-Grimoire uses environment variables for flexible configuration:
+1. **Incremental Verification** - Cache verification results for performance
+2. **Distributed Knowledge** - Git-like distribution of semantic knowledge
+3. **Type Inference** - Automatic derivation of component types
+4. **Visual Tools** - Graph visualization of component relationships
+5. **Template Expansion** - More sophisticated project templates
 
-**Core Environment Variables:**
-- `GRIMOIRE_ROOT` - Project directory (where `./grimoire` script runs)
-- `GRIMOIRE_DATA` - Data storage directory (defaults to `$HOME/.grimoire`)
+### Research Directions
 
-**Path Resolution:**
-```prolog
-grimoire_root_directory(RootDir) :-
-    (getenv('GRIMOIRE_ROOT', CustomRoot) ->
-        RootDir = CustomRoot
-    ;
-        working_directory(CurrentDir, CurrentDir),
-        RootDir = CurrentDir
-    ).
+1. **Category Theory** - Formalize generative-discriminative as adjoint functors
+2. **Modal Logic** - Express verification modalities formally
+3. **Dependent Types** - Type-level verification of components
+4. **Linear Logic** - Resource management through linear types
 
-% Semantic path resolution with @/ prefix
-grimoire_resolve_path('@/src/git.pl', '/home/levz/Projects/Grimoire/src/git.pl').
-```
+---
 
-This comprehensive design document captures Grimoire's current architecture and implementation status. The system demonstrates a novel approach to semantic computing where knowledge, tools, and processes are unified through Entity-Component-System patterns while maintaining reproducibility through Nix integration and transactionality through Git-backed sessions.
+## Conclusion
+
+Grimoire demonstrates that knowledge-based operating systems can be both theoretically principled and practically useful. The dual kernel architecture provides mathematical correctness while remaining accessible to users. The ECS pattern enables flexible modeling, the spell system provides safety, and the verification system ensures correctness.
+
+The result is a system where semantic knowledge, operating system reality, and formal verification are unified in a coherent, composable architecture.

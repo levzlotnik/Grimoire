@@ -121,21 +121,6 @@ extract_folder_specs([file(_)|Rest], Specs) :-
 extract_folder_specs([_|Rest], Specs) :-
     extract_folder_specs(Rest, Specs).
 
-% === SPELL CONSTRUCTOR REGISTRATION ===
-
-% Spell constructors auto-derived from register_spell/4 declarations
-% Manual ctors only for commands without register_spell yet:
-component(conjure, ctor, fs(copy_file)).
-component(conjure, ctor, fs(move_file)).
-component(conjure, ctor, fs(delete_file)).
-
-component(perceive, ctor, fs(list_files)).
-component(perceive, ctor, fs(glob_match)).
-component(perceive, ctor, fs(file_stats)).
-
-% Note: fs(read_file), fs(edit_file), fs(mkdir), and fs(mkfile) constructors
-% are auto-derived from their register_spell/4 declarations below
-
 % === SPELL FORMAT REGISTRATIONS ===
 
 % Each register_spell is placed right above its cast implementation
@@ -313,6 +298,101 @@ cast(conjure(fs(mkfile(Path, Options))), RetVal) :-
             magic_cast(conjure(git(add([Path]))), _)
         ;
         true
+    ).
+
+% === FILE MANIPULATION SPELLS ===
+
+register_spell(
+    conjure(fs(copy_file)),
+    input(fs(copy_file(source('Source'), dest('Dest')))),
+    output(either(ok(file_copied('Source', 'Dest')), error(fs_error('Reason')))),
+    docstring("Copy file from source to destination path")
+).
+cast(conjure(fs(copy_file(Source, Dest))), Result) :-
+    catch(
+        (copy_file(Source, Dest), Result = ok(file_copied(Source, Dest))),
+        Error,
+        Result = error(fs_error(Error))
+    ).
+
+register_spell(
+    conjure(fs(move_file)),
+    input(fs(move_file(source('Source'), dest('Dest')))),
+    output(either(ok(file_moved('Source', 'Dest')), error(fs_error('Reason')))),
+    docstring("Move/rename file from source to destination path")
+).
+cast(conjure(fs(move_file(Source, Dest))), Result) :-
+    catch(
+        (rename_file(Source, Dest), Result = ok(file_moved(Source, Dest))),
+        Error,
+        Result = error(fs_error(Error))
+    ).
+
+register_spell(
+    conjure(fs(delete_file)),
+    input(fs(delete_file(path('Path')))),
+    output(either(ok(file_deleted('Path')), error(fs_error('Reason')))),
+    docstring("Delete file at specified path")
+).
+cast(conjure(fs(delete_file(Path))), Result) :-
+    catch(
+        (delete_file(Path), Result = ok(file_deleted(Path))),
+        Error,
+        Result = error(fs_error(Error))
+    ).
+
+% === FILE QUERY SPELLS ===
+
+register_spell(
+    perceive(fs(list_files)),
+    input(fs(list_files(directory('Dir')))),
+    output(either(ok(files('FileList')), error(fs_error('Reason')))),
+    docstring("List all files in a directory (non-recursive)")
+).
+cast(perceive(fs(list_files(Dir))), Result) :-
+    catch(
+        (directory_files(Dir, AllFiles),
+         exclude(=('.'), AllFiles, FilteredFiles),
+         exclude(=('..'), FilteredFiles, Files),
+         Result = ok(files(Files))),
+        Error,
+        Result = error(fs_error(Error))
+    ).
+
+register_spell(
+    perceive(fs(glob_match)),
+    input(fs(glob_match(pattern('Pattern'), base('BaseDir')))),
+    output(either(ok(matched_files('FileList')), error(fs_error('Reason')))),
+    docstring("Match files using glob patterns (e.g., '**/*.pl')")
+).
+cast(perceive(fs(glob_match(Pattern, BaseDir))), Result) :-
+    catch(
+        (expand_file_name(Pattern, Matches),
+         (atom(BaseDir), BaseDir \= '' ->
+             findall(Rel, (member(Abs, Matches), relative_file_name(Rel, BaseDir, Abs)), Files)
+         ;
+             Files = Matches
+         ),
+         Result = ok(matched_files(Files))),
+        Error,
+        Result = error(fs_error(Error))
+    ).
+
+register_spell(
+    perceive(fs(file_stats)),
+    input(fs(file_stats(path('Path')))),
+    output(either(ok(stats(size('Size'), modified('Time'), mode('Mode'))), error(fs_error('Reason')))),
+    docstring("Get file statistics (size, modified time, permissions)")
+).
+cast(perceive(fs(file_stats(Path))), Result) :-
+    catch(
+        (size_file(Path, Size),
+         time_file(Path, Time),
+         access_file(Path, exist),
+         (access_file(Path, execute) -> Mode = executable ; Mode = regular),
+         Result = ok(stats(size(Size), modified(Time), mode(Mode)))),
+        Error,
+        Result = error(fs_error(Error))
     ).
 
 % === FILE EDITING HELPERS ===

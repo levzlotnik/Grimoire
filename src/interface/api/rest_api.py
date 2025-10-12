@@ -5,7 +5,7 @@ from typing import Optional, Any, List, Dict, Union
 # Import our Grimoire interface module
 from grimoire_client import (
     GrimoireClient, GrimoireError, SystemInfo, InterfaceEndpoint, RootResponse,
-    EntitiesResponse, TestResponse, SessionCommandResponse, LoadResponse,
+    EntitiesResponse, TestResponse,
     ReadFileResponse, EditFileResponse
 )
 
@@ -21,16 +21,13 @@ app = FastAPI(
 # Request/Response models
 class PerceiveRequest(BaseModel):
     query: str
-    session_id: Optional[str] = None
 
 class ConjureRequest(BaseModel):
     spell: str
-    session_id: Optional[str] = None
 
 class APIResponse(BaseModel):
     success: bool
     result: Any
-    session_id: Optional[str] = None
     error: Optional[str] = None
 
 # Root endpoint
@@ -52,11 +49,8 @@ async def root():
         InterfaceEndpoint(method="GET", path="/entities", description=docstrings.get("entities", "List all entities")),
         InterfaceEndpoint(method="POST", path="/perceive", description=docstrings.get("perceive", "Execute perception spells")),
         InterfaceEndpoint(method="POST", path="/conjure", description=docstrings.get("conjure", "Execute conjuration spells")),
-        InterfaceEndpoint(method="GET", path="/status", description=docstrings.get("status", "Show session status")),
         InterfaceEndpoint(method="GET", path="/test", description=docstrings.get("test", "Run test suite")),
-        InterfaceEndpoint(method="POST", path="/session", description=docstrings.get("session", "Session management")),
-        InterfaceEndpoint(method="POST", path="/load", description=docstrings.get("load", "Load entity")),
-        InterfaceEndpoint(method="GET", path="/read_file/{file_path}", description="Read file with line numbers"),
+        InterfaceEndpoint(method="POST", path="/read_file", description="Read file with line numbers"),
         InterfaceEndpoint(method="POST", path="/edit_file", description="Edit file with specified operations"),
         InterfaceEndpoint(method="GET", path="/health", description="Health check")
     ]
@@ -73,7 +67,7 @@ async def root():
 
 # Component types endpoints
 @app.get("/compt")
-async def list_component_types(session_id: Optional[str] = Query(None)):
+async def list_component_types():
     """List all component types → interface(compt)"""
     try:
         return grimoire.compt()
@@ -82,8 +76,7 @@ async def list_component_types(session_id: Optional[str] = Query(None)):
 
 @app.get("/compt/{entity}")
 async def list_entity_component_types(
-    entity: str = Path(...),
-    session_id: Optional[str] = Query(None)
+    entity: str = Path(...)
 ):
     """List component types for specific entity → interface(compt(Entity))"""
     try:
@@ -95,8 +88,7 @@ async def list_entity_component_types(
 @app.get("/comp/{entity}/{comp_type}")
 async def list_components(
     entity: str = Path(...),
-    comp_type: str = Path(...),
-    session_id: Optional[str] = Query(None)
+    comp_type: str = Path(...)
 ):
     """List components of specific type for entity → interface(comp(Entity, Type))"""
     try:
@@ -106,7 +98,7 @@ async def list_components(
 
 # Documentation endpoints
 @app.get("/doc")
-async def show_documentation(session_id: Optional[str] = Query(None)):
+async def show_documentation():
     """Show system documentation → interface(doc)"""
     try:
         return grimoire.doc()
@@ -115,8 +107,7 @@ async def show_documentation(session_id: Optional[str] = Query(None)):
 
 @app.get("/doc/{entity}")
 async def show_entity_documentation(
-    entity: str = Path(...),
-    session_id: Optional[str] = Query(None)
+    entity: str = Path(...)
 ):
     """Show documentation for specific entity → interface(doc(Entity))"""
     try:
@@ -142,15 +133,6 @@ async def conjure(request: ConjureRequest):
     except GrimoireError as e:
         raise HTTPException(status_code=500, detail=f"Grimoire error: {e}")
 
-# Status endpoint
-@app.get("/status")
-async def get_status(session_id: Optional[str] = Query(None)):
-    """Get session and system status → interface(status)"""
-    try:
-        return grimoire.status()
-    except GrimoireError as e:
-        raise HTTPException(status_code=500, detail=f"Grimoire error: {e}")
-
 # Entities endpoint
 @app.get("/entities")
 async def list_entities():
@@ -169,41 +151,17 @@ async def run_tests(test_names: Optional[List[str]] = Query(None)):
     except GrimoireError as e:
         raise HTTPException(status_code=500, detail=f"Grimoire error: {e}")
 
-# Session endpoint
-class SessionRequest(BaseModel):
-    args: List[str]
+# Read file endpoint
+class ReadFileRequest(BaseModel):
+    file_path: str
+    start: int = 1
+    end: int = 10
 
-@app.post("/session")
-async def session_command(request: SessionRequest):
-    """Execute session management command → interface(session(args))"""
-    try:
-        return grimoire.session(request.args)
-    except GrimoireError as e:
-        raise HTTPException(status_code=500, detail=f"Grimoire error: {e}")
-
-# Load endpoint
-class LoadRequest(BaseModel):
-    entity_spec: str
-
-@app.post("/load")
-async def load_entity(request: LoadRequest):
-    """Load entity into current session → interface(load(entity_spec))"""
-    try:
-        return grimoire.load(request.entity_spec)
-    except GrimoireError as e:
-        raise HTTPException(status_code=500, detail=f"Grimoire error: {e}")
-
-# Read file endpoint  
-@app.get("/read_file/{file_path:path}", response_model=ReadFileResponse)
-async def read_file_endpoint(
-    file_path: str = Path(...),
-    start: int = Query(1, description="Starting line number (1-based indexing)"),
-    end: int = Query(10, description="Ending line number (1-based indexing)"),
-    session_id: Optional[str] = Query(None)
-):
+@app.post("/read_file", response_model=ReadFileResponse)
+async def read_file_endpoint(request: ReadFileRequest):
     """Read lines from a file using 1-based indexing → interface(read_file(FilePath, Start, End))"""
     try:
-        return grimoire.read_file(file_path, start, end)
+        return grimoire.read_file(request.file_path, request.start, request.end)
     except GrimoireError as e:
         raise HTTPException(status_code=500, detail=f"Grimoire error: {e}")
     except ValueError as e:

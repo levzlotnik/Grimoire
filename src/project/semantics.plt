@@ -20,7 +20,7 @@ test(conjure_mkproject_entity_exists, [true]) :-
 
 % Test project command constructors
 test(project_command_constructors, [true]) :-
-    please_verify(component(conjure, ctor, mkproject)), !.
+    user:please_verify(component(conjure, ctor, mkproject)), !.
 
 % Test project context entities
 test(project_contexts, [true]) :-
@@ -35,6 +35,6 @@ test(project_docstrings_exist, [true]) :-
 % Test mkproject implementation exists
 test(mkproject_implementation, [true]) :-
     % Test that mkproject conjure exists
-    please_verify(component(conjure, ctor, mkproject)), !.
+    user:please_verify(component(conjure, ctor, mkproject)), !.
 
 :- end_tests(project).

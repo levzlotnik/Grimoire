@@ -18,11 +18,11 @@ test(semantics_verifier_entity_exists) :-
 % === COMPONENT TESTS ===
 
 test(semantics_verifier_delegation_relationships) :-
-    component(golem(semantics_verifier), can_delegate_to, golem(test_planner)),
-    component(golem(semantics_verifier), can_delegate_to, golem(project_manager)).
+    user:please_verify(component(golem(semantics_verifier), can_delegate_to, golem(test_planner))),
+    user:please_verify(component(golem(semantics_verifier), can_delegate_to, golem(project_manager))).
 
 test(semantics_verifier_has_available_tools) :-
-    component(golem(semantics_verifier), available_tools, _Tools).
+    user:please_verify(component(golem(semantics_verifier), available_tools, _Tools)).
 
 % === END-TO-END TESTS ===
 

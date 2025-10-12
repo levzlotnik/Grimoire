@@ -5,7 +5,7 @@
 
 % Verify client capability expansion (DSL pattern)
 verify(component(Entity, has(interface(client)), interface(client(Spec)))) :-
-    please_verify(component(Entity, interface_client_type, Type)),
+    user:please_verify(component(Entity, interface_client_type, Type)),
     member(type(Type), Spec),
     member(Type, [cli, mcp, http, golem]).
 
@@ -22,24 +22,21 @@ test(entity_exists) :-
 
 % Test interface subcommands exist
 test(subcommands_exist) :-
-    component(interface, subcommand, compt),
-    component(interface, subcommand, comp),
-    component(interface, subcommand, doc),
-    component(interface, subcommand, entities),
-    component(interface, subcommand, repl),
-    component(interface, subcommand, status),
-    component(interface, subcommand, test),
-    % component(interface, subcommand, session),  % Disabled - session being reworked
-    component(interface, subcommand, conjure),
-    component(interface, subcommand, perceive),
-    component(interface, subcommand, load),
-    component(interface, subcommand, read_file),
-    component(interface, subcommand, edit_file),
-    component(interface, subcommand, exec), !.
+    user:please_verify(component(interface, subcommand, compt)),
+    user:please_verify(component(interface, subcommand, comp)),
+    user:please_verify(component(interface, subcommand, doc)),
+    user:please_verify(component(interface, subcommand, entities)),
+    user:please_verify(component(interface, subcommand, repl)),
+    user:please_verify(component(interface, subcommand, test)),
+    user:please_verify(component(interface, subcommand, conjure)),
+    user:please_verify(component(interface, subcommand, perceive)),
+    user:please_verify(component(interface, subcommand, read_file)),
+    user:please_verify(component(interface, subcommand, edit_file)),
+    user:please_verify(component(interface, subcommand, exec)), !.
 
 % Test entities subcommand specifically
 test(entities_subcommand) :-
-    component(interface, subcommand, entities), !.
+    user:please_verify(component(interface, subcommand, entities)), !.
 
 % Test entities interface entity exists
 test(entities_interface_entity) :-
@@ -98,21 +95,15 @@ test(doc_command) :-
     atom(Entity),
     (atom(Doc) ; string(Doc) ; Doc = no_docstring_available), !.
 
-% Test status command
-test(status_command) :-
-    magic_cast(conjure(interface(status)), Result),
-    % Just verify it returns ok or error - session being reworked
-    (Result = ok(_) ; Result = error(_)), !.
-
 % Test client capability expansion (DSL pattern)
 test(client_capability_expansion) :-
-    please_verify(component(test_cli_client, interface_client_type, cli)),
-    component(test_cli_client, interface_client_capability, _).
+    user:please_verify(component(test_cli_client, interface_client_type, cli)),
+    user:please_verify(component(test_cli_client, interface_client_capability, _)).
 
 % Test all subcommands complete verification
 test(all_subcommands_complete) :-
     forall(component(interface, subcommand, Cmd),
-           please_verify(component(interface, subcommand, Cmd))).
+           user:please_verify(component(interface, subcommand, Cmd))).
 
 % === SPELL TESTS ===
 
@@ -124,12 +115,6 @@ test(comp_command) :-
     % Should have at least one component (compt, comp, doc, etc.)
     length(Components, Len),
     Len > 0, !.
-
-% Test load command (basic verification that spell is callable)
-test(load_command_entity_spec) :-
-    % Test that load spell exists and can be called (even if entity already loaded)
-    magic_cast(conjure(interface(load(system))), Result),
-    (Result = ok(entity_loaded(_)) ; Result = error(_)), !.
 
 % Test conjure delegation to git domain
 test(conjure_delegation_git_status) :-

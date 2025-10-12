@@ -9,56 +9,11 @@
     Core to Grimoire's immutable knowledge architecture.
     |}).
 
-% Git command entities (manual declarations for commands without register_spell/4)
-% Note: git(status), git(ls_files), git(current_branch) entities auto-generated from register_spell/4
-entity(git(clone)).
-entity(git(init)).
-entity(git(add)).
-entity(git(commit)).
-entity(git(push)).
-entity(git(pull)).
-entity(git(checkout)).
-entity(git(reset)).
-entity(git(merge)).
-entity(git(diff)).
-entity(git(log)).
-entity(git(branch)).
-entity(git(rev_parse)).
-entity(git(remote)).
+% Infer subcommands from spell constructors
+component(git, subcommand, SubCmd) :- component(perceive, ctor, git(SubCmd)).
+component(git, subcommand, SubCmd) :- component(conjure, ctor, git(SubCmd)).
 
-% Removed legacy command ctor - using perceive/conjure above
-component(git, subcommand, clone).
-component(git, subcommand, init).
-component(git, subcommand, add).
-component(git, subcommand, commit).
-component(git, subcommand, push).
-component(git, subcommand, pull).
-component(git, subcommand, branch).
-component(git, subcommand, checkout).
-component(git, subcommand, status).
-component(git, subcommand, diff).
-component(git, subcommand, log).
-component(git, subcommand, rev_parse).
-component(git, subcommand, reset).
-component(git, subcommand, merge).
-component(git, subcommand, remote).
-
-% Spell constructors (manual declarations for commands without register_spell/4)
-% Note: perceive(git(status)), perceive(git(ls_files)), perceive(git(current_branch))
-%       are auto-generated from register_spell/4
-component(conjure, ctor, git(clone)).
-component(conjure, ctor, git(init)).
-component(conjure, ctor, git(add)).
-component(conjure, ctor, git(commit)).
-component(conjure, ctor, git(push)).
-component(conjure, ctor, git(pull)).
-component(conjure, ctor, git(checkout)).
-component(conjure, ctor, git(reset)).
-component(conjure, ctor, git(merge)).
-component(perceive, ctor, git(diff)).
-component(perceive, ctor, git(log)).
-component(perceive, ctor, git(branch)).
-component(perceive, ctor, git(rev_parse)).
+% Spell constructors are auto-generated from register_spell/4 declarations below
 
 % Legacy support - keep git namespace ctors:
 component(git, ctor, C) :- component(git, subcommand, C).
@@ -127,140 +82,107 @@ component(Entity, git_repository_sync_status, Status) :-
 % === SPELL IMPLEMENTATIONS ===
 % Each register_spell is placed right above its cast implementation
 
-% Git command docstrings
-docstring(git(clone),
-    {|string(_)||
-    Clone a repository into a new directory.
-    Format: git(clone(Url, Path))
-      Url: Remote repository URL
-      Path: Local directory to clone into
-    |}
+% Conjure spells for git commands
+register_spell(
+    conjure(git(clone)),
+    input(git(clone(url('Url'), path('Path')))),
+    output(either(ok(result(stdout('StdOut'), stderr('StdErr'))), error(git_error('Reason')))),
+    docstring("Clone a repository into a new directory. Url: Remote repository URL, Path: Local directory to clone into")
 ).
 
-docstring(git(init),
-    {|string(_)||
-    Create an empty Git repository.
-    Format: git(init(Path))
-      Path: Directory to initialize
-    |}
+register_spell(
+    conjure(git(init)),
+    input(git(init(path('Path')))),
+    output(either(ok(result(stdout('StdOut'), stderr('StdErr'))), error(git_error('Reason')))),
+    docstring("Create an empty Git repository. Path: Directory to initialize")
 ).
 
-docstring(git(add),
-    {|string(_)||
-    Add file(s) to the index.
-    Format: git(add(Paths)) or git(add(all_tracked))
-      Paths: List of file paths to stage
-      all_tracked: Update all tracked files (-u flag)
-    |}
+register_spell(
+    conjure(git(add)),
+    input(git(add(paths('Paths')))),
+    output(either(ok(result(stdout('StdOut'), stderr('StdErr'))), error(git_error('Reason')))),
+    docstring("Add file(s) to the index. Paths: List of file paths to stage, or all_tracked to update all tracked files (-u flag)")
 ).
 
-docstring(git(commit),
-    {|string(_)||
-    Record changes to the repository.
-    Format: git(commit(Message))
-      Message: String containing commit message
-    |}
+register_spell(
+    conjure(git(commit)),
+    input(git(commit(message('Message')))),
+    output(either(ok(result(stdout('StdOut'), stderr('StdErr'))), error(git_error('Reason')))),
+    docstring("Record changes to the repository. Message: String or list containing commit message and flags")
 ).
 
-docstring(git(push),
-    {|string(_)||
-    Update remote refs along with objects.
-    Format: git(push(Remote, Branch))
-      Remote: Remote name (e.g. "origin")
-      Branch: Branch name to push
-    |}
+register_spell(
+    conjure(git(push)),
+    input(git(push(remote('Remote'), branch('Branch')))),
+    output(either(ok(result(stdout('StdOut'), stderr('StdErr'))), error(git_error('Reason')))),
+    docstring("Update remote refs along with objects. Remote: Remote name (e.g. 'origin'), Branch: Branch name to push")
 ).
 
-docstring(git(pull),
-    {|string(_)||
-    Fetch and integrate with another repository/branch.
-    Format: git(pull(Remote, Branch))
-      Remote: Remote name (e.g. "origin")
-      Branch: Branch name to pull
-    |}
+register_spell(
+    conjure(git(pull)),
+    input(git(pull(remote('Remote'), branch('Branch')))),
+    output(either(ok(result(stdout('StdOut'), stderr('StdErr'))), error(git_error('Reason')))),
+    docstring("Fetch and integrate with another repository/branch. Remote: Remote name (e.g. 'origin'), Branch: Branch name to pull")
 ).
 
-docstring(git(branch),
-    {|string(_)||
-    Manage git branches.
-    Format: git(branch(Operation))
-      Operations:
-        list         - List all branches
-        create(Name) - Create new branch named Name
-    |}
+register_spell(
+    conjure(git(checkout)),
+    input(git(checkout(branch('Branch')))),
+    output(either(ok(result(stdout('StdOut'), stderr('StdErr'))), error(git_error('Reason')))),
+    docstring("Switch branches or restore working tree files. Branch: Name of branch to switch to, or Args list for advanced options")
 ).
 
-docstring(git(checkout),
-    {|string(_)||
-    Switch branches or restore working tree files.
-    Format: git(checkout(Branch))
-      Branch: Name of branch to switch to
-    |}
+register_spell(
+    conjure(git(reset)),
+    input(git(reset(args('Args')))),
+    output(either(ok(result(stdout('StdOut'), stderr('StdErr'))), error(git_error('Reason')))),
+    docstring("Reset current HEAD to the specified state. Args: List of arguments to pass to git reset")
 ).
 
-docstring(git(status),
-    {|string(_)||
-    Show the working tree status.
-    Format: git(status)
-    |}
+register_spell(
+    conjure(git(merge)),
+    input(git(merge(args('Args')))),
+    output(either(ok(result(stdout('StdOut'), stderr('StdErr'))), error(git_error('Reason')))),
+    docstring("Join two or more development histories together. Args: List of arguments to pass to git merge")
 ).
 
-docstring(git(diff),
-    {|string(_)||
-    Show changes between commits, commit and working tree, etc.
-    Format: git(diff)
-    |}
+% Perceive spells for git queries
+register_spell(
+    perceive(git(diff)),
+    input(git(diff)),
+    output(either(ok(result(stdout('StdOut'), stderr('StdErr'))), error(git_error('Reason')))),
+    docstring("Show changes between commits, commit and working tree, etc.")
 ).
 
-docstring(git(log),
-    {|string(_)||
-    Show the commit logs.
-    Format: git(log)
-    |}
+register_spell(
+    perceive(git(log)),
+    input(git(log)),
+    output(either(ok(result(stdout('StdOut'), stderr('StdErr'))), error(git_error('Reason')))),
+    docstring("Show the commit logs. Can be called as git(log) or git(log(Args)) with arguments list")
 ).
 
-docstring(git(rev_parse),
-    {|string(_)||
-    Parse and verify Git revision/object names.
-    Format: git(rev_parse(Args))
-    |}
+register_spell(
+    perceive(git(branch)),
+    input(git(branch(operation('Operation')))),
+    output(either(ok(result(stdout('StdOut'), stderr('StdErr'))), error(git_error('Reason')))),
+    docstring("Manage git branches. Operations: list (list all branches), create(Name) (create new branch), or Args list for advanced options")
 ).
 
-docstring(git(reset),
-    {|string(_)||
-    Reset current HEAD to the specified state.
-    Format: git(reset(Args))
-    |}
+register_spell(
+    perceive(git(rev_parse)),
+    input(git(rev_parse(args('Args')))),
+    output(either(ok(result(stdout('StdOut'), stderr('StdErr'))), error(git_error('Reason')))),
+    docstring("Parse and verify Git revision/object names. Args: List of arguments to pass to git rev-parse")
 ).
 
-docstring(git(merge),
-    {|string(_)||
-    Join two or more development histories together.
-    Format: git(merge(Args))
-    |}
+register_spell(
+    conjure(git(remote)),
+    input(git(remote(args('Args')))),
+    output(either(ok(result(stdout('StdOut'), stderr('StdErr'))), error(git_error('Reason')))),
+    docstring("Manage set of tracked repositories. Args: List of arguments to pass to git remote. Examples: [] (list all), ['show', 'origin'], ['get-url', 'origin']")
 ).
 
-docstring(git(ls_files),
-    {|string(_)||
-    List all tracked files in a git repository.
-    Format: perceive(git(ls_files(Directory, FileList)))
-      Directory: Path to the git repository
-      FileList: List of all tracked files (relative paths)
-    |}
-).
-
-docstring(git(remote),
-    {|string(_)||
-    Manage set of tracked repositories.
-    Format: git(remote(Args))
-      Args: List of arguments to pass to git remote
-      Examples:
-        git(remote([]))           - List all remotes
-        git(remote(['show', 'origin'])) - Show details for origin
-        git(remote(['get-url', 'origin'])) - Get URL for origin
-    |}
-).
-
+% Main git entity docstring
 docstring(git, S) :-
     make_ctors_docstring(git, CtorsDoc),
     S = {|string(CtorsDoc)||
@@ -295,8 +217,19 @@ git_args(rev_parse(Args)) --> ["rev-parse" | Args].
 git_args(reset(Args)) --> ["reset" | Args].
 git_args(merge(Args)) --> ["merge" | Args].
 git_args(commit(Args)) --> ["commit" | Args].  % Handle commit with args list
+git_args(config(Args)) --> ["config" | Args].  % Handle config with args list
 git_args(remote(Args)) --> ["remote" | Args].  % Handle remote with args list
 
+% Git config spell
+register_spell(
+    conjure(git(config)),
+    input(git(config(args('Args')))),
+    output(either(
+        ok(result(stdout('StdOut'), stderr('StdErr'))),
+        error(git_error(exit('ExitCode'), stderr('StdErr')))
+    )),
+    docstring("Get and set repository or global git configuration options. Args: list of config command arguments (e.g., ['user.name', 'Value'] or ['--get', 'user.name']).")
+).
 
 % Git conjure implementations
 cast(conjure(git(Term)), RetVal) :-
@@ -415,8 +348,6 @@ cast(perceive(git(current_branch(_Root))), Result) :-
         Error,
         Result = error(git_error(Error))
     ).
-
-% Use read_lines_from_stream/2 from utils.pl
 
 % Example git subsystem extension for load_entity
 % This could handle git repository cloning and then loading semantics

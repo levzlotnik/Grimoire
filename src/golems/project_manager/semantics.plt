@@ -18,11 +18,11 @@ test(project_manager_entity_exists) :-
 % === COMPONENT TESTS ===
 
 test(project_manager_delegation_relationships) :-
-    component(golem(project_manager), can_delegate_to, golem(architect)),
-    component(golem(project_manager), can_delegate_to, golem(semantics_verifier)).
+    user:please_verify(component(golem(project_manager), can_delegate_to, golem(architect))),
+    user:please_verify(component(golem(project_manager), can_delegate_to, golem(semantics_verifier))).
 
 test(project_manager_has_available_tools) :-
-    component(golem(project_manager), available_tools, _Tools).
+    user:please_verify(component(golem(project_manager), available_tools, _Tools)).
 
 % === END-TO-END TESTS ===
 

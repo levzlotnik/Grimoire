@@ -615,19 +615,21 @@ NOTE: This system operates on Prolog terms. Tools accept Prolog syntax as string
         # Use python_cast with interface(read_file(...))
         query = f"python_cast(conjure(interface(read_file({file_path!r}, {start}, {end}))), Result)"
         result = janus_swi.query_once(query)
-        
+
         parsed_lines = []
-        
+
         if result and "Result" in result:
             parsed = self._parse_interface_result(result["Result"])
-            # parsed should be the ContentWithLineNumbers list
-            if isinstance(parsed, list):
-                for item in parsed:
-                    if isinstance(item, PrologTerm) and item.functor == "line":
-                        line_num = int(item.args[0])
-                        line_content = str(item.args[1])
-                        parsed_lines.append(LineContent(line_number=line_num, content=line_content))
-                
+            # parsed is file_content([line(...), line(...), ...])
+            if isinstance(parsed, PrologTerm) and parsed.functor == "file_content":
+                lines_list = parsed.args[0] if parsed.args else []
+                if isinstance(lines_list, list):
+                    for item in lines_list:
+                        if isinstance(item, PrologTerm) and item.functor == "line":
+                            line_num = int(item.args[0])
+                            line_content = str(item.args[1])
+                            parsed_lines.append(LineContent(line_number=line_num, content=line_content))
+
         return ReadFileResponse(
             file_path=file_path,
             lines=parsed_lines

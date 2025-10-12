@@ -9,14 +9,8 @@ test(project_creation_workflow, [true]) :-
     % Test that we can access basic entities across domains
     entity(git), !,
     entity(nix), !,
-    component(conjure, ctor, git(init)), !,
-    component(conjure, ctor, nix(build)), !.
-
-% Test basic semantic relationships (simplified)
-test(transaction_execution, [true]) :-
-    % Test that we have transaction infrastructure
-    current_predicate(execute/2),
-    entity(system).
+    user:please_verify(component(conjure, ctor, git(init))), !,
+    user:please_verify(component(conjure, ctor, nix(build))), !.
 
 % Test docstring system works across domains
 test(cross_domain_docstrings, [true]) :-
@@ -31,8 +25,8 @@ test(cross_domain_mounting, [true]) :-
     % Verify that git and nix domains are properly loaded
     entity(git), !,
     entity(nix), !,
-    component(conjure, ctor, git(clone)), !,
-    component(conjure, ctor, nix(build)), !.
+    user:please_verify(component(conjure, ctor, git(clone))), !,
+    user:please_verify(component(conjure, ctor, nix(build))), !.
 
 setup_test_workspace :-
     % Clean up any existing test workspace

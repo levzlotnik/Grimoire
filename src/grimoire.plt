@@ -13,7 +13,6 @@ test(subsystems_loaded) :-
     user:please_verify(component(system, subsystem, nix)),
     user:please_verify(component(system, subsystem, fs)),
     user:please_verify(component(system, subsystem, project)),
-    user:please_verify(component(system, subsystem, session)),
     user:please_verify(component(system, subsystem, golems)), !.
 
 % Test spell constructors using component pattern
@@ -32,37 +31,54 @@ test(grimoire_perceive_constructors) :-
 
 % Test spell format registrations exist for grimoire-level spells only
 test(spell_format_registrations) :-
-    register_spell(conjure(shell), input(_), output(_), docstring(_)),
-    register_spell(conjure(executable_program), input(_), output(_), docstring(_)),
-    register_spell(perceive(entities), input(_), output(_), docstring(_)).
+    user:register_spell(conjure(shell), input(_), output(_), docstring(_)),
+    user:register_spell(conjure(executable_program), input(_), output(_), docstring(_)),
+    user:register_spell(perceive(entities), input(_), output(_), docstring(_)).
 
 % Test grimoire shell spell execution
 test(grimoire_shell_spell) :-
-    cast(conjure(shell(['echo', 'test'])), ok(result(Output, _))),
+    user:magic_cast(conjure(shell(['echo', 'test'])), ok(result(Output, _))),
     sub_string(Output, _, _, _, 'test'), !.
 
 % Test grimoire executable_program spell
 test(grimoire_executable_program) :-
-    cast(conjure(executable_program(echo, ['hello'])), ok(result(Output, _))),
+    user:magic_cast(conjure(executable_program(echo, ['hello'])), ok(result(Output, _))),
     sub_string(Output, _, _, _, 'hello'), !.
 
 % Test perceive entities query
 test(grimoire_entities_query) :-
-    cast(perceive(entities), ok(entity_list(Entities))),
+    user:magic_cast(perceive(entities), ok(entity_list(Entities))),
     assertion(is_list(Entities)),
     assertion(member(system, Entities)), !.
 
 % Test system entity existence
 test(system_entity_exists) :-
-    user:please_verify(component(system, defined, true)).
+    user:please_verify(component(system, defined, true)), !.
 
 % Test system docstring exists
 test(system_docstring_exists) :-
-    user:please_verify(component(system, docstring, _Doc)).
+    user:please_verify(component(system, docstring, _Doc)), !.
 
 % Test source/semantic infrastructure
 test(semantic_entities_exist) :-
     user:please_verify(component(source, defined, true)),
-    user:please_verify(component(semantic, defined, true)).
+    user:please_verify(component(semantic, defined, true)), !.
 
 :- end_tests(grimoire_core).
+
+% === VERIFICATION PREDICATES ===
+% Ensure all spell constructors use register_spell/4 pattern
+
+verify(component(conjure, ctor, Ctor)) :-
+    % Every conjure constructor MUST have a register_spell/4 declaration
+    register_spell(conjure(Ctor), _, _, _) ->
+        true
+    ;
+        throw(verification_error(spell_system, missing_register_spell(conjure(Ctor)))).
+
+verify(component(perceive, ctor, Ctor)) :-
+    % Every perceive constructor MUST have a register_spell/4 declaration
+    register_spell(perceive(Ctor), _, _, _) ->
+        true
+    ;
+        throw(verification_error(spell_system, missing_register_spell(perceive(Ctor)))).

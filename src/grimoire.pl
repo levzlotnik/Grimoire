@@ -103,7 +103,6 @@ component(system, concept, perceive).
 component(system, concept, interface).
 component(system, concept, git).
 component(system, concept, nix).
-component(system, concept, session).
 
 component(system, source, source(semantic(file("grimoire.pl")))).
 
@@ -144,7 +143,6 @@ component(system, subsystem, git).
 component(system, subsystem, nix).
 component(system, subsystem, fs).
 component(system, subsystem, project).
-component(system, subsystem, session).
 component(system, subsystem, golems).
 
 entity(project).
@@ -161,49 +159,17 @@ docstring(project,
 ).
 
 % Core subsystem entities - loaded immediately on boot
-% Load core system components - immediate loading for core functionality
-:- load_entity(semantic(file("@/src/git.pl"))).
-:- load_entity(semantic(file("@/src/utils.pl"))).
-:- load_entity(semantic(folder("@/src/nix"))).
-:- load_entity(semantic(file("@/src/fs.pl"))).
-:- load_entity(semantic(folder("@/src/db"))).
-:- load_entity(semantic(folder("@/src/project"))).
-% :- load_entity(semantic(file("@/src/session.pl"))).  % Being reworked - temporarily disabled
-:- load_entity(semantic(folder("@/src/interface"))).
-:- load_entity(semantic(folder("@/src/golems"))).
-:- load_entity(semantic(folder("@/src/protocol_clients"))).
-
 % Spell system - fantasy-themed query/mutation separation
+% MUST be defined BEFORE loading subsystems that use register_spell/4
 entity(spell).
 component(spell, ctor, conjure).
 component(spell, ctor, perceive).
 
 % Conjure entity for mutable operations
 entity(conjure).
-% Spell constructors (manual, for spells without register_spell yet)
-component(conjure, ctor, session).
 
 % Perceive entity for query operations
 entity(perceive).
-% Core perceive constructors
-% search_regex doesn't have register_spell yet
-component(perceive, ctor, search_regex).
-
-% Core perceive command entities (manual, for spells without register_spell yet)
-entity(search_regex).
-
-% Core perceive docstrings (manual, for spells without register_spell yet)
-docstring(search_regex,
-    {|string(_)||
-    Search content using regular expressions.
-    Searches through content with regex patterns to find matches.
-    Format: perceive(search_regex(ContentWithLineNumbers, Pattern, FoundContent)).
-        ContentWithLineNumbers - input content with line numbers
-        Pattern - regular expression pattern to search for
-        FoundContent - unifies with matching content
-    |}
-).
-
 
 % Spell system docstrings
 docstring(spell,
@@ -282,16 +248,43 @@ docstring(E, S) :-
     component(SpellCtor, ctor, SpellType),
     format(string(S), "~w~n~nInput Format: ~w~nOutput Format: ~w", [Explanation, InputFormat, OutputFormat]).
 
+% Bare constructor docstrings - just explanation
+docstring(SpellType, Explanation) :-
+    register_spell(conjure(SpellType), _, _, docstring(Explanation)).
+docstring(SpellType, Explanation) :-
+    register_spell(perceive(SpellType), _, _, docstring(Explanation)).
+
+% Load core system components - loaded AFTER spell system is defined
+:- load_entity(semantic(file("@/src/git.pl"))).
+:- load_entity(semantic(file("@/src/utils.pl"))).
+:- load_entity(semantic(folder("@/src/nix"))).
+:- load_entity(semantic(file("@/src/fs.pl"))).
+:- load_entity(semantic(folder("@/src/db"))).
+:- load_entity(semantic(folder("@/src/project"))).
+% :- load_entity(semantic(file("@/src/session.pl"))).  % Being reworked - temporarily disabled
+:- load_entity(semantic(folder("@/src/interface"))).
+:- load_entity(semantic(folder("@/src/golems"))).
+:- load_entity(semantic(folder("@/src/protocol_clients"))).
+
 % Grimoire-level spell registrations
+% Spell implementations - each register_spell placed RIGHT ABOVE its cast clause
+
 register_spell(
-    conjure(shell),
-    input(shell(args('Args'))),
-    output(either(
-        ok(result(stdout('StdOut'), stderr('StdErr'))),
-        error(shell_error(args('Args'), exit('ExitCode'), stdout('StdOut'), stderr('StdErr')))
-    )),
-    docstring("Execute shell command with arguments. Returns stdout and stderr on success or error details on failure.")
+    perceive(search_regex),
+    input(search_regex(content('ContentWithLineNumbers'), pattern('Pattern'))),
+    output(either(ok(search_results('MatchedLines')), error(grimoire_error('Reason')))),
+    docstring("Search content using regular expressions. Searches through content with line numbers to find pattern matches.")
 ).
+cast(perceive(search_regex(ContentWithLineNumbers, Pattern)), Result) :-
+    catch(
+        (findall(line(Num, Line),
+            (member(line(Num, Line), ContentWithLineNumbers),
+             re_match(Pattern, Line)),
+            FoundContent),
+         Result = ok(search_results(FoundContent))),
+        Error,
+        Result = error(grimoire_error(Error))
+    ).
 
 register_spell(
     conjure(executable_program),
@@ -302,15 +295,6 @@ register_spell(
     )),
     docstring("Execute a program with arguments. Returns stdout and stderr on success or error details on failure.")
 ).
-
-register_spell(
-    perceive(entities),
-    input(entities),
-    output(entity_list('Entities')),
-    docstring("List all entities in the system. Returns a list of all registered entities.")
-).
-
-
 cast(conjure(executable_program(Program, Args)), RetVal) :-
     % Non-interactive mode - capture output and exit code
     setup_call_cleanup(
@@ -333,6 +317,12 @@ cast(conjure(executable_program(Program, Args)), RetVal) :-
         RetVal = error(process_error(Program, exit(ExitCode), Stdout, Stderr))
     ).
 
+register_spell(
+    conjure(executable_program_interactive),
+    input(executable_program(program('Program'), args('Args'), interactive)),
+    output(ok(completion_message('Message'))),
+    docstring("Execute a program interactively with stdin/stdout/stderr passed through. Returns completion message.")
+).
 cast(conjure(executable_program(Program, Args, interactive)), RetVal) :-
     % Interactive mode - pass through stdin/stdout
     setup_call_cleanup(
@@ -346,17 +336,31 @@ cast(conjure(executable_program(Program, Args, interactive)), RetVal) :-
     ),
     RetVal = ok("Interactive program completed").
 
-
+register_spell(
+    conjure(shell),
+    input(shell(args('Args'))),
+    output(either(
+        ok(result(stdout('StdOut'), stderr('StdErr'))),
+        error(shell_error(args('Args'), exit('ExitCode'), stdout('StdOut'), stderr('StdErr')))
+    )),
+    docstring("Execute shell command with arguments. Returns stdout and stderr on success or error details on failure.")
+).
 cast(conjure(shell(Args)), RetVal) :-
     join_args(Args, JoinedArgs),
-    cast(
+    magic_cast(
         conjure(executable_program(sh, ["-c", JoinedArgs])),
         RetVal
     ).
 
+register_spell(
+    conjure(shell_interactive),
+    input(shell(args('Args'), interactive)),
+    output(ok(completion_message('Message'))),
+    docstring("Execute shell command interactively with stdin/stdout/stderr passed through. Returns completion message.")
+).
 cast(conjure(shell(Args, interactive)), RetVal) :-
     join_args(Args, JoinedArgs),
-    cast(
+    magic_cast(
         conjure(executable_program(sh, ["-c", JoinedArgs], interactive)),
         RetVal
     ).
@@ -387,9 +391,15 @@ docstring(cast,
 
 % Remove this dispatcher - let individual files handle cast(conjure(...)) directly
 
+register_spell(
+    conjure(ritual),
+    input(ritual(operations(list('Spells')))),
+    output(ok(results(list('Results')))),
+    docstring("Cast multiple spells as an atomic ritual (transaction). All spells must succeed or all fail together.")
+).
 cast(ritual(Operations), RetVal) :-
     % Cast multiple conjuration spells as a ritual (atomic transaction)
-    maplist(cast, Operations, Results),
+    maplist(magic_cast, Operations, Results),
     RetVal = ok(Results).
 
 execute_commands([], []).
@@ -419,22 +429,16 @@ docstring(list_mounted_semantics,
 % ========================================================================
 
 % Perceive all entities in the system
+register_spell(
+    perceive(entities),
+    input(entities),
+    output(entity_list('Entities')),
+    docstring("List all entities in the system. Returns a list of all registered entities.")
+).
 cast(perceive(entities), Result) :-
     catch(
         (findall(Entity, entity(Entity), Entities),
          Result = ok(entity_list(Entities))),
-        Error,
-        Result = error(grimoire_error(Error))
-    ).
-
-% Search for regex pattern in content with line numbers
-cast(perceive(search_regex(ContentWithLineNumbers, Pattern)), Result) :-
-    catch(
-        (findall(line(Num, Line),
-            (member(line(Num, Line), ContentWithLineNumbers),
-             re_match(Pattern, Line)),
-            FoundContent),
-         Result = ok(search_results(FoundContent))),
         Error,
         Result = error(grimoire_error(Error))
     ).

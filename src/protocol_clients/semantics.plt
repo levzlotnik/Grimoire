@@ -9,7 +9,7 @@
 
 % Verification rules
 verify(component(Entity, has(protocol_client(mcp)), protocol_client(mcp(server(S), transport(T), command(C), auto_reflect(A))))) :-
-    please_verify(component(Entity, protocol_client_mcp_server, S)),
+    user:please_verify(component(Entity, protocol_client_mcp_server, S)),
     atom(S), atom(T), is_list(C).
 
 % Top-level protocol_clients tests
@@ -22,12 +22,12 @@ test(has_docstring) :-
     docstring(protocol_clients, _).
 
 test(http_child_exists) :-
-    component(protocol_clients, child_entity, protocol_client(http)).
+    user:please_verify(component(protocol_clients, child_entity, protocol_client(http))).
 
 test(mcp_child_exists) :-
-    component(protocol_clients, child_entity, protocol_client(mcp)).
+    user:please_verify(component(protocol_clients, child_entity, protocol_client(mcp))).
 
 test(mcp_expansion) :-
-    please_verify(component(test_mcp_client, protocol_client_mcp_server, file_operations)).
+    user:please_verify(component(test_mcp_client, protocol_client_mcp_server, file_operations)).
 
 :- end_tests(protocol_clients).

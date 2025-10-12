@@ -19,7 +19,7 @@ ensure_python_mcp_client :-
     ->  true
     ;   grimoire_resolve_path('./', McpPath),
         py_add_lib_dir(McpPath, first),
-        py_import(client, [as(mcp_client)]),
+        py_import(mcp_client, [as(mcp_client)]),
         assertz(mcp_client_imported)
     ).
 
