@@ -8,6 +8,37 @@
 
 % === VERIFICATION RULES FOR FS DSL PATTERNS ===
 
+% Verify composite has(fs(file)) pattern (if it exists in the codebase)
+verify(component(Entity, has(fs(file)), fs(file(_Spec)))) :-
+    % Delegate to primitive verification
+    user:please_verify(component(Entity, fs_file_path, Path)),
+    % Check OS reality
+    (exists_file(Path) ->
+        true
+    ;
+        throw(verification_error(fs, file_not_found(Path)))
+    ).
+
+% Verify primitive fs_file_path component
+verify(component(_Entity, fs_file_path, Path)) :-
+    % Component existence already proven by please_verify
+    % Check OS reality
+    (exists_file(Path) ->
+        true
+    ;
+        throw(verification_error(fs, file_not_found(Path)))
+    ).
+
+% Verify primitive fs_directory_path component
+verify(component(_Entity, fs_directory_path, Path)) :-
+    % Component existence already proven by please_verify
+    % Check OS reality
+    (exists_directory(Path) ->
+        true
+    ;
+        throw(verification_error(fs, directory_not_found(Path)))
+    ).
+
 % Verify fs(structure) DSL pattern
 verify(component(_Entity, has(fs(structure)), fs(structure(Items)))) :-
     % Extract file and folder specs directly (inline expansion instead of relying on component/3)
@@ -183,7 +214,7 @@ test(fs_read_file_spell, [
     setup(create_read_test_file),
     cleanup(cleanup_read_test_file)
 ]) :-
-    cast(perceive(fs(read_file('read_test.txt', 1, 2))), Result),
+    user:magic_cast(perceive(fs(read_file('read_test.txt', 1, 2))), Result),
     assertion(Result = ok(file_content(Content))),
     length(Content, 2),
     Content = [line(1, "line 1"), line(2, "line 2")].
@@ -193,7 +224,7 @@ test(fs_edit_file_insert_spell, [
     setup(create_edit_test_file),
     cleanup(cleanup_edit_test_file)
 ]) :-
-    cast(conjure(fs(edit_file(file('edit_test.txt'), [insert(2, "inserted line")]))), Result), !,
+    user:magic_cast(conjure(fs(edit_file(file('edit_test.txt'), [insert(2, "inserted line")]))), Result), !,
     assertion(Result == ok(file_modified('edit_test.txt'))),
     read_file_to_lines('edit_test.txt', Lines),
     assertion(Lines == ["original line 1", "inserted line", "original line 2", "original line 3"]).
@@ -203,7 +234,7 @@ test(fs_edit_file_append_spell, [
     setup(create_edit_test_file),
     cleanup(cleanup_edit_test_file)
 ]) :-
-    cast(conjure(fs(edit_file(file('edit_test.txt'), [append("appended line")]))), Result), !,
+    user:magic_cast(conjure(fs(edit_file(file('edit_test.txt'), [append("appended line")]))), Result), !,
     assertion(Result == ok(file_modified('edit_test.txt'))),
     read_file_to_lines('edit_test.txt', Lines),
     assertion(nth1(4, Lines, "appended line")).
@@ -213,7 +244,7 @@ test(fs_edit_file_delete_spell, [
     setup(create_edit_test_file),
     cleanup(cleanup_edit_test_file)
 ]) :-
-    cast(conjure(fs(edit_file(file('edit_test.txt'), [delete(2, 2)]))), Result), !,
+    user:magic_cast(conjure(fs(edit_file(file('edit_test.txt'), [delete(2, 2)]))), Result), !,
     assertion(Result == ok(file_modified('edit_test.txt'))),
     read_file_to_lines('edit_test.txt', Lines),
     assertion(Lines == ["original line 1", "original line 3"]).
@@ -223,20 +254,20 @@ test(fs_edit_file_replace_spell, [
     setup(create_edit_test_file),
     cleanup(cleanup_edit_test_file)
 ]) :-
-    cast(conjure(fs(edit_file(file('edit_test.txt'), [replace(2, 2, "replaced line")]))), Result), !,
+    user:magic_cast(conjure(fs(edit_file(file('edit_test.txt'), [replace(2, 2, "replaced line")]))), Result), !,
     assertion(Result == ok(file_modified('edit_test.txt'))),
     read_file_to_lines('edit_test.txt', Lines),
     assertion(Lines == ["original line 1", "replaced line", "original line 3"]).
 
 % Test mkdir spell
 test(fs_mkdir_spell, [cleanup(cleanup_mkdir_test)]) :-
-    cast(conjure(fs(mkdir('test_mkdir_dir'))), Result), !,
+    user:magic_cast(conjure(fs(mkdir('test_mkdir_dir'))), Result), !,
     assertion(Result == ok(directory_created('test_mkdir_dir'))),
     assertion(exists_directory('test_mkdir_dir')).
 
 % Test mkfile spell
 test(fs_mkfile_spell, [cleanup(cleanup_mkfile_test)]) :-
-    cast(conjure(fs(mkfile('test_mkfile.txt'))), Result), !,
+    user:magic_cast(conjure(fs(mkfile('test_mkfile.txt'))), Result), !,
     assertion(Result == ok(file_created('test_mkfile.txt'))),
     assertion(exists_file('test_mkfile.txt')).
 

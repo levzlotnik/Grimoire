@@ -54,11 +54,11 @@ component(Entity, git_repository_root, Root) :-
 % Auto-detect repository properties from filesystem
 component(Entity, git_repository_current_branch, CurrentBranch) :-
     component(Entity, git_repository_root, Root),
-    cast(perceive(git(current_branch(Root, CurrentBranch))), ok(_)).
+    magic_cast(perceive(git(current_branch(Root, CurrentBranch))), ok(_)).
 
 component(Entity, git_repository_working_status, WorkingStatus) :-
     component(Entity, git_repository_root, _Root),
-    cast(perceive(git(status(_, WorkingStatus, _))), ok(_)).
+    magic_cast(perceive(git(status(_, WorkingStatus, _))), ok(_)).
 
 % Repository verification flag
 component(Entity, git_repository_verified, true) :-

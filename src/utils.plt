@@ -12,29 +12,89 @@
 % File processor verification
 verify(component(Entity, has(utils(file_processor)), utils(file_processor(type(Type), filters(Filters))))) :-
     % Already exists via please_verify, now verify semantics
-    user:please_verify(component(Entity, utils_processor_type, Type)),
+    please_verify(component(Entity, utils_processor_type, Type)),
     verify_file_processor_config(Type, Filters).
 
 % Tree builder verification
 verify(component(Entity, has(utils(tree_builder)), utils(tree_builder(root(Root), relationship(Rel), options(Options))))) :-
     % Already exists via please_verify, now verify semantics
-    user:please_verify(component(Entity, utils_tree_root, Root)),
-    user:please_verify(component(Entity, utils_tree_relationship, Rel)),
+    please_verify(component(Entity, utils_tree_root, Root)),
+    please_verify(component(Entity, utils_tree_relationship, Rel)),
     verify_tree_builder_config(Root, Rel, Options).
 
 % Validator verification
 verify(component(Entity, has(utils(validator)), utils(validator(rules(Rules), on_error(ErrorMode))))) :-
     % Already exists via please_verify, now verify semantics
-    user:please_verify(component(Entity, utils_validation_rules, Rules)),
-    user:please_verify(component(Entity, utils_error_handling, ErrorMode)),
+    please_verify(component(Entity, utils_validation_rules, Rules)),
+    please_verify(component(Entity, utils_error_handling, ErrorMode)),
     verify_validator_config(Rules, ErrorMode).
 
 % Collection verification
 verify(component(Entity, has(utils(collection)), utils(collection(type(Type), operations(Operations), predicate(Predicate))))) :-
     % Already exists via please_verify, now verify semantics
-    user:please_verify(component(Entity, utils_collection_type, Type)),
-    user:please_verify(component(Entity, utils_collection_operations, Operations)),
+    please_verify(component(Entity, utils_collection_type, Type)),
+    please_verify(component(Entity, utils_collection_operations, Operations)),
     verify_collection_config(Type, Operations, Predicate).
+
+% === PRIMITIVE COMPONENT VERIFICATIONS ===
+
+% Verify expanded component: utils_processor_type
+verify(component(_Entity, utils_processor_type, Type)) :-
+    % Already exists via please_verify
+    member(Type, [semantics, general, custom]).
+
+% Verify expanded component: utils_file_extensions
+verify(component(_Entity, utils_file_extensions, Extensions)) :-
+    % Already exists via please_verify
+    is_list(Extensions),
+    forall(member(Ext, Extensions), (atom(Ext), sub_atom(Ext, 0, 1, _, '.'))).
+
+% Verify expanded component: utils_file_pattern
+verify(component(_Entity, utils_file_pattern, Pattern)) :-
+    % Already exists via please_verify
+    atom(Pattern).
+
+% Verify expanded component: utils_tree_root
+verify(component(_Entity, utils_tree_root, Root)) :-
+    % Already exists via please_verify
+    entity(Root).
+
+% Verify expanded component: utils_tree_relationship
+verify(component(_Entity, utils_tree_relationship, Rel)) :-
+    % Already exists via please_verify
+    atom(Rel).
+
+% Verify expanded component: utils_tree_max_depth
+verify(component(_Entity, utils_tree_max_depth, MaxDepth)) :-
+    % Already exists via please_verify
+    integer(MaxDepth), MaxDepth > 0.
+
+% Verify expanded component: utils_validation_rules
+verify(component(_Entity, utils_validation_rules, Rules)) :-
+    % Already exists via please_verify
+    is_list(Rules),
+    subset(Rules, [check_existence, check_format, check_permissions]).
+
+% Verify expanded component: utils_error_handling
+verify(component(_Entity, utils_error_handling, ErrorMode)) :-
+    % Already exists via please_verify
+    member(ErrorMode, [throw, return, log]).
+
+% Verify expanded component: utils_collection_type
+verify(component(_Entity, utils_collection_type, Type)) :-
+    % Already exists via please_verify
+    atom(Type).
+
+% Verify expanded component: utils_collection_operations
+verify(component(_Entity, utils_collection_operations, Operations)) :-
+    % Already exists via please_verify
+    is_list(Operations),
+    subset(Operations, [filter, map, reduce]).
+
+% Verify expanded component: utils_collection_predicate
+verify(component(_Entity, utils_collection_predicate, Predicate)) :-
+    % Already exists via please_verify
+    callable(Predicate).
 
 % === DOMAIN-SPECIFIC VERIFICATION PREDICATES ===
 
@@ -94,7 +154,7 @@ verify_collection_config(Type, Operations, Predicate) :-
 
 % Test utils entity exists
 test(entity_exists) :-
-    user:please_verify(component(utils, defined, true)).
+    please_verify(component(utils, defined, true)), !.
 
 % Debug tests removed - no longer needed
 
@@ -103,39 +163,39 @@ test(entity_exists) :-
 % Test file processor DSL pattern
 test(utils_file_processor_verification, [setup(setup_file_processor), cleanup(cleanup_file_processor)]) :-
     % Verify it using please_verify
-    user:please_verify(component(test_entity(utils_file_processor), has(utils(file_processor)),
+    please_verify(component(test_entity(utils_file_processor), has(utils(file_processor)),
         utils(file_processor(type(semantics), filters([extensions(['.pl', '.plt'])]))))),
     % Verify generative expansion worked
-    user:please_verify(component(test_entity(utils_file_processor), utils_processor_type, semantics)),
-    user:please_verify(component(test_entity(utils_file_processor), utils_file_extensions, ['.pl', '.plt'])), !.
+    please_verify(component(test_entity(utils_file_processor), utils_processor_type, semantics)),
+    please_verify(component(test_entity(utils_file_processor), utils_file_extensions, ['.pl', '.plt'])), !.
 
 % Test tree builder DSL pattern
 test(utils_tree_builder_verification, [setup(setup_tree_builder), cleanup(cleanup_tree_builder)]) :-
     % Verify it using please_verify
-    user:please_verify(component(test_entity(utils_tree_builder), has(utils(tree_builder)),
+    please_verify(component(test_entity(utils_tree_builder), has(utils(tree_builder)),
         utils(tree_builder(root(test_root), relationship(child), options([max_depth(10)]))))),
     % Verify generative expansion worked
-    user:please_verify(component(test_entity(utils_tree_builder), utils_tree_root, test_root)),
-    user:please_verify(component(test_entity(utils_tree_builder), utils_tree_relationship, child)),
-    user:please_verify(component(test_entity(utils_tree_builder), utils_tree_max_depth, 10)), !.
+    please_verify(component(test_entity(utils_tree_builder), utils_tree_root, test_root)),
+    please_verify(component(test_entity(utils_tree_builder), utils_tree_relationship, child)),
+    please_verify(component(test_entity(utils_tree_builder), utils_tree_max_depth, 10)), !.
 
 % Test validator DSL pattern
 test(utils_validator_verification, [setup(setup_validator), cleanup(cleanup_validator)]) :-
     % Verify it using please_verify
-    user:please_verify(component(test_entity(utils_validator), has(utils(validator)),
+    please_verify(component(test_entity(utils_validator), has(utils(validator)),
         utils(validator(rules([check_existence, check_format]), on_error(throw))))),
     % Verify generative expansion worked
-    user:please_verify(component(test_entity(utils_validator), utils_validation_rules, [check_existence, check_format])),
-    user:please_verify(component(test_entity(utils_validator), utils_error_handling, throw)), !.
+    please_verify(component(test_entity(utils_validator), utils_validation_rules, [check_existence, check_format])),
+    please_verify(component(test_entity(utils_validator), utils_error_handling, throw)), !.
 
 % Test collection DSL pattern
 test(utils_collection_verification, [setup(setup_collection), cleanup(cleanup_collection)]) :-
     % Verify it using please_verify
-    user:please_verify(component(test_entity(utils_collection), has(utils(collection)),
+    please_verify(component(test_entity(utils_collection), has(utils(collection)),
         utils(collection(type(entities), operations([filter, map]), predicate(is_atom/1))))),
     % Verify generative expansion worked
-    user:please_verify(component(test_entity(utils_collection), utils_collection_type, entities)),
-    user:please_verify(component(test_entity(utils_collection), utils_collection_operations, [filter, map])), !.
+    please_verify(component(test_entity(utils_collection), utils_collection_type, entities)),
+    please_verify(component(test_entity(utils_collection), utils_collection_operations, [filter, map])), !.
 
 % === SPELL CONSTRUCTOR TESTS ===
 
@@ -150,14 +210,9 @@ test(spell_format_registrations) :-
 % === SPELL IMPLEMENTATION TESTS ===
 
 % Test entity hierarchy building
-test(simple_hierarchy) :-
-    % Create a simple test hierarchy
-    user:assertz(component(test_root, child, test_child1)),
-    user:assertz(component(test_root, child, test_child2)),
-    user:assertz(component(test_child1, child, test_grandchild)),
-
+test(simple_hierarchy, [setup(setup_hierarchy), cleanup(cleanup_hierarchy)]) :-
     % Build hierarchy
-    cast(perceive(utils(entity_hierarchy(test_root))), Result),
+    magic_cast(perceive(utils(entity_hierarchy(test_root))), Result),
     assertion(Result = ok(hierarchy(Tree))),
 
     % Verify structure
@@ -166,26 +221,22 @@ test(simple_hierarchy) :-
     member(tree(test_child1, GrandChildren), Children),
     member(tree(test_child2, []), Children),
     length(GrandChildren, 1),
-    member(tree(test_grandchild, []), GrandChildren), !,
-
-    % Cleanup
-    user:retractall(component(test_root, child, _)),
-    user:retractall(component(test_child1, child, _)).
+    member(tree(test_grandchild, []), GrandChildren), !.
 
 % Test validation spell
 test(validate_spell_success, [setup(setup_validate_entity), cleanup(cleanup_validate_entity)]) :-
     % Entity exists and should validate
-    cast(conjure(utils(validate(validate_test_entity, [check_existence, check_format]))), Result),
+    magic_cast(conjure(utils(validate(validate_test_entity, [check_existence, check_format]))), Result),
     assertion(Result == ok(validation_passed)), !.
 
 test(validate_spell_failure) :-
     % Nonexistent entity should fail validation
-    cast(conjure(utils(validate(nonexistent_entity, [check_existence]))), Result),
+    magic_cast(conjure(utils(validate(nonexistent_entity, [check_existence]))), Result),
     assertion(Result = error(validation_error(_))), !.
 
 % Test transform spell
 test(transform_spell_map) :-
-    cast(conjure(utils(transform([1, 2, 3], map(succ)))), Result),
+    magic_cast(conjure(utils(transform([1, 2, 3], map(succ)))), Result),
     assertion(Result == ok(transformed([2, 3, 4]))), !.
 
 % === UTILITY FUNCTION TESTS ===
@@ -241,9 +292,19 @@ cleanup_collection :-
     true.
 
 setup_validate_entity :-
-    user:assertz(entity(validate_test_entity)).
+    % Entity already loaded from file
+    true.
 
 cleanup_validate_entity :-
-    user:retractall(entity(validate_test_entity)).
+    % No cleanup needed
+    true.
+
+setup_hierarchy :-
+    % Entities already loaded from file
+    true.
+
+cleanup_hierarchy :-
+    % No cleanup needed
+    true.
 
 :- end_tests(utils).

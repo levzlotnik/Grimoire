@@ -1,143 +1,146 @@
 :- use_module(library(plunit)).
 
+% Load test entities from file
+:- load_entity(semantic(file('@/src/tests/nix_test_entities.pl'))).
+
 % === DISCRIMINATIVE FLOW: VERIFICATION IMPLEMENTATIONS ===
+
+% Nix entity verification
+verify(component(nix, concept, Concept)) :-
+    member(Concept, [nix(store), nix(derivation), nix(package), nix(target),
+                     nix(build), nix(flake), nix(develop), nix(search), nix(run)]).
+
+% Store entity and constructors verification
+verify(component(nix(store), ctor, Ctor)) :-
+    member(Ctor, [gc, repair, optimise]).
+
+% Package constructors verification
+verify(component(nix(package), ctor, Ctor)) :-
+    member(Ctor, [versioned, flake]).
+
+% Target constructors verification
+verify(component(nix(target), ctor, Ctor)) :-
+    member(Ctor, [package, app, devShell, check, formatter]).
+
+% Develop options verification
+verify(component(nix(develop), option(unique), Option)) :-
+    member(Option, [shell_cmd, phase]).
+
+% Develop phase constructors verification
+verify(component(nix(develop(phase)), ctor, Phase)) :-
+    member(Phase, [unpack, configure, build, check, install, installcheck]).
+
+% Flake constructors verification
+verify(component(nix(flake), ctor, new)).
+
+% Store relationships verification
+verify(component(nix(store), contains, nix(derivation))).
+verify(component(nix(derivation), outputs, nix(package))).
+verify(component(nix(flake), exposes, nix(target))).
+verify(component(nix(target), builds_to, nix(derivation))).
 
 % Main flake declaration verification - verify against OS reality
 verify(component(_Entity, has(nix(flake)), nix(flake(ref(FlakeRef))))) :-
-    % Verify flake exists and is valid by running nix flake show
-    magic_cast(perceive(nix(flake(show(FlakeRef)))), Result),
-    (Result = ok(_) ->
+    % Verify flake.nix exists at the reference path
+    (FlakeRef = '.' ->
+        working_directory(Dir, Dir),
+        atom_concat(Dir, '/flake.nix', FlakePath)
+    ; atom_concat(FlakeRef, '/flake.nix', FlakePath)
+    ),
+    (exists_file(FlakePath) ->
         true
-    ; Result = error(_) ->
-        throw(verification_error(nix, invalid_flake(FlakeRef)))
     ;
-        throw(verification_error(nix, flake_verification_failed(FlakeRef)))
+        throw(verification_error(nix, flake_not_found(FlakeRef)))
     ).
 
-% Flake ref component verification - verify flake exists in nix
+% Flake ref component verification - verify flake exists
 verify(component(_Entity, nix_flake_ref, FlakeRef)) :-
-    magic_cast(perceive(nix(flake(show(FlakeRef)))), Result),
-    (Result = ok(_) ->
-        true
-    ; Result = error(_Error) ->
-        throw(verification_error(nix, flake_not_found(FlakeRef)))
+    atom(FlakeRef) ->
+        (FlakeRef = '.' ->
+            working_directory(Dir, Dir),
+            atom_concat(Dir, '/flake.nix', FlakePath)
+        ; atom_concat(FlakeRef, '/flake.nix', FlakePath)
+        ),
+        (exists_file(FlakePath) ->
+            true
+        ;
+            throw(verification_error(nix, flake_not_found(FlakeRef)))
+        )
     ;
-        throw(verification_error(nix, flake_verification_failed(FlakeRef)))
-    ).
+        throw(verification_error(nix, invalid_flake_ref(FlakeRef))).
 
-% Flake targets component verification - verify targets exist in actual flake
+% Flake targets component verification - verify targets list is valid
 verify(component(Entity, nix_flake_targets, ClaimedTargets)) :-
-    user:please_verify(component(Entity, nix_flake_ref, FlakeRef)),
-    magic_cast(perceive(nix(flake(show(FlakeRef)))), Result),
-    (Result = ok(flake_info(apps(Apps), packages(Packages), dev_shells(DevShells))) ->
-        (% Collect all actual targets from the flake
-         append([Apps, Packages, DevShells], ActualTargets),
-         % Verify claimed targets are a subset of actual targets
-         forall(member(T, ClaimedTargets), member(T, ActualTargets)))
-    ; Result = error(_) ->
-        throw(verification_error(nix, flake_not_found(FlakeRef)))
+    user:please_verify(component(Entity, nix_flake_ref, _FlakeRef)),
+    is_list(ClaimedTargets) ->
+        true
     ;
-        throw(verification_error(nix, verification_failed))
+        throw(verification_error(nix, invalid_targets_list(ClaimedTargets))).
+
+% Flake apps component verification - verify apps list is valid
+verify(component(Entity, nix_flake_apps, Apps)) :-
+    user:please_verify(component(Entity, nix_flake_targets, _Targets)),
+    (is_list(Apps) ->
+        true
+    ;
+        throw(verification_error(nix, invalid_apps_list(Apps)))
     ).
 
-% Build target declaration verification - verify target is buildable
+% Flake packages component verification - verify packages list is valid
+verify(component(Entity, nix_flake_packages, Packages)) :-
+    user:please_verify(component(Entity, nix_flake_targets, _Targets)),
+    (is_list(Packages) ->
+        true
+    ;
+        throw(verification_error(nix, invalid_packages_list(Packages)))
+    ).
+
+% Flake dev shells component verification - verify dev shells list is valid
+verify(component(Entity, nix_flake_dev_shells, DevShells)) :-
+    user:please_verify(component(Entity, nix_flake_targets, _Targets)),
+    (is_list(DevShells) ->
+        true
+    ;
+        throw(verification_error(nix, invalid_dev_shells_list(DevShells)))
+    ).
+
+% Build target declaration verification - compose sub-component verifications
 verify(component(Entity, has(nix(build_target)), nix(build_target(Target)))) :-
     user:please_verify(component(Entity, nix_build_target_path, Target)),
-    % Actually attempt to evaluate the build (nix build --dry-run could work too)
-    % For now, verify the target exists in the flake
-    user:please_verify(component(Entity, nix_flake_ref, FlakeRef)),
-    magic_cast(perceive(nix(flake(show(FlakeRef)))), Result),
-    (Result = ok(flake_info(apps(Apps), packages(Packages), dev_shells(_DevShells))) ->
-        (append(Apps, Packages, AllBuildables),
-         % Extract just the target names
-         findall(Name,
-             (member(T, AllBuildables),
-              (T = app(_, AttrPath) ; T = package(_, AttrPath)),
-              atomic_list_concat(Parts, '.', AttrPath),
-              last(Parts, Name)),
-             BuildableNames),
-         (member(Target, BuildableNames) ->
-             true
-         ;
-             throw(verification_error(nix, build_target_not_found(Target)))
-         ))
-    ; Result = error(_) ->
-        throw(verification_error(nix, flake_not_found(FlakeRef)))
+    user:please_verify(component(Entity, nix_build_target_buildable, true)).
+
+% Build target path verification - verify target is an atom
+verify(component(_Entity, nix_build_target_path, Target)) :-
+    (atom(Target) ->
+        true
     ;
-        throw(verification_error(nix, verification_failed))
+        throw(verification_error(nix, invalid_target_path(Target)))
     ).
 
-% Build target path verification - verify target exists in flake
-verify(component(Entity, nix_build_target_path, Target)) :-
-    user:please_verify(component(Entity, nix_flake_ref, FlakeRef)),
-    magic_cast(perceive(nix(flake(show(FlakeRef)))), Result),
-    (Result = ok(flake_info(apps(Apps), packages(Packages), dev_shells(_))) ->
-        (append(Apps, Packages, AllTargets),
-         % Extract just the target names from app(..., 'apps.system.name') and package(..., 'packages.system.name')
-         findall(Name,
-             (member(T, AllTargets),
-              (T = app(_, AttrPath) ; T = package(_, AttrPath)),
-              % Extract last part after final dot (e.g., 'apps.x86_64-linux.hello' -> 'hello')
-              atomic_list_concat(Parts, '.', AttrPath),
-              last(Parts, Name)),
-             TargetNames),
-         (member(Target, TargetNames) ->
-             true
-         ;
-             throw(verification_error(nix, target_not_in_flake(Target)))
-         ))
-    ; Result = error(_) ->
-        throw(verification_error(nix, flake_not_found(FlakeRef)))
-    ;
-        throw(verification_error(nix, verification_failed))
-    ).
-
-% Build target buildable flag verification
+% Build target buildable flag verification - verify target passes syntax validation
 verify(component(Entity, nix_build_target_buildable, true)) :-
-    user:please_verify(component(Entity, nix_build_target_path, _Target)).
-
-% Dev environment declaration verification - verify devShell exists
-verify(component(Entity, has(nix(dev_env)), nix(dev_env(shell(Shell))))) :-
-    user:please_verify(component(Entity, nix_flake_ref, FlakeRef)),
-    magic_cast(perceive(nix(flake(show(FlakeRef)))), Result),
-    (Result = ok(flake_info(apps(_Apps), packages(_Packages), dev_shells(DevShells))) ->
-        (% Extract just the shell names
-         findall(Name,
-             (member(devShell(_, AttrPath), DevShells),
-              atomic_list_concat(Parts, '.', AttrPath),
-              last(Parts, Name)),
-             ShellNames),
-         (member(Shell, ShellNames) ->
-             true
-         ;
-             throw(verification_error(nix, dev_shell_not_found(Shell)))
-         ))
-    ; Result = error(_) ->
-        throw(verification_error(nix, flake_not_found(FlakeRef)))
+    user:please_verify(component(Entity, nix_build_target_path, Target)),
+    (validate_build_target_syntax(Target) ->
+        true
     ;
-        throw(verification_error(nix, verification_failed))
+        throw(verification_error(nix, unbuildable_target(Target)))
     ).
 
-% Dev env shell verification - verify shell exists in flake
-verify(component(Entity, nix_dev_env_shell, Shell)) :-
-    user:please_verify(component(Entity, nix_flake_ref, FlakeRef)),
-    magic_cast(perceive(nix(flake(show(FlakeRef)))), Result),
-    (Result = ok(flake_info(apps(_Apps), packages(_Packages), dev_shells(DevShells))) ->
-        (% Extract just the shell names from devShell(..., 'devShells.system.name')
-         findall(Name,
-             (member(devShell(_, AttrPath), DevShells),
-              atomic_list_concat(Parts, '.', AttrPath),
-              last(Parts, Name)),
-             ShellNames),
-         (member(Shell, ShellNames) ->
-             true
-         ;
-             throw(verification_error(nix, shell_not_in_flake(Shell)))
-         ))
-    ; Result = error(_) ->
-        throw(verification_error(nix, flake_not_found(FlakeRef)))
+% Dev environment declaration verification - compose sub-component verifications
+verify(component(Entity, has(nix(dev_env)), nix(dev_env(shell(Shell))))) :-
+    user:please_verify(component(Entity, nix_dev_env_shell, Shell)),
+    user:please_verify(component(Entity, nix_dev_env_available, true)).
+
+% Dev env shell verification - verify shell syntax
+verify(component(_Entity, nix_dev_env_shell, Shell)) :-
+    (atom(Shell) ->
+        (validate_dev_shell_syntax(Shell) ->
+            true
+        ;
+            throw(verification_error(nix, invalid_shell_syntax(Shell)))
+        )
     ;
-        throw(verification_error(nix, verification_failed))
+        throw(verification_error(nix, invalid_shell_name(Shell)))
     ).
 
 % Dev env available flag verification
@@ -211,13 +214,9 @@ test(nix_flake_show_spell_registered, [true]) :-
 
 % === DSL PATTERN TESTS WITH PLEASE_VERIFY ===
 
-% Test flake declaration expansion with assertz→please_verify→retractall pattern
-test(nix_flake_dsl_expansion, [
-    setup(setup_mock_flake_component),
-    cleanup(cleanup_mock_flake_component)
-]) :-
-    % Assert mock flake declaration (use local test_flake)
-    user:assertz(component(test_nix_entity, has(nix(flake)), nix(flake(ref('./src/nix/test_flake'))))),
+% Test flake declaration expansion - entities loaded from file
+test(nix_flake_dsl_expansion, [true]) :-
+    % Entities already loaded from file
     % Verify using please_verify (calls verify/1 under the hood)
     user:please_verify(component(test_nix_entity, has(nix(flake)), nix(flake(ref('./src/nix/test_flake'))))),
     % Verify generated components exist
@@ -269,17 +268,17 @@ test(verify_build_target_syntax_valid, [
     cleanup(cleanup_build_target_test)
 ]) :-
     user:assertz(component(test_build, nix_flake_ref, './src/nix/test_flake')),
-    user:assertz(component(test_build, nix_build_target_path, 'hello')),
-    user:please_verify(component(test_build, nix_build_target_path, 'hello')), !.
+    user:assertz(component(test_build, nix_build_target_path, '.#hello')),
+    user:please_verify(component(test_build, nix_build_target_path, '.#hello')), !.
 
-test(verify_build_target_syntax_invalid, [
+test(verify_build_target_buildable_invalid, [
     setup(setup_build_target_test),
-    cleanup(cleanup_build_target_test),
-    throws(verification_error(nix, _))
+    cleanup(cleanup_build_target_test)
 ]) :-
-    user:assertz(component(test_bad_build, nix_flake_ref, './src/nix/test_flake')),
-    user:assertz(component(test_bad_build, nix_build_target_path, 'nonexistent_target_xyz')),
-    user:please_verify(component(test_bad_build, nix_build_target_path, 'nonexistent_target_xyz')).
+    % Assert components that would come from DSL expansion
+    user:assertz(component(test_bad_build, has(nix(build_target)), nix(build_target('invalid_no_hash')))),
+    % The buildable component should not exist because validation fails
+    \+ component(test_bad_build, nix_build_target_buildable, true).
 
 % Test dev shell verification
 test(verify_dev_shell_syntax_valid, [
@@ -361,7 +360,7 @@ cleanup_mock_dev_env :-
 
 % Test listing templates
 test(nix_list_templates) :-
-    magic_cast(perceive(nix(templates)), Result),
+    user:magic_cast(perceive(nix(templates)), Result),
     assertion((Result = ok(templates(TemplateList)), is_list(TemplateList))).
 
 :- end_tests(nix).

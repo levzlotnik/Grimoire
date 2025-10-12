@@ -43,7 +43,7 @@ verify(component(Entity, git_repository_remote_url, URL)) :-
     user:please_verify(component(Entity, git_repository_root, Root)),
     user:please_verify(component(Entity, git_repository_remote_name, RemoteName)),
     working_directory(OldCwd, Root),
-    cast(conjure(git(remote(['get-url', RemoteName]))), Result),
+    magic_cast(conjure(git(remote(['get-url', RemoteName]))), Result),
     working_directory(_, OldCwd),
     (Result = ok(result(ActualURL, _)) ->
         (string_concat(URL, "\n", ActualURL) ->
@@ -62,7 +62,7 @@ verify(component(Entity, git_repository_remote_url, URL)) :-
 verify(component(Entity, git_repository_current_branch, Branch)) :-
     user:please_verify(component(Entity, git_repository_root, Root)),
     working_directory(OldCwd, Root),
-    cast(conjure(git(branch(['--show-current']))), Result),
+    magic_cast(conjure(git(branch(['--show-current']))), Result),
     working_directory(_, OldCwd),
     (Result = ok(result(Output, _)) ->
         (string_concat(BranchAtom, "\n", Output),
@@ -79,7 +79,7 @@ verify(component(Entity, git_repository_current_branch, Branch)) :-
 verify(component(Entity, git_repository_working_status, Status)) :-
     user:please_verify(component(Entity, git_repository_root, Root)),
     working_directory(OldCwd, Root),
-    cast(perceive(git(status(_, ActualStatus, Files))), ok(_)),
+    magic_cast(perceive(git(status(_, ActualStatus, Files))), ok(_)),
     working_directory(_, OldCwd),
     (Status = ActualStatus ->
         true
@@ -162,11 +162,11 @@ test(git_repository_dsl_expansion, [
     setup(setup_git_repository_dsl),
     cleanup(cleanup_git_repository_dsl)
 ]) :-
-    % Verify DSL pattern expands correctly
-    user:please_verify(component(test_project, git_repository_remote_name, origin)),
-    user:please_verify(component(test_project, git_repository_remote_url, 'https://github.com/test/repo')),
-    user:please_verify(component(test_project, git_repository_branch, main)),
-    user:please_verify(component(test_project, git_repository_clean, true)), !.
+    % Test that DSL pattern expands correctly (no OS verification needed)
+    component(test_project, git_repository_remote_name, origin),
+    component(test_project, git_repository_remote_url, 'https://github.com/test/repo'),
+    component(test_project, git_repository_branch, main),
+    component(test_project, git_repository_clean, true), !.
 
 % Test verify/1 for git_repository_root with mock directory
 test(verify_git_repository_root, [

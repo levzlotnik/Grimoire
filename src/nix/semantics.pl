@@ -317,6 +317,17 @@ cast(perceive(nix(search(Query))), Result) :-
         Result = error(nix_error(Error))
     ).
 
+% Search with custom flake
+register_spell(
+    perceive(nix(search)),
+    input(nix(search(flake('Flake'), query('Query')))),
+    output(either(
+        ok(search_results('Results')),
+        error(nix_error('Reason'))
+    )),
+    docstring("Search for packages in a specific flake. Flake: flake reference, Query: search term(s).")
+).
+
 cast(perceive(nix(search(Flake, Query))), Result) :-
     catch(
         (format(atom(FlakeQuery), '~w#~w', [Flake, Query]),
@@ -350,6 +361,17 @@ cast(conjure(nix(run(Installable))), RetVal) :-
     Args = ["nix", "run", Installable],
     magic_cast(conjure(shell(Args, interactive)), RetVal).
 
+% Run with arguments
+register_spell(
+    conjure(nix(run)),
+    input(nix(run(installable('Installable'), args('Args')))),
+    output(either(
+        ok(result(stdout('StdOut'), stderr('StdErr'))),
+        error(run_error(exit('ExitCode'), stderr('StdErr')))
+    )),
+    docstring("Run a Nix application with arguments. Installable: package/flake to run, Args: list of arguments to pass.")
+).
+
 cast(conjure(nix(run(Installable, AppArgs))), RetVal) :-
     flatten([["nix", "run", Installable, "--"], AppArgs], Args),
     magic_cast(conjure(shell(Args, interactive)), RetVal).
@@ -377,6 +399,17 @@ cast(conjure(nix(build(Installable))), RetVal) :-
         assert(entity(nix(derivation(Output)))),
         assert(component(build_result, output_path, Output))
     ; true).
+
+% Build with options
+register_spell(
+    conjure(nix(build)),
+    input(nix(build(installable('Installable'), options('Options')))),
+    output(either(
+        ok(result(stdout('StdOut'), stderr('StdErr'))),
+        error(build_error(exit('ExitCode'), stderr('StdErr')))
+    )),
+    docstring("Builds a Nix expression or flake with additional options. Installable: what to build, Options: list of additional build options.")
+).
 
 cast(conjure(nix(build(Installable, Options))), RetVal) :-
     flatten([["nix", "build", Installable], Options], Args),

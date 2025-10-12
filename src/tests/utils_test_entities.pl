@@ -8,7 +8,15 @@ entity(test_entity(utils_file_processor)).
 entity(test_entity(utils_tree_builder)).
 entity(test_entity(utils_validator)).
 entity(test_entity(utils_collection)).
+
+% Hierarchy test entities
 entity(test_root).
+entity(test_child1).
+entity(test_child2).
+entity(test_grandchild).
+
+% Validation test entity
+entity(validate_test_entity).
 
 % File processor test entity
 component(test_entity(utils_file_processor), has(utils(file_processor)),
@@ -26,8 +34,18 @@ component(test_entity(utils_validator), has(utils(validator)),
 component(test_entity(utils_collection), has(utils(collection)),
     utils(collection(type(entities), operations([filter, map]), predicate(is_atom/1)))).
 
+% Hierarchy test components
+component(test_root, child, test_child1).
+component(test_root, child, test_child2).
+component(test_child1, child, test_grandchild).
+
 docstring(test_entity(utils), "Test entity container for utils domain verification tests").
 docstring(test_entity(utils_file_processor), "Test entity for utils file processor verification").
 docstring(test_entity(utils_tree_builder), "Test entity for utils tree builder verification").
 docstring(test_entity(utils_validator), "Test entity for utils validator verification").
 docstring(test_entity(utils_collection), "Test entity for utils collection verification").
+docstring(test_root, "Root entity for hierarchy tests").
+docstring(test_child1, "Child entity 1 for hierarchy tests").
+docstring(test_child2, "Child entity 2 for hierarchy tests").
+docstring(test_grandchild, "Grandchild entity for hierarchy tests").
+docstring(validate_test_entity, "Entity for validation tests").

@@ -144,6 +144,16 @@ cast(conjure(db(create(DbId, DbPath, schema(file(SchemaFile))))), RetVal) :-
     RetVal = ok(database_created(DbId, DbPath)).
 
 % Create database from SQL string (creates schema file)
+register_spell(
+    conjure(db(create)),
+    input(db(create(database_id('DbId'), file('DbPath'), schema(sql('SchemaSQL'))))),
+    output(either(
+        ok(database_created('DbId', 'DbPath')),
+        error(db_error('Reason'))
+    )),
+    docstring("Create a new SQLite database from a SQL string. The SQL will be written to a schema file and then used to initialize the database.")
+).
+
 cast(conjure(db(create(DbId, DbPath, schema(sql(SchemaSQL))))), RetVal) :-
     % Extract database base name and create schema file
     file_name_extension(DbBaseName, db, DbPath),
