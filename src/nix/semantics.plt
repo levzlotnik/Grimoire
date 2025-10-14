@@ -8,7 +8,7 @@
 % Nix entity verification
 verify(component(nix, concept, Concept)) :-
     member(Concept, [nix(store), nix(derivation), nix(package), nix(target),
-                     nix(build), nix(flake), nix(develop), nix(search), nix(run)]).
+                     nix(flake), nix(develop), nix(search), nix(run)]).
 
 % Store entity and constructors verification
 verify(component(nix(store), ctor, Ctor)) :-
@@ -187,7 +187,6 @@ test(nix_entity_exists, [true]) :-
     user:please_verify(component(nix, defined, true)), !.
 
 test(nix_command_constructors, [true]) :-
-    user:please_verify(component(conjure, ctor, nix(build))),
     user:please_verify(component(conjure, ctor, nix(develop))),
     user:please_verify(component(conjure, ctor, nix(run))), !.
 
@@ -202,9 +201,6 @@ test(nix_docstrings_exist, [
     docstring(nix(Cmd), _).
 
 % === SPELL FORMAT REGISTRATION TESTS ===
-
-test(nix_build_spell_registered, [true]) :-
-    register_spell(conjure(nix(build)), _, _, _).
 
 test(nix_run_spell_registered, [true]) :-
     register_spell(conjure(nix(run)), _, _, _).
@@ -223,23 +219,15 @@ test(nix_flake_dsl_expansion, [true]) :-
     user:please_verify(component(test_nix_entity, nix_flake_ref, './src/nix/test_flake')), !.
 
 % Test build target declaration expansion
-test(nix_build_target_dsl_expansion, [
-    setup(setup_mock_build_target),
-    cleanup(cleanup_mock_build_target)
-]) :-
-    % Assert mock build target declaration
-    user:assertz(component(test_build_entity, has(nix(build_target)), nix(build_target('.#default')))),
+test(nix_build_target_dsl_expansion) :-
+    % test_build_entity loaded from file with DSL pattern
     % Verify generated components exist (derived from DSL pattern)
     user:please_verify(component(test_build_entity, nix_build_target_path, '.#default')),
     user:please_verify(component(test_build_entity, nix_build_target_buildable, true)), !.
 
 % Test dev environment declaration expansion
-test(nix_dev_env_dsl_expansion, [
-    setup(setup_mock_dev_env),
-    cleanup(cleanup_mock_dev_env)
-]) :-
-    % Assert mock dev env declaration
-    user:assertz(component(test_dev_entity, has(nix(dev_env)), nix(dev_env(shell('default'))))),
+test(nix_dev_env_dsl_expansion) :-
+    % test_dev_entity loaded from file with DSL pattern
     % Verify generated components exist (derived from DSL pattern)
     user:please_verify(component(test_dev_entity, nix_dev_env_shell, 'default')),
     user:please_verify(component(test_dev_entity, nix_dev_env_available, true)), !.
@@ -247,114 +235,33 @@ test(nix_dev_env_dsl_expansion, [
 % === VERIFY/1 OVERLOAD TESTS ===
 
 % Test flake ref verification with known-good flake
-test(verify_flake_ref_syntax_valid, [
-    setup(setup_flake_ref_test),
-    cleanup(cleanup_flake_ref_test)
-]) :-
-    user:assertz(component(test_flake_ref, nix_flake_ref, './src/nix/test_flake')),
+test(verify_flake_ref_syntax_valid) :-
+    % test_flake_ref loaded from file
     user:please_verify(component(test_flake_ref, nix_flake_ref, './src/nix/test_flake')), !.
 
 test(verify_flake_ref_syntax_invalid, [
-    setup(setup_flake_ref_test),
-    cleanup(cleanup_flake_ref_test),
     throws(verification_error(nix, _))
 ]) :-
-    user:assertz(component(test_bad_flake, nix_flake_ref, '')),
+    % test_bad_flake loaded from file with empty ref
     user:please_verify(component(test_bad_flake, nix_flake_ref, '')).
 
 % Test build target path verification
-test(verify_build_target_syntax_valid, [
-    setup(setup_build_target_test),
-    cleanup(cleanup_build_target_test)
-]) :-
-    user:assertz(component(test_build, nix_flake_ref, './src/nix/test_flake')),
-    user:assertz(component(test_build, nix_build_target_path, '.#hello')),
-    user:please_verify(component(test_build, nix_build_target_path, '.#hello')), !.
+test(verify_build_target_syntax_valid) :-
+    % test_build loaded from file
+    user:please_verify(component(test_build, nix_build_target_path, 'hello')), !.
 
-test(verify_build_target_buildable_invalid, [
-    setup(setup_build_target_test),
-    cleanup(cleanup_build_target_test)
-]) :-
-    % Assert components that would come from DSL expansion
-    user:assertz(component(test_bad_build, has(nix(build_target)), nix(build_target('invalid_no_hash')))),
+test(verify_build_target_buildable_invalid) :-
+    % test_bad_build loaded from file with invalid target
     % The buildable component should not exist because validation fails
     \+ component(test_bad_build, nix_build_target_buildable, true).
 
 % Test dev shell verification
-test(verify_dev_shell_syntax_valid, [
-    setup(setup_dev_shell_test),
-    cleanup(cleanup_dev_shell_test)
-]) :-
-    user:assertz(component(test_shell, nix_flake_ref, './src/nix/test_flake')),
-    user:assertz(component(test_shell, nix_dev_env_shell, 'default')),
+test(verify_dev_shell_syntax_valid) :-
+    % test_shell loaded from file
     user:please_verify(component(test_shell, nix_dev_env_shell, 'default')), !.
 
 % === MOCK SETUP/CLEANUP HELPERS ===
 
-setup_flake_ref_test :-
-    true.
-
-cleanup_flake_ref_test :-
-    forall(
-        clause(user:component(test_flake_ref, C, V), true),
-        retract(user:component(test_flake_ref, C, V))
-    ),
-    forall(
-        clause(user:component(test_bad_flake, C, V), true),
-        retract(user:component(test_bad_flake, C, V))
-    ).
-
-setup_build_target_test :-
-    true.
-
-cleanup_build_target_test :-
-    forall(
-        clause(user:component(test_build, C, V), true),
-        retract(user:component(test_build, C, V))
-    ),
-    forall(
-        clause(user:component(test_bad_build, C, V), true),
-        retract(user:component(test_bad_build, C, V))
-    ).
-
-setup_dev_shell_test :-
-    true.
-
-cleanup_dev_shell_test :-
-    forall(
-        clause(user:component(test_shell, C, V), true),
-        retract(user:component(test_shell, C, V))
-    ).
-
-setup_mock_flake_component :-
-    user:assertz(entity(test_nix_entity)).
-
-cleanup_mock_flake_component :-
-    user:retractall(entity(test_nix_entity)),
-    forall(
-        clause(user:component(test_nix_entity, C, V), true),
-        retract(user:component(test_nix_entity, C, V))
-    ).
-
-setup_mock_build_target :-
-    user:assertz(entity(test_build_entity)).
-
-cleanup_mock_build_target :-
-    user:retractall(entity(test_build_entity)),
-    forall(
-        clause(user:component(test_build_entity, C, V), true),
-        retract(user:component(test_build_entity, C, V))
-    ).
-
-setup_mock_dev_env :-
-    user:assertz(entity(test_dev_entity)).
-
-cleanup_mock_dev_env :-
-    user:retractall(entity(test_dev_entity)),
-    forall(
-        clause(user:component(test_dev_entity, C, V), true),
-        retract(user:component(test_dev_entity, C, V))
-    ).
 
 % === TEMPLATE SYSTEM TESTS ===
 

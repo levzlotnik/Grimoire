@@ -143,8 +143,8 @@ class GrimoireCLI:
         try:
             result = self.grimoire.doc(args.entity)
 
-            print(f"{result.entity}:")
-            print(result.docstring)
+            print(f"Documentation for '{result.entity}':")
+            print(result.documentation)
             return 0
         except GrimoireError as e:
             print(f"Error: {e}", file=sys.stderr)

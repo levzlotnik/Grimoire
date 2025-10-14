@@ -9,7 +9,7 @@ test(http_service_registration, [
     cleanup(cleanup_http_test),
     condition(python_available)
 ]) :-
-    magic_cast(conjure(protocol_client(http(register(
+    user:magic_cast(conjure(protocol_client(http(register(
         service(test_api),
         base_url("https://api.test.com"),
         endpoints([endpoint(get_user, "/users/:id", get)])
@@ -23,14 +23,14 @@ test(http_list_services, [
     condition(python_available)
 ]) :-
     % Register a test service first
-    magic_cast(conjure(protocol_client(http(register(
+    user:magic_cast(conjure(protocol_client(http(register(
         service(test_list_api),
         base_url("https://test.com"),
         endpoints([])
     )))), RegResult),
     assertion(RegResult = ok(service_registered(test_list_api))),
     % List services
-    magic_cast(perceive(protocol_client(http(list_services))), Result),
+    user:magic_cast(perceive(protocol_client(http(list_services))), Result),
     assertion(Result = ok(services(_Services))).
 
 :- end_tests(protocol_client_http).
@@ -38,8 +38,9 @@ test(http_list_services, [
 % === SETUP/CLEANUP ===
 
 setup_http_test :-
-    % Create test directory
-    make_directory_path('/tmp/test_http').
+    % Create test directory and set GRIMOIRE_DATA for this test
+    make_directory_path('/tmp/test_http'),
+    setenv('GRIMOIRE_DATA', '/tmp/test_http').
 
 cleanup_http_test :-
     % Clean up test directory

@@ -132,26 +132,26 @@ register_spell(
     conjure(db(create)),
     input(db(create(database_id('DbId'), file('DbPath'), schema(file('SchemaPath'))))),
     output(either(
-        ok(database_created('DbId', 'DbPath')),
+        ok(database_created('DbId', 'DbPath', 'RegisteredDbFact')),
         error(db_error('Reason'))
     )),
-    docstring("Create a new SQLite database from a schema file. Initializes the database and registers it for use.")
+    docstring("Create a new SQLite database from a schema file. Returns the registered_db fact that should be persisted to session state.")
 ).
 
 cast(conjure(db(create(DbId, DbPath, schema(file(SchemaFile))))), RetVal) :-
     sqlite3_init_db(DbPath, SchemaFile),
-    assertz(registered_db(database(DbId), data(file(DbPath)), schema(file(SchemaFile)))),
-    RetVal = ok(database_created(DbId, DbPath)).
+    RegisteredDbFact = registered_db(database(DbId), data(file(DbPath)), schema(file(SchemaFile))),
+    RetVal = ok(database_created(DbId, DbPath, RegisteredDbFact)).
 
 % Create database from SQL string (creates schema file)
 register_spell(
     conjure(db(create)),
     input(db(create(database_id('DbId'), file('DbPath'), schema(sql('SchemaSQL'))))),
     output(either(
-        ok(database_created('DbId', 'DbPath')),
+        ok(database_created('DbId', 'DbPath', 'RegisteredDbFact')),
         error(db_error('Reason'))
     )),
-    docstring("Create a new SQLite database from a SQL string. The SQL will be written to a schema file and then used to initialize the database.")
+    docstring("Create a new SQLite database from a SQL string. Returns the registered_db fact that should be persisted to session state.")
 ).
 
 cast(conjure(db(create(DbId, DbPath, schema(sql(SchemaSQL))))), RetVal) :-
@@ -163,8 +163,8 @@ cast(conjure(db(create(DbId, DbPath, schema(sql(SchemaSQL))))), RetVal) :-
     close(Stream),
     % Create database using the schema file
     sqlite3_init_db(DbPath, SchemaFile),
-    assertz(registered_db(database(DbId), data(file(DbPath)), schema(file(SchemaFile)))),
-    RetVal = ok(database_created(DbId, DbPath)).
+    RegisteredDbFact = registered_db(database(DbId), data(file(DbPath)), schema(file(SchemaFile))),
+    RetVal = ok(database_created(DbId, DbPath, RegisteredDbFact)).
 
 % Execute SQL statement (mutation)
 register_spell(

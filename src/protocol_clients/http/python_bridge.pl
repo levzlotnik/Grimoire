@@ -43,7 +43,8 @@ http_call_endpoint(Service, Endpoint, Params, Status, DecodedResponse) :-
 http_list_services(Services) :-
     ensure_python_http_client,
     py_call(http_client:list_services(), PyServices),
-    decode_service_list(PyServices, Services).
+    % PyServices is now a Prolog list of py{...} dicts (auto-converted by Janus)
+    maplist(extract_service, PyServices, Services).
 
 % Ensure service is registered (for verification)
 ensure_http_service_registered(Service, BaseUrl, Endpoints) :-
@@ -97,22 +98,12 @@ encode_endpoints(Endpoints, PyEndpoints) :-
 
 encode_endpoint(endpoint(Name, Path, Method), #{name: Name, path: Path, method: Method}).
 
-% Decode service list
-decode_service_list(PyServices, Services) :-
-    py_iter(PyServices, PyList),
-    maplist(decode_service, PyList, Services).
+% Extract service from Python dict (auto-converted by Janus)
+extract_service(py{name: Name, base_url: BaseUrl, endpoints: Endpoints},
+                service(Name, BaseUrl, PrologEndpoints)) :-
+    maplist(extract_endpoint, Endpoints, PrologEndpoints).
 
-decode_service(PyService, service(Name, BaseUrl, Endpoints)) :-
-    py_call(PyService:name, Name),
-    py_call(PyService:base_url, BaseUrl),
-    py_call(PyService:endpoints, PyEndpoints),
-    py_iter(PyEndpoints, PyEndpointList),
-    maplist(decode_endpoint, PyEndpointList, Endpoints).
-
-decode_endpoint(PyEndpoint, endpoint(Name, Path, Method)) :-
-    py_call(PyEndpoint:name, Name),
-    py_call(PyEndpoint:path, Path),
-    py_call(PyEndpoint:method, Method).
+extract_endpoint(py{name: Name, path: Path, method: Method}, endpoint(Name, Path, Method)).
 
 % Ensure Python setup happens when this module is loaded
 :- ensure_python_http_client.

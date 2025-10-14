@@ -1,24 +1,24 @@
 """HTTP client implementation using httpx"""
 import httpx
 from typing import Dict, List, Any, Optional
-from dataclasses import dataclass
+from pydantic import BaseModel, Field
 
 
-@dataclass
-class HTTPEndpoint:
+class HTTPEndpoint(BaseModel):
     """HTTP endpoint definition"""
     name: str
     path: str
     method: str
 
 
-@dataclass
-class HTTPService:
+class HTTPService(BaseModel):
     """HTTP service with client and endpoints"""
+    model_config = {"arbitrary_types_allowed": True}
+
     name: str
     base_url: str
     endpoints: List[HTTPEndpoint]
-    client: httpx.Client
+    client: httpx.Client = Field(exclude=True)  # Don't serialize client
 
 
 class HTTPServiceRegistry:
@@ -30,7 +30,7 @@ class HTTPServiceRegistry:
     def register_service(self, name: str, base_url: str, endpoints: List[Dict]) -> None:
         """Register a new HTTP service with endpoint schemas"""
         endpoint_objs = [
-            HTTPEndpoint(e['name'], e['path'], e['method'])
+            HTTPEndpoint(name=e['name'], path=e['path'], method=e['method'])
             for e in endpoints
         ]
 
@@ -79,9 +79,9 @@ class HTTPServiceRegistry:
 
         return response
 
-    def list_services(self) -> List[HTTPService]:
+    def list_services(self) -> List[Dict[str, Any]]:
         """List all registered services"""
-        return list(self.services.values())
+        return [s.model_dump() for s in self.services.values()]
 
     def ensure_registered(self, name: str, base_url: str, endpoints: List[Dict]) -> None:
         """Ensure service is registered (for verification)"""
@@ -102,7 +102,7 @@ def call_endpoint(service: str, endpoint: str, params: Dict) -> httpx.Response:
     return _registry.call_endpoint(service, endpoint, params)
 
 
-def list_services() -> List[HTTPService]:
+def list_services() -> List[Dict[str, Any]]:
     return _registry.list_services()
 
 

@@ -147,9 +147,11 @@ execute_golem_task(Id, InputDict, golem_response(Output, Messages, GolemId, Sess
         ),
         error(python_error(ErrorType, ExceptionObj), Context),
         (
+            % Translate Python exception to Prolog-friendly error message
             translate_python_error(ErrorType, ExceptionObj, ErrorMessage),
             format('DEBUG: Python ~w: ~w~n', [ErrorType, ErrorMessage]),
-            throw(error(python_error(ErrorType, ExceptionObj), Context))
+            % Re-throw with translated error message, not Python object
+            throw(error(golem_python_error(ErrorType, ErrorMessage), Context))
         )
     ).
 

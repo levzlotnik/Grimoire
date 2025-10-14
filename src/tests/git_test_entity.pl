@@ -17,6 +17,9 @@ component(test_project, has(git(repository)), git(repository([
     clean(true)
 ]))).
 
+% Test project needs a self component for git_repository_root derivation
+component(test_project, self, semantic(folder('/tmp/test_project'))).
+
 % Bad entity with nonexistent path (for negative test)
 component(git_bad_entity, git_repository_root, '/nonexistent/path').
 

@@ -69,17 +69,7 @@ cast(conjure(golem_task(golem(Id), InputDict)), Result) :-
             Result = ok(GolemResponse)
         ),
         Error,
-        (
-            Result = error(golem_execution_failed(Id, Error)),
-            (
-                Error = error(python_error(ErrorType, ExceptionObj), _Context) ->
-                (
-                    python_bridge:translate_python_error(ErrorType, ExceptionObj, ErrorMessage),
-                    format('DEBUG: Python ~w: ~w~n', [ErrorType, ErrorMessage])
-                ) ;
-                true
-            )
-        )
+        Result = error(golem_execution_failed(Id, Error))
     ).
 
 register_spell(

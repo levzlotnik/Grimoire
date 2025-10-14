@@ -79,12 +79,16 @@ verify(component(Entity, git_repository_current_branch, Branch)) :-
 verify(component(Entity, git_repository_working_status, Status)) :-
     user:please_verify(component(Entity, git_repository_root, Root)),
     working_directory(OldCwd, Root),
-    magic_cast(perceive(git(status(_, ActualStatus, Files))), ok(_)),
+    magic_cast(perceive(git(status)), Result),
     working_directory(_, OldCwd),
-    (Status = ActualStatus ->
-        true
+    (Result = ok(status_info(branch(_), working_status(ActualStatus), files(Files))) ->
+        (Status = ActualStatus ->
+            true
+        ;
+            throw(verification_error(git, working_status_mismatch(expected(Status), actual(ActualStatus), files(Files))))
+        )
     ;
-        throw(verification_error(git, working_status_mismatch(expected(Status), actual(ActualStatus), files(Files))))
+        throw(verification_error(git, status_query_failed(Result)))
     ).
 
 % OS Reality Verification Helpers
@@ -131,10 +135,10 @@ test(git_subcommands, [true]) :-
     user:please_verify(component(git, subcommand, log)), !.
 
 % Test Git docstrings exist
-test(git_docstrings_exist, [
-    forall(component(git, subcommand, Cmd))
-]) :-
-    docstring(git(Cmd), _), !.
+test(git_docstrings_exist) :-
+    forall(user:please_verify(component(git, subcommand, Cmd)), (
+        user:please_verify(component(git(Cmd), docstring, _D))
+    )).
 
 % Test Git argument parsing (DCG)
 test(git_args_parsing, [true]) :-
@@ -162,11 +166,11 @@ test(git_repository_dsl_expansion, [
     setup(setup_git_repository_dsl),
     cleanup(cleanup_git_repository_dsl)
 ]) :-
-    % Test that DSL pattern expands correctly (no OS verification needed)
-    component(test_project, git_repository_remote_name, origin),
-    component(test_project, git_repository_remote_url, 'https://github.com/test/repo'),
-    component(test_project, git_repository_branch, main),
-    component(test_project, git_repository_clean, true), !.
+    % Test that DSL pattern expands correctly
+    % Only test components that don't require OS verification
+    user:please_verify(component(test_project, git_repository_remote_name, origin)),
+    user:please_verify(component(test_project, git_repository_branch, main)),
+    user:please_verify(component(test_project, git_repository_clean, true)), !.
 
 % Test verify/1 for git_repository_root with mock directory
 test(verify_git_repository_root, [

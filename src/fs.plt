@@ -11,7 +11,7 @@
 % Verify composite has(fs(file)) pattern (if it exists in the codebase)
 verify(component(Entity, has(fs(file)), fs(file(_Spec)))) :-
     % Delegate to primitive verification
-    user:please_verify(component(Entity, fs_file_path, Path)),
+    please_verify(component(Entity, fs_file_path, Path)),
     % Check OS reality
     (exists_file(Path) ->
         true

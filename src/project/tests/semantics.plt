@@ -1,8 +1,7 @@
 :- use_module(library(plunit)).
-:- load_entity(semantic(file('@/src/project/tests/semantics.pl'))).
 
-% Note: Test entities loaded globally for non-git tests
-% Git-aware tests will reload from git-initialized directory
+% Note: Test entities are NOT loaded at module load time
+% They are loaded by test setup after copying to /tmp/ and initializing git
 % Note: project/semantics.pl already loaded by grimoire.pl
 % ECS predicates (entity/1, component/3, etc.) are multifile and globally available
 
@@ -36,7 +35,7 @@ test(mkproject_creates_directory, [
     cleanup(cleanup_mkproject_test)
 ]) :-
     TestPath = '/tmp/grimoire_test_mkproject',
-    magic_cast(conjure(mkproject(TestPath, test_proj, [git(false)])), Result),
+    user:magic_cast(conjure(mkproject(TestPath, test_proj, [git(false)])), Result),
     Result = ok(project_created(ProjectPath, test_proj)),
     exists_directory(ProjectPath),
     directory_file_path(ProjectPath, 'semantics.pl', SemFile),
@@ -48,7 +47,7 @@ test(mkproject_initializes_git, [
     cleanup(cleanup_mkproject_test)
 ]) :-
     TestPath = '/tmp/grimoire_test_mkproject_git',
-    magic_cast(conjure(mkproject(TestPath, test_git_proj, [])), Result),
+    user:magic_cast(conjure(mkproject(TestPath, test_git_proj, [])), Result),
     Result = ok(project_created(ProjectPath, test_git_proj)),
     directory_file_path(ProjectPath, '.git', GitDir),
     exists_directory(GitDir).
@@ -59,7 +58,7 @@ test(mkproject_skip_git, [
     cleanup(cleanup_mkproject_test)
 ]) :-
     TestPath = '/tmp/grimoire_test_mkproject_nogit',
-    magic_cast(conjure(mkproject(TestPath, test_nogit_proj, [git(false)])), Result),
+    user:magic_cast(conjure(mkproject(TestPath, test_nogit_proj, [git(false)])), Result),
     Result = ok(project_created(ProjectPath, test_nogit_proj)),
     directory_file_path(ProjectPath, '.git', GitDir),
     \+ exists_directory(GitDir).
@@ -71,7 +70,7 @@ test(mkproject_with_template, [
 ]) :-
     TestPath = '/tmp/grimoire_test_mkproject_template',
     % Use python template from grimoire-templates
-    magic_cast(conjure(mkproject(TestPath, test_template_proj, [template(python), git(false)])), Result),
+    user:magic_cast(conjure(mkproject(TestPath, test_template_proj, [template(python), git(false)])), Result),
     Result = ok(project_created(ProjectPath, test_template_proj)),
     exists_directory(ProjectPath),
     directory_file_path(ProjectPath, 'flake.nix', FlakeFile),
@@ -84,12 +83,12 @@ test(project_validate_valid_entity, [
     setup(setup_git_test),
     cleanup(cleanup_git_test)
 ]) :-
-    magic_cast(perceive(project(validate(test_web_app))), Result),
+    user:magic_cast(perceive(project(validate(test_web_app))), Result),
     assertion(Result = ok(valid)).
 
 % Test perceive(project(validate(...))) spell with entity without git
 test(project_validate_no_git, [true]) :-
-    magic_cast(perceive(project(validate(test_project_no_git))), Result),
+    user:magic_cast(perceive(project(validate(test_project_no_git))), Result),
     assertion(Result = ok(valid)).
 
 % Test perceive(project(validate(...))) spell with invalid type
@@ -98,7 +97,7 @@ test(project_validate_invalid_type, [
     setup(setup_git_test),
     cleanup(cleanup_git_test)
 ]) :-
-    magic_cast(perceive(project(validate(test_project_invalid_type))), Result),
+    user:magic_cast(perceive(project(validate(test_project_invalid_type))), Result),
     % Project validation checks component existence, not type semantics
     % Type validity is checked by verify/1 predicates in the test suite
     assertion(Result = ok(valid)).
@@ -108,7 +107,7 @@ test(project_structure_query, [
     setup(setup_git_test),
     cleanup(cleanup_git_test)
 ]) :-
-    magic_cast(perceive(project(structure(test_web_app))), Result),
+    user:magic_cast(perceive(project(structure(test_web_app))), Result),
     assertion(Result = ok(project_info(type(web_service), sources(_), contexts(_)))).
 
 % Test perceive(project(structure(...))) with project that has context
@@ -116,7 +115,7 @@ test(project_structure_with_context, [
     setup(setup_git_test),
     cleanup(cleanup_git_test)
 ]) :-
-    magic_cast(perceive(project(structure(test_project_with_context))), Result),
+    user:magic_cast(perceive(project(structure(test_project_with_context))), Result),
     Result = ok(project_info(type(web_service), sources(_), contexts(Contexts))),
     assertion(member(build, Contexts)).
 
@@ -128,21 +127,58 @@ setup_git_test :-
     cleanup_git_test,
     TestDir = '/tmp/grimoire_project_test_git',
     make_directory(TestDir),
-    % Copy test entity file using absolute path via GRIMOIRE_ROOT
+    % Copy test entity file and ALL subdirectories using absolute path via GRIMOIRE_ROOT
     getenv('GRIMOIRE_ROOT', GrimoireRoot),
-    directory_file_path(GrimoireRoot, 'src/project/tests/semantics.pl', SourceFile),
+    directory_file_path(GrimoireRoot, 'src/project/tests', SourceDir),
+    directory_file_path(SourceDir, 'semantics.pl', SourceFile),
     directory_file_path(TestDir, 'semantics.pl', DestFile),
     copy_file(SourceFile, DestFile),
-    % Initialize git using grimoire spells
-    working_directory(OldCwd, TestDir),
-    magic_cast(conjure(git(init('.'))), _),
-    magic_cast(conjure(git(config(['user.name', 'Test']))), _),
-    magic_cast(conjure(git(config(['user.email', 'test@test.com']))), _),
-    magic_cast(conjure(git(add(['semantics.pl']))), _),
-    magic_cast(conjure(git(commit(['-m', 'Initial commit']))), _),
-    working_directory(_, OldCwd),
-    % Load test entities from git-initialized directory
+    % Copy all test subdirectories (git is initialized inside each one that needs it)
+    copy_test_directories(SourceDir, TestDir),
+    % Load test entities from the copied directory
     load_entity(semantic(file(DestFile))).
+
+% Helper to copy test entity subdirectories
+copy_test_directories(SourceDir, DestDir) :-
+    % Dirs that need git initialized
+    GitDirs = [test_web_app, test_cli_tool, test_library,
+               test_project_with_context, test_project_invalid_type],
+    forall(member(Dir, GitDirs), copy_test_dir_with_git(SourceDir, DestDir, Dir)),
+    % Dirs without git
+    NoGitDirs = [test_project_no_git],
+    forall(member(Dir, NoGitDirs), copy_test_dir_no_git(SourceDir, DestDir, Dir)).
+
+copy_test_dir_with_git(SourceDir, DestDir, DirName) :-
+    directory_file_path(SourceDir, DirName, SourcePath),
+    directory_file_path(DestDir, DirName, DestPath),
+    (exists_directory(SourcePath) ->
+        (make_directory(DestPath),
+         directory_file_path(SourcePath, 'semantics.pl', SourceSemFile),
+         directory_file_path(DestPath, 'semantics.pl', DestSemFile),
+         copy_file(SourceSemFile, DestSemFile),
+         % Initialize git in this specific subdirectory
+         init_git_in_dir(DestPath))
+    ; true).
+
+copy_test_dir_no_git(SourceDir, DestDir, DirName) :-
+    directory_file_path(SourceDir, DirName, SourcePath),
+    directory_file_path(DestDir, DirName, DestPath),
+    (exists_directory(SourcePath) ->
+        (make_directory(DestPath),
+         directory_file_path(SourcePath, 'semantics.pl', SourceSemFile),
+         directory_file_path(DestPath, 'semantics.pl', DestSemFile),
+         copy_file(SourceSemFile, DestSemFile))
+    ; true).
+
+% Initialize git repository in a directory
+init_git_in_dir(Dir) :-
+    working_directory(OldCwd, Dir),
+    user:magic_cast(conjure(git(init('.'))), _),
+    user:magic_cast(conjure(git(config(['user.name', 'Test']))), _),
+    user:magic_cast(conjure(git(config(['user.email', 'test@test.com']))), _),
+    user:magic_cast(conjure(git(add(['.']))), _),
+    user:magic_cast(conjure(git(commit('Initial test commit'))), _),
+    working_directory(_, OldCwd).
 
 cleanup_git_test :-
     delete_if_exists('/tmp/grimoire_project_test_git').

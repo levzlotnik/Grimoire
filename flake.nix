@@ -60,7 +60,7 @@
         fastapi
         uvicorn
         pydantic
-        mcp  # Model Context Protocol SDK
+        fastmcp  # FastMCP - Pythonic MCP client and server
         # Testing packages
         httpx
         pytest
@@ -182,7 +182,7 @@ EOF
             source .env
             set +a
           fi
-          
+
           echo "Grimoire development environment loaded"
           echo "GRIMOIRE_ROOT=$GRIMOIRE_ROOT"
           echo "Python with grimoire-golems: ${grimoireEnv.python}/bin/python"

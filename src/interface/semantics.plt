@@ -49,7 +49,7 @@ test(entities_docstring) :-
 
 % Test entities interface works
 test(entities_interface_works) :-
-    magic_cast(conjure(interface(entities)), Result),
+    user:magic_cast(conjure(interface(entities)), Result),
     Result = ok(entities(List)),
     is_list(List), !.
 
@@ -83,14 +83,14 @@ test(all_subcommands_have_docstrings) :-
 
 % Test component types command
 test(compt_command) :-
-    magic_cast(conjure(interface(compt)), Result),
+    user:magic_cast(conjure(interface(compt)), Result),
     Result = ok(component_types(Entity, Types)),
     atom(Entity),
     is_list(Types), !.
 
 % Test documentation command
 test(doc_command) :-
-    magic_cast(conjure(interface(doc)), Result),
+    user:magic_cast(conjure(interface(doc)), Result),
     Result = ok(documentation(Entity, Doc)),
     atom(Entity),
     (atom(Doc) ; string(Doc) ; Doc = no_docstring_available), !.
@@ -109,7 +109,7 @@ test(all_subcommands_complete) :-
 
 % Test comp command with entity and type arguments
 test(comp_command) :-
-    magic_cast(conjure(interface(comp(interface, subcommand))), Result),
+    user:magic_cast(conjure(interface(comp(interface, subcommand))), Result),
     Result = ok(components(interface, subcommand, Components)),
     is_list(Components),
     % Should have at least one component (compt, comp, doc, etc.)
@@ -118,14 +118,14 @@ test(comp_command) :-
 
 % Test conjure delegation to git domain
 test(conjure_delegation_git_status) :-
-    magic_cast(conjure(interface(conjure(git(status)))), Result),
+    user:magic_cast(conjure(interface(conjure(git(status)))), Result),
     % Should delegate to git domain
     (Result = ok(_) ; Result = error(_)), !.
 
 % Test perceive delegation
 test(perceive_delegation) :-
     % Use a real perceive query that exists (git status)
-    magic_cast(conjure(interface(perceive(git(status)))), Result),
+    user:magic_cast(conjure(interface(perceive(git(status)))), Result),
     % Should succeed as perceive query
     Result = ok(query_succeeded), !.
 
@@ -141,7 +141,7 @@ test(read_file_command, [
     setup(setup_test_file('/tmp/grimoire_test_read.txt', "Line 1\nLine 2\nLine 3\n")),
     cleanup(delete_file('/tmp/grimoire_test_read.txt'))
 ]) :-
-    magic_cast(conjure(interface(read_file('/tmp/grimoire_test_read.txt', 1, 3))), Result),
+    user:magic_cast(conjure(interface(read_file('/tmp/grimoire_test_read.txt', 1, 3))), Result),
     % Should delegate to fs domain and return ok or error
     (Result = ok(_) ; Result = error(_)), !.
 
@@ -150,7 +150,7 @@ test(edit_file_command, [
     setup(setup_test_file('/tmp/grimoire_test_edit.txt', "Original content\n")),
     cleanup(delete_file('/tmp/grimoire_test_edit.txt'))
 ]) :-
-    magic_cast(conjure(interface(edit_file('/tmp/grimoire_test_edit.txt', [append("New line\n")]))), Result),
+    user:magic_cast(conjure(interface(edit_file('/tmp/grimoire_test_edit.txt', [append("New line\n")]))), Result),
     % Should delegate to fs domain
     (Result = ok(_) ; Result = error(_)), !.
 

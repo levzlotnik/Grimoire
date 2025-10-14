@@ -54,11 +54,13 @@ component(Entity, git_repository_root, Root) :-
 % Auto-detect repository properties from filesystem
 component(Entity, git_repository_current_branch, CurrentBranch) :-
     component(Entity, git_repository_root, Root),
-    magic_cast(perceive(git(current_branch(Root, CurrentBranch))), ok(_)).
+    magic_cast(perceive(git(current_branch(Root))), Result),
+    Result = ok(current_branch(CurrentBranch)).
 
 component(Entity, git_repository_working_status, WorkingStatus) :-
     component(Entity, git_repository_root, _Root),
-    magic_cast(perceive(git(status(_, WorkingStatus, _))), ok(_)).
+    magic_cast(perceive(git(status)), Result),
+    Result = ok(status_info(branch(_), working_status(WorkingStatus), files(_))).
 
 % Repository verification flag
 component(Entity, git_repository_verified, true) :-
@@ -239,7 +241,7 @@ cast(conjure(git(Term)), RetVal) :-
     % Convert to shell args
     phrase(git_args(Term), Args),
     % Execute
-    cast(conjure(executable_program(git, Args)), RetVal).
+    magic_cast(conjure(executable_program(git, Args)), RetVal).
 
 % === PERCEIVE PREDICATES - Structured Git Queries ===
 
@@ -254,7 +256,7 @@ register_spell(
 cast(perceive(git(status)), Result) :-
     catch(
         (% Get current branch
-         cast(conjure(git(branch(['--show-current']))), BranchResult),
+         magic_cast(conjure(git(branch(['--show-current']))), BranchResult),
          (BranchResult = ok(result(BranchOutput, _)) ->
              string_concat(BranchStr, "\n", BranchOutput),
              atom_string(Branch, BranchStr)
@@ -262,7 +264,7 @@ cast(perceive(git(status)), Result) :-
              Branch = unknown
          ),
          % Get working tree status
-         cast(conjure(git(status(['--porcelain']))), StatusResult),
+         magic_cast(conjure(git(status(['--porcelain']))), StatusResult),
          (StatusResult = ok(result(StatusOutput, _)) ->
              (StatusOutput = "" ->
                  WorkingStatus = clean,
@@ -336,7 +338,7 @@ register_spell(
 
 cast(perceive(git(current_branch(_Root))), Result) :-
     catch(
-        (cast(conjure(git(branch(['--show-current']))), BranchResult),
+        (magic_cast(conjure(git(branch(['--show-current']))), BranchResult),
          (BranchResult = ok(result(Output, _)) ->
              string_concat(BranchStr, "\n", Output),
              atom_string(Branch, BranchStr)

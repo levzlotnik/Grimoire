@@ -11,6 +11,11 @@
 
 % Core ECS predicates - must match ecs_kernel.pl
 
+% Multifile declarations - must come before any clauses
+:- multifile docstring/2.
+:- multifile entity/1.
+:- multifile component/3.
+
 % Dynamic declarations for spell system and hooks
 :- dynamic([
     cast/2,               % cast(Spell, RetVal)
@@ -246,11 +251,17 @@ docstring(E, S) :-
     atom(SpellCtor),  % Guard: ensure SpellCtor is atomic
     component(spell, ctor, SpellCtor),
     component(SpellCtor, ctor, SpellType),
-    format(string(S), "~w~n~nInput Format: ~w~nOutput Format: ~w", [Explanation, InputFormat, OutputFormat]).
+    format(
+        string(S),
+        "Spell: '~w'~n~w~n~nInput Format: ~w~nOutput Format: ~w",
+        [SpellType, Explanation, InputFormat, OutputFormat]
+    ).
 
 % Bare constructor docstrings - just explanation
+% Auto-derive docstrings from register_spell/4 declarations
 docstring(SpellType, Explanation) :-
     register_spell(conjure(SpellType), _, _, docstring(Explanation)).
+
 docstring(SpellType, Explanation) :-
     register_spell(perceive(SpellType), _, _, docstring(Explanation)).
 
@@ -401,16 +412,6 @@ cast(ritual(Operations), RetVal) :-
     % Cast multiple conjuration spells as a ritual (atomic transaction)
     maplist(magic_cast, Operations, Results),
     RetVal = ok(Results).
-
-execute_commands([], []).
-execute_commands([Cmd|Rest], [Res|Results]) :-
-    format("~w\n", [run(Cmd, Res)]),
-    run(Cmd, Res),
-    ( Res = error(_) ->
-        Results = []
-    ;
-        execute_commands(Rest, Results)
-    ).
 
 % NOTE: write_file/2, read_file_to_lines/2, and write_lines_to_file/2
 % have been migrated to fs.pl (filesystem domain)

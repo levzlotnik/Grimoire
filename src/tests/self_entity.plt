@@ -140,11 +140,7 @@ setup_readme_test :-
 
 cleanup_readme_test :-
     % Clean up test directory
-    (exists_directory('test_readme_entity') -> delete_directory_and_contents('test_readme_entity') ; true),
-    % Clean up entity assertions if they exist
-    (entity(test_readme_entity) -> retractall(entity(test_readme_entity)) ; true),
-    (component(test_readme_entity, _, _) -> retractall(component(test_readme_entity, _, _)) ; true),
-    (docstring(test_readme_entity, _) -> retractall(docstring(test_readme_entity, _)) ; true).
+    (exists_directory('test_readme_entity') -> delete_directory_and_contents('test_readme_entity') ; true).
 
 setup_no_readme_test :-
     % Ensure clean state
@@ -152,10 +148,6 @@ setup_no_readme_test :-
 
 cleanup_no_readme_test :-
     % Clean up test directory
-    (exists_directory('test_no_readme') -> delete_directory_and_contents('test_no_readme') ; true),
-    % Clean up entity assertions if they exist
-    (entity(test_no_readme) -> retractall(entity(test_no_readme)) ; true),
-    (component(test_no_readme, _, _) -> retractall(component(test_no_readme, _, _)) ; true),
-    (docstring(test_no_readme, _) -> retractall(docstring(test_no_readme, _)) ; true).
+    (exists_directory('test_no_readme') -> delete_directory_and_contents('test_no_readme') ; true).
 
 :- end_tests(self_entity).

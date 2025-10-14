@@ -314,7 +314,7 @@ python_cast(conjure(ConjureStruct), PyResult) :-
     ;
         Term = ConjureStruct  % Already a term
     ),
-    cast(conjure(Term), Result),
+    magic_cast(conjure(Term), Result),
     term_struct_to_python_dict(Result, PyResult).
 
 % Convert Prolog term structures to Python dictionaries recursively

@@ -152,6 +152,9 @@ run_test(TestUnit, Result) :-
 
 % Run all tests for a specific entity
 run_tests_for_entity(Entity, Results) :-
+    % ALWAYS load ALL test files to ensure consistent environment
+    discover_test_files(TestFiles),
+    maplist(grimoire_ensure_loaded, TestFiles),
     available_tests_for_entity(Entity, Tests),
     maplist(run_test, Tests, Results).
 
@@ -212,6 +215,9 @@ run_all_tests :-
 % Run specific tests (interface compatibility)
 run_specific_tests(TestArgs) :-
     format('~n=== Running Specific Tests: ~w ===~n', [TestArgs]),
+    % ALWAYS load ALL test files to ensure consistent environment
+    discover_test_files(TestFiles),
+    maplist(grimoire_ensure_loaded, TestFiles),
     build_test_registry(Registry),
     % Resolve requested args to concrete test units:
     % - If Arg matches a unit name exactly, include it
@@ -231,9 +237,6 @@ run_specific_tests(TestArgs) :-
     ), EntityUnits),
     append(ExactUnits, EntityUnits, UnitsAllDup),
     sort(UnitsAllDup, Units),
-    % Load files for all selected units
-    findall(File, (member(Unit, Units), member(Unit-File, Registry)), Files),
-    maplist(ensure_test_file_loaded, Files),
     % Run the selected units together
     run_tests(Units),
     test_summary.

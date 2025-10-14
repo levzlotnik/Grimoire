@@ -23,12 +23,22 @@ ensure_python_mcp_client :-
         assertz(mcp_client_imported)
     ).
 
-% Register MCP server (uses FastMCP auto-reflection)
-mcp_register_server(Server, Transport, Command) :-
+% Register MCP server with stdio transport
+mcp_register_server(Server, stdio, Command) :-
     ensure_python_mcp_client,
     % Convert Prolog command list to Python list
     encode_command(Command, PyCommand),
-    py_call(mcp_client:register_server(Server, Transport, PyCommand)).
+    py_call(mcp_client:register_server(Server, stdio, command=PyCommand)).
+
+% Register MCP server with http transport
+mcp_register_server(Server, http, Url) :-
+    ensure_python_mcp_client,
+    atom_string(Url, UrlStr),
+    py_call(mcp_client:register_server(Server, http, url=UrlStr)).
+
+% Also support streamablehttp as alias for http
+mcp_register_server(Server, streamablehttp, Url) :-
+    mcp_register_server(Server, http, Url).
 
 % Call MCP tool via FastMCP
 mcp_call_tool(Server, Tool, Args, DecodedResult) :-
@@ -44,19 +54,31 @@ mcp_call_tool(Server, Tool, Args, DecodedResult) :-
 mcp_list_tools(Server, Tools) :-
     ensure_python_mcp_client,
     py_call(mcp_client:list_tools(Server), PyTools),
-    decode_tool_list(PyTools, Tools).
+    % PyTools is now a Prolog list of py{...} dicts (auto-converted by Janus)
+    maplist(extract_tool, PyTools, Tools).
 
 % List all registered MCP servers
 mcp_list_servers(Servers) :-
     ensure_python_mcp_client,
     py_call(mcp_client:list_servers(), PyServers),
-    decode_server_list(PyServers, Servers).
+    % PyServers is now a Prolog list of py{...} dicts (auto-converted by Janus)
+    maplist(extract_server, PyServers, Servers).
 
-% Ensure server is registered (for verification)
-ensure_mcp_server_registered(Server, Transport, Command) :-
+% Ensure server is registered (for verification) - stdio transport
+ensure_mcp_server_registered(Server, stdio, Command) :-
     ensure_python_mcp_client,
     encode_command(Command, PyCommand),
-    py_call(mcp_client:ensure_registered(Server, Transport, PyCommand)).
+    py_call(mcp_client:ensure_registered(Server, stdio, command=PyCommand)).
+
+% Ensure server is registered (for verification) - http transport
+ensure_mcp_server_registered(Server, http, Url) :-
+    ensure_python_mcp_client,
+    atom_string(Url, UrlStr),
+    py_call(mcp_client:ensure_registered(Server, http, url=UrlStr)).
+
+% Also support streamablehttp as alias for http
+ensure_mcp_server_registered(Server, streamablehttp, Url) :-
+    ensure_mcp_server_registered(Server, http, Url).
 
 % === ENCODING PREDICATES ===
 
@@ -66,58 +88,43 @@ encode_command(Command, PyCommand) :-
     PyCommand = Command.  % Lists pass through in janus
 
 % Encode MCP args to Python dict (janus converts dicts automatically)
-encode_mcp_args(PrologDict, PrologDict) :-
-    is_dict(PrologDict).
+encode_mcp_args(Args, Args) :- is_dict(Args).
 
 % === DECODING PREDICATES ===
 
-% Decode MCP result from Python to Prolog
-decode_mcp_result(PyResult, mcp_result(Content, IsError)) :-
-    (   py_is_dict(PyResult)
-    ->  py_call(PyResult:get(content), Content),
-        py_call(PyResult:get(isError), IsError)
-    ;   % If not a dict, treat as error
-        Content = PyResult,
-        IsError = true
-    ).
+% Decode MCP result from Python to Prolog (auto-converted by Janus)
+% Content is now a list of content items [{'type': 'text', 'text': '...'}, ...]
+decode_mcp_result(py{content: ContentList, isError: IsError}, mcp_result(DecodedContent, IsError)) :-
+    !,
+    decode_content_list(ContentList, DecodedContent).
+decode_mcp_result(PyResult, mcp_result(PyResult, true)).  % Fallback: treat as error
 
-% Decode tool list
-decode_tool_list(PyTools, Tools) :-
-    py_iter(PyTools, PyList),
-    maplist(decode_tool, PyList, Tools).
+% Decode content list - extract text from content items
+decode_content_list([], []).
+decode_content_list([ContentItem|Rest], [Text|RestDecoded]) :-
+    (   py{type: text, text: Text} = ContentItem
+    ->  true
+    ;   py{type: image, data: Data, mimeType: MimeType} = ContentItem
+    ->  Text = image(Data, MimeType)
+    ;   Text = ContentItem  % Fallback
+    ),
+    decode_content_list(Rest, RestDecoded).
 
-decode_tool(PyTool, tool(Name, Schema)) :-
-    py_call(PyTool:name, Name),
-    py_call(PyTool:input_schema, PySchema),
-    decode_schema(PySchema, Schema).
+% Extract tool from Python dict (auto-converted by Janus)
+extract_tool(py{name: Name, description: _Desc, input_schema: Schema},
+             tool(Name, Schema)).
+% Note: input_schema is already a Prolog term (dict or primitive)
 
-decode_schema(PySchema, Schema) :-
-    (   py_is_dict(PySchema)
-    ->  py_iter(PySchema, Items, items),
-        maplist(decode_schema_pair, Items, PrologPairs),
-        dict_create(Schema, _, PrologPairs)
-    ;   Schema = PySchema
-    ).
-
-decode_schema_pair(Key-PyValue, Key-PrologValue) :-
-    (   py_is_dict(PyValue)
-    ->  decode_schema(PyValue, PrologValue)
-    ;   py_is_list(PyValue)
-    ->  py_iter(PyValue, PyList),
-        maplist(decode_schema, PyList, PrologValue)
-    ;   PrologValue = PyValue
-    ).
-
-% Decode server list
-decode_server_list(PyServers, Servers) :-
-    py_iter(PyServers, PyList),
-    maplist(decode_server, PyList, Servers).
-
-decode_server(PyServer, server(Name, Transport, Command)) :-
-    py_call(PyServer:name, Name),
-    py_call(PyServer:transport, Transport),
-    py_call(PyServer:command, PyCommand),
-    py_iter(PyCommand, Command).
+% Extract server from Python dict (auto-converted by Janus)
+% Handle stdio transport (has command)
+extract_server(py{name: Name, transport: stdio, command: Command, tools: _Tools, url: @(null)},
+               server(Name, stdio, Command)) :- !.
+% Handle streamablehttp transport (has url)
+extract_server(py{name: Name, transport: streamablehttp, command: @(null), tools: _Tools, url: Url},
+               server(Name, streamablehttp, Url)) :- !.
+% Fallback for other cases
+extract_server(py{name: Name, transport: Transport},
+               server(Name, Transport, unknown)).
 
 % Ensure Python setup happens when this module is loaded
 :- ensure_python_mcp_client.

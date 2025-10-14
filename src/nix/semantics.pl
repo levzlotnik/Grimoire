@@ -13,7 +13,6 @@ component(nix, concept, nix(store)).
 component(nix, concept, nix(derivation)).
 component(nix, concept, nix(package)).
 component(nix, concept, nix(target)).
-component(nix, concept, nix(build)).
 component(nix, concept, nix(flake)).
 component(nix, concept, nix(develop)).
 component(nix, concept, nix(search)).
@@ -376,44 +375,27 @@ cast(conjure(nix(run(Installable, AppArgs))), RetVal) :-
     flatten([["nix", "run", Installable, "--"], AppArgs], Args),
     magic_cast(conjure(shell(Args, interactive)), RetVal).
 
-docstring(nix(build),
-    "Builds a Nix expression or flake. Installable: what to build (flake reference, derivation, etc.)."
-).
-
 % Build conjure spell
 register_spell(
     conjure(nix(build)),
-    input(nix(build(installable('Installable')))),
+    input(nix(build(target('Target')))),
     output(either(
         ok(result(stdout('StdOut'), stderr('StdErr'))),
         error(build_error(exit('ExitCode'), stderr('StdErr')))
     )),
-    docstring("Builds a Nix expression or flake. Installable: what to build (flake reference, derivation, etc.).")
+    docstring("Build a Nix flake or derivation. Target: flake reference or installable to build (e.g., '.#default', 'nixpkgs#hello').")
 ).
 
-cast(conjure(nix(build(Installable))), RetVal) :-
-    Args = ["nix", "build", Installable],
-    magic_cast(conjure(shell(Args)), RetVal),
-    % Track built derivation
-    (RetVal = ok(Output) ->
-        assert(entity(nix(derivation(Output)))),
-        assert(component(build_result, output_path, Output))
-    ; true).
-
-% Build with options
-register_spell(
-    conjure(nix(build)),
-    input(nix(build(installable('Installable'), options('Options')))),
-    output(either(
-        ok(result(stdout('StdOut'), stderr('StdErr'))),
-        error(build_error(exit('ExitCode'), stderr('StdErr')))
-    )),
-    docstring("Builds a Nix expression or flake with additional options. Installable: what to build, Options: list of additional build options.")
-).
-
-cast(conjure(nix(build(Installable, Options))), RetVal) :-
-    flatten([["nix", "build", Installable], Options], Args),
-    magic_cast(conjure(shell(Args)), RetVal).
+cast(conjure(nix(build(Target))), Result) :-
+    Args = ["nix", "build", Target],
+    magic_cast(conjure(shell(Args)), ShellResult),
+    (ShellResult = ok(result(StdOut, StdErr)) ->
+        Result = ok(result(StdOut, StdErr))
+    ; ShellResult = error(shell_error(_, ExitCode, _StdOut, StdErr)) ->
+        Result = error(build_error(ExitCode, StdErr))
+    ;
+        Result = ShellResult
+    ).
 
 % Store commands
 entity(nix(store)).
@@ -659,12 +641,6 @@ cast(conjure(nix(flake(new(TemplateId, DestPath)))), RetVal) :-
     ;
         RetVal = error(nix_error(unexpected_result))
     ).
-
-% Nix subsystem extension for load_entity
-% Lazy loading for nix semantic folders
-load_entity(Entity, semantic(nix_folder(Path), lazy)) :-
-    assertz(to_be_loaded(Entity, semantic(folder(Path)))),
-    asserta(entity(Entity)).
 
 % === PERCEIVE PREDICATES - Structured Nix Queries ===
 

@@ -1,116 +1,97 @@
-"""MCP client implementation using FastMCP with auto-reflection"""
+"""MCP client implementation using FastMCP"""
 import asyncio
 from typing import Dict, List, Any, Optional
-from dataclasses import dataclass, field
+from pydantic import BaseModel, Field
 
-try:
-    from fastmcp import Client
-    FASTMCP_AVAILABLE = True
-except ImportError:
-    FASTMCP_AVAILABLE = False
+from fastmcp import Client
 
 
-@dataclass
-class MCPTool:
+class MCPTool(BaseModel):
     """MCP tool definition"""
     name: str
     description: str
     input_schema: Dict[str, Any]
 
 
-@dataclass
-class MCPServer:
-    """MCP server with client and tools"""
+class MCPServer(BaseModel):
+    """MCP server connection info"""
     name: str
-    transport: str
-    command: List[str]
-    tools: List[MCPTool] = field(default_factory=list)
-    _client: Optional[Any] = field(default=None, repr=False)
-    _event_loop: Optional[asyncio.AbstractEventLoop] = field(default=None, repr=False)
+    transport: str  # "stdio" or "http"
+    command: Optional[List[str]] = None  # For stdio transport
+    url: Optional[str] = None  # For http transport
+    tools: List[MCPTool] = Field(default_factory=list)
 
 
 class MCPServerRegistry:
-    """Registry for MCP servers with FastMCP auto-reflection"""
+    """Registry for MCP servers using FastMCP"""
 
     def __init__(self):
         self.servers: Dict[str, MCPServer] = {}
 
-    def register_server(self, name: str, transport: str, command: List[str]) -> None:
-        """Register a new MCP server and auto-reflect its tools
+    def register_server(self, name: str, transport: str, command: Optional[List[str]] = None,
+                       url: Optional[str] = None) -> None:
+        """Register a new MCP server and discover its tools
 
-        Uses FastMCP client to connect via stdio and discover available tools.
-        Falls back to mock implementation if FastMCP is not available.
+        Args:
+            name: Server identifier
+            transport: Either "stdio" or "http"
+            command: Command list for stdio transport (e.g., ["python", "server.py"])
+            url: URL for http transport (e.g., "http://localhost:8000/mcp")
         """
-        if not FASTMCP_AVAILABLE:
-            # Fallback: create mock server with empty tools
+        if transport == "stdio":
+            if not command or len(command) == 0:
+                raise ValueError("stdio transport requires a command list")
+            tools = asyncio.run(self._register_server(name, command=command))
             self.servers[name] = MCPServer(
                 name=name,
                 transport=transport,
                 command=command,
-                tools=[]
+                tools=tools
             )
-            return
-
-        # Real FastMCP implementation
-        if transport != "stdio":
-            raise ValueError(f"Only stdio transport is currently supported, got: {transport}")
-
-        # For stdio, command should be a list like ["python", "server.py"]
-        # or just ["server.py"] if it's executable
-        if len(command) == 0:
-            raise ValueError("Command list cannot be empty")
-
-        # Build the server path/command
-        # If command is like ["python", "server.py"], we pass "server.py"
-        # If command is like ["./server.py"], we pass "./server.py"
-        if len(command) == 1:
-            server_source = command[0]
-        elif command[0] in ["python", "python3"]:
-            server_source = command[1] if len(command) > 1 else None
-            if not server_source:
-                raise ValueError("Python command requires a script path")
+        elif transport in ("http", "streamablehttp"):
+            if not url:
+                raise ValueError("http transport requires a URL")
+            tools = asyncio.run(self._register_server(name, url=url))
+            self.servers[name] = MCPServer(
+                name=name,
+                transport="http",
+                url=url,
+                tools=tools
+            )
         else:
-            # For other commands, use the full command as-is
-            server_source = " ".join(command)
+            raise ValueError(f"Unsupported transport: {transport}. Use 'stdio' or 'http'")
 
+    async def _register_server(self, name: str, command: Optional[List[str]] = None,
+                              url: Optional[str] = None) -> List[MCPTool]:
+        """Register MCP server and discover tools using FastMCP"""
         try:
-            # Create FastMCP client - it will auto-detect stdio transport
-            client = Client(server_source)
+            # FastMCP Client can accept either a script path or URL
+            if command:
+                # For stdio: FastMCP expects just the script path, not "python script.py"
+                # Extract the script path (last element of command list)
+                client_source = command[-1]
+            elif url:
+                # For HTTP: use URL directly
+                client_source = url
+            else:
+                raise ValueError("Either command or url must be provided")
 
-            # We need to run async operations in a sync context
-            # Use asyncio.run to execute the tool discovery
-            tools = asyncio.run(self._discover_tools(client))
+            client = Client(client_source)
 
-            self.servers[name] = MCPServer(
-                name=name,
-                transport=transport,
-                command=command,
-                tools=tools,
-                _client=client
-            )
-        except Exception as e:
-            raise RuntimeError(f"Failed to register MCP server {name}: {e}")
-
-    async def _discover_tools(self, client: Any) -> List[MCPTool]:
-        """Discover tools from MCP server using FastMCP client"""
-        tools = []
-        try:
             async with client:
-                # List available tools from the server
+                tools = []
                 tool_list = await client.list_tools()
 
-                for tool_info in tool_list:
-                    # FastMCP returns tool objects with name, description, and input_schema
+                for tool in tool_list:
                     tools.append(MCPTool(
-                        name=tool_info.name if hasattr(tool_info, 'name') else str(tool_info),
-                        description=tool_info.description if hasattr(tool_info, 'description') else "",
-                        input_schema=tool_info.inputSchema if hasattr(tool_info, 'inputSchema') else {}
+                        name=tool.name,
+                        description=tool.description if hasattr(tool, 'description') else "",
+                        input_schema=tool.inputSchema if hasattr(tool, 'inputSchema') else {}
                     ))
-        except Exception as e:
-            # If discovery fails, return empty list but don't crash
-            print(f"Warning: Failed to discover tools: {e}")
 
-        return tools
+                return tools
+        except Exception as e:
+            raise RuntimeError(f"Failed to register MCP server {name}: {e}")
 
     def call_tool(self, server_name: str, tool_name: str, args: Dict) -> Dict[str, Any]:
         """Call a tool on registered MCP server"""
@@ -119,56 +100,69 @@ class MCPServerRegistry:
 
         server = self.servers[server_name]
 
-        if not FASTMCP_AVAILABLE or server._client is None:
-            # Fallback: mock response
-            return {
-                'content': f"Mock result from {tool_name}",
-                'isError': False
-            }
-
-        # Real FastMCP tool call
         try:
-            result = asyncio.run(self._call_tool_async(server._client, tool_name, args))
+            result = asyncio.run(self._call_tool_async(server, tool_name, args))
             return result
         except Exception as e:
             return {
-                'content': str(e),
+                'content': [{'type': 'text', 'text': str(e)}],
                 'isError': True
             }
 
-    async def _call_tool_async(self, client: Any, tool_name: str, args: Dict) -> Dict[str, Any]:
-        """Call a tool asynchronously using FastMCP client"""
-        async with client:
-            result = await client.call_tool(tool_name, args)
-
-            # Parse the result based on FastMCP's response format
-            if hasattr(result, 'content'):
-                content = result.content
+    async def _call_tool_async(self, server: MCPServer, tool_name: str, args: Dict) -> Dict[str, Any]:
+        """Call a tool asynchronously using FastMCP"""
+        try:
+            # Get client source based on transport
+            if server.transport == "stdio":
+                # FastMCP expects just the script path
+                client_source = server.command[-1]
+            elif server.transport == "http":
+                client_source = server.url
             else:
-                content = str(result)
+                raise ValueError(f"Unsupported transport: {server.transport}")
 
-            is_error = hasattr(result, 'isError') and result.isError
+            client = Client(client_source)
 
+            async with client:
+                result = await client.call_tool(tool_name, args)
+
+                # FastMCP returns result with content - convert to our format
+                content_list = []
+                if hasattr(result, 'content'):
+                    for item in result.content:
+                        if hasattr(item, 'text'):
+                            content_list.append({'type': 'text', 'text': item.text})
+                        else:
+                            content_list.append({'type': 'text', 'text': str(item)})
+                else:
+                    content_list.append({'type': 'text', 'text': str(result)})
+
+                return {
+                    'content': content_list,
+                    'isError': result.isError if hasattr(result, 'isError') else False
+                }
+        except Exception as e:
             return {
-                'content': content,
-                'isError': is_error
+                'content': [{'type': 'text', 'text': str(e)}],
+                'isError': True
             }
 
-    def list_tools(self, server_name: str) -> List[MCPTool]:
+    def list_tools(self, server_name: str) -> List[Dict[str, Any]]:
         """List all tools from a server"""
         if server_name not in self.servers:
             raise ValueError(f"Server {server_name} not registered")
 
-        return self.servers[server_name].tools
+        return [t.model_dump() for t in self.servers[server_name].tools]
 
-    def list_servers(self) -> List[MCPServer]:
+    def list_servers(self) -> List[Dict[str, Any]]:
         """List all registered servers"""
-        return list(self.servers.values())
+        return [s.model_dump() for s in self.servers.values()]
 
-    def ensure_registered(self, name: str, transport: str, command: List[str]) -> None:
+    def ensure_registered(self, name: str, transport: str, command: Optional[List[str]] = None,
+                         url: Optional[str] = None) -> None:
         """Ensure server is registered (for verification)"""
         if name not in self.servers:
-            self.register_server(name, transport, command)
+            self.register_server(name, transport, command, url)
 
 
 # Global registry instance
@@ -176,21 +170,23 @@ _registry = MCPServerRegistry()
 
 
 # Module-level functions for janus interface
-def register_server(name: str, transport: str, command: List[str]) -> None:
-    _registry.register_server(name, transport, command)
+def register_server(name: str, transport: str, command: Optional[List[str]] = None,
+                   url: Optional[str] = None) -> None:
+    _registry.register_server(name, transport, command, url)
 
 
 def call_tool(server: str, tool: str, args: Dict) -> Dict[str, Any]:
     return _registry.call_tool(server, tool, args)
 
 
-def list_tools(server: str) -> List[MCPTool]:
+def list_tools(server: str) -> List[Dict[str, Any]]:
     return _registry.list_tools(server)
 
 
-def list_servers() -> List[MCPServer]:
+def list_servers() -> List[Dict[str, Any]]:
     return _registry.list_servers()
 
 
-def ensure_registered(name: str, transport: str, command: List[str]) -> None:
-    _registry.ensure_registered(name, transport, command)
+def ensure_registered(name: str, transport: str, command: Optional[List[str]] = None,
+                     url: Optional[str] = None) -> None:
+    _registry.ensure_registered(name, transport, command, url)

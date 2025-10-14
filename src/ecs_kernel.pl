@@ -329,9 +329,24 @@ self_entity(Entity) :-
 
 % Variant with explicit docstring
 self_entity(Entity, Docstring) :-
-    % First do everything self_entity/1 does
-    self_entity(Entity),
-    % Then assert the provided docstring (overrides README if it exists)
+    % Get the current file and directory being loaded
+    prolog_load_context(source, FilePath),
+    prolog_load_context(directory, Dir),
+
+    % Assert the entity
+    assertz(entity(Entity)),
+
+    % Create self component based on file type
+    file_base_name(FilePath, FileName),
+    (FileName = 'semantics.pl' ->
+        % It's a semantics.pl file, use the directory
+        assertz(component(Entity, self, semantic(folder(Dir))))
+    ;
+        % Regular semantic file
+        assertz(component(Entity, self, semantic(file(FilePath))))
+    ),
+
+    % Assert the provided docstring directly (no retract needed)
     assertz(docstring(Entity, Docstring)).
 
 docstring(self_entity,

@@ -12,7 +12,7 @@
 
 % === DOCSTRINGS ===
 
-docstring(protocol_client(mcp), "MCP (Model Context Protocol) client for consuming external MCP servers with FastMCP auto-reflection").
+docstring(protocol_client(mcp), "MCP (Model Context Protocol) client for consuming external MCP servers using FastMCP with stdio and HTTP transports").
 
 % === SPELL IMPLEMENTATIONS ===
 
@@ -25,7 +25,7 @@ register_spell(
         command('Command')
     )))),
     output(either(ok(server_registered('Server')), error(mcp_registration_error('Reason')))),
-    docstring("Register an MCP server with stdio transport and auto-reflect its available tools")
+    docstring("Register an MCP server with stdio or HTTP transport and auto-discover its available tools")
 ).
 
 cast(conjure(protocol_client(mcp(register(
