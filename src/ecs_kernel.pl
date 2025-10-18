@@ -3,13 +3,31 @@
 :- use_module(library(apply)).
 :- use_module(library(strings)).
 :- use_module(library(filesex)).
+:- use_module(library(option)).
+
+%% ============================================================================
+%% PHASE 3: OPERATOR DEFINITIONS
+%% ============================================================================
+
+% Component DSL operators for generative and discriminative flows
+:- op(1150, xfx, ==>).  % "implies/expands to" - generative flow (component expansion)
+:- op(1160, xfx, '::').  % "such that" - discriminative flow (verification constraints)
+
+% Reading: component(...) ==> expansions :: constraints
+% Means: "component implies these expansions, such that these constraints hold"
+
+%% ============================================================================
+%% CORE ECS PREDICATES - DYNAMIC DECLARATIONS
+%% ============================================================================
 
 % Core ECS predicates - allow extension across files
 :- dynamic([
     entity/1,
     component/3,
     docstring/2,
-    load_entity/2          % Allow subsystems to extend entity loading
+    load_entity/2,          % Allow subsystems to extend entity loading
+    verify/1,               % Phase 3: Discriminative verification predicates
+    in_please_verify/0      % Phase 3: Guard flag for verify/1
 ], [
     discontiguous(true),
     multifile(true)
@@ -134,6 +152,255 @@ docstring(option,
     |}
 ).
 
+%% ============================================================================
+%% PHASE 3: TERM EXPANSION - COMPONENT DSL
+%% ============================================================================
+
+% Case 1: Pattern ==> Expansions :: Verification
+term_expansion(
+    '::'('==>'(Pattern, ExpansionsComma), VerificationComma),
+    Generated
+) :-
+    Pattern = component(_Entity, _ComponentType, _DomainSpec),
+    !,
+    comma_to_list(ExpansionsComma, Expansions),
+    comma_to_list(VerificationComma, Verifications),
+
+    % GENERATIVE: Generate component rules
+    maplist(generate_component_rule(Pattern), Expansions, ComponentRules),
+
+    % DISCRIMINATIVE: Generate verify clause
+    generate_verify_clause(Pattern, Expansions, Verifications, VerifyClause),
+
+    flatten(ComponentRules, FlatRules),
+    Generated = [FlatRules, VerifyClause].
+
+% Case 2: Pattern ==> Expansions (no explicit verification)
+term_expansion(
+    '==>'(Pattern, ExpansionsComma),
+    Generated
+) :-
+    Pattern = component(_Entity, _ComponentType, _DomainSpec),
+    !,
+    comma_to_list(ExpansionsComma, Expansions),
+    maplist(generate_component_rule(Pattern), Expansions, ComponentRules),
+    generate_verify_clause(Pattern, Expansions, [], VerifyClause),
+
+    flatten(ComponentRules, FlatRules),
+    Generated = [FlatRules, VerifyClause].
+
+% Case 3: Pattern :: Verification (leaf verification only)
+term_expansion(
+    '::'(Pattern, VerificationComma),
+    [VerifyClause]
+) :-
+    Pattern = component(_Entity, _ComponentType, _Value),
+    !,
+    comma_to_list(VerificationComma, Verifications),
+    list_to_conjunction(Verifications, VerifyBody),
+    wrap_verify_body_with_error_handling(Pattern, VerifyBody, WrappedBody),
+    VerifyClause = (verify(Pattern) :- WrappedBody).
+
+%% ============================================================================
+%% PHASE 3: COMPONENT RULE GENERATION
+%% ============================================================================
+
+% Case 1: Conditional expansion (component(...) :- Conditions)
+generate_component_rule(Pattern, (Head :- Body), Rule) :-
+    Head = component(_, _, _),
+    !,
+    % Generate: Head :- Pattern, Body
+    Rule = (Head :- Pattern, Body).
+
+% Case 2: Simple expansion component(...)
+generate_component_rule(Pattern, Expansion, Rule) :-
+    Expansion = component(_, _, _),
+    !,
+    % Generate: Expansion :- Pattern
+    Rule = (Expansion :- Pattern).
+
+% Case 3: Not a component (skip)
+generate_component_rule(_Pattern, _Other, []).
+
+%% ============================================================================
+%% PHASE 3: VERIFY CLAUSE GENERATION
+%% ============================================================================
+
+generate_verify_clause(Pattern, Expansions, Verifications, (verify(Pattern) :- WrappedBody)) :-
+    maplist(wrap_with_verify, Expansions, VerifyCalls),
+    append(VerifyCalls, Verifications, AllConditions),
+    list_to_conjunction(AllConditions, VerifyBody),
+    wrap_verify_body_with_error_handling(Pattern, VerifyBody, WrappedBody).
+
+% Wrap conditional expansion: (component(...) :- Body) becomes (Body -> please_verify(component(...)) ; true)
+wrap_with_verify((Head :- Body), (Body -> please_verify(Head) ; true)) :-
+    Head = component(_, _, _),
+    !.
+
+% Wrap simple expansion: component(...) becomes please_verify(component(...))
+wrap_with_verify(Expansion, please_verify(Expansion)) :-
+    Expansion = component(_, _, _),
+    !.
+
+% Skip non-components
+wrap_with_verify(_Other, true).
+
+%% ============================================================================
+%% PHASE 3: HELPER PREDICATES
+%% ============================================================================
+
+comma_to_list((A, B), [A|Rest]) :- !, comma_to_list(B, Rest).
+comma_to_list(A, [A]).
+
+list_to_conjunction([], true).
+list_to_conjunction([X], X).
+list_to_conjunction([X|Rest], (X, RestConj)) :-
+    Rest \= [],
+    list_to_conjunction(Rest, RestConj).
+
+% Wrap verification body with error handling - converts failures to exceptions
+wrap_verify_body_with_error_handling(Pattern, Body, WrappedBody) :-
+    WrappedBody = (
+        Body -> true
+        ; throw(error(
+            verification_failed(Pattern),
+            context(verify/1, 'Verification constraints failed')))
+    ).
+
+%% ============================================================================
+%% PHASE 3: TERM EXPANSION - DSL SCHEMA REGISTRATION
+%% ============================================================================
+
+term_expansion(
+    register_dsl_schema(Domain, Schema, Signature, Doc, ExpansionBody),
+    Generated
+) :-
+    (atom(Doc) ; string(Doc)),  % Doc can be atom or string
+    !,
+    % ExpansionBody is (Pattern ==> Expansions :: Verifications)
+    % Process it using the same machinery as component DSL
+    ExpansionBody = '::'('==>'(Pattern, ExpansionsComma), VerificationComma),
+    Pattern = component(_Entity, _ComponentType, _DomainSpec),
+
+    comma_to_list(ExpansionsComma, Expansions),
+    comma_to_list(VerificationComma, Verifications),
+
+    % Generate component rules using existing helper
+    maplist(generate_component_rule(Pattern), Expansions, ComponentRules),
+
+    % Generate verify clause using existing helper
+    generate_verify_clause(Pattern, Expansions, Verifications, VerifyClause),
+
+    flatten(ComponentRules, FlatRules),
+
+    % Generate metadata with docstring
+    Metadata = [
+        component(dsl_schema, ctor, Schema),
+        component(Domain, dsl_schema, Schema),
+        component(Schema, signature, Signature),
+        component(Schema, provided_by, Domain),
+        docstring(Schema, Doc)
+    ],
+
+    Generated = [[FlatRules, VerifyClause], Metadata].
+
+docstring(register_dsl_schema,
+    {|string(_)||
+    Register a DSL schema that provides high-level component patterns for domains.
+
+    Format: register_dsl_schema(Domain, Schema, Signature, Docstring, ExpansionBody)
+
+    Parameters:
+    - Domain: atom (e.g., git, db, project)
+    - Schema: schema identifier (e.g., has(git(repository)))
+    - Signature: type signature (e.g., signature(git(repository('Options'))))
+    - Docstring: REQUIRED documentation string
+    - ExpansionBody: (Pattern ==> Expansions :: Verifications)
+
+    Generates:
+    1. Component expansion rules (generative flow)
+    2. Verify clause with please_verify composition (discriminative flow)
+    3. Metadata: ctor, signature, provided_by, docstring
+
+    Example:
+        register_dsl_schema(
+            git,
+            has(git(repository)),
+            signature(git(repository(root('Root')))),
+            "Git repository with root directory",
+            (
+                component(E, has(git(repository)), git(repository(root(Root))))
+                    ==> component(E, git_repository_root, Root)
+                    ::  atom(Root), exists_directory(Root)
+            )
+        ).
+    |}
+).
+
+%% ============================================================================
+%% PHASE 3: COMPONENT-FETCHING please_verify/1
+%% ============================================================================
+
+please_verify(component(A, B, C)) :-
+    % Entity and Type MUST be grounded
+    (ground(A), ground(B)
+    -> true
+    ; throw(error(
+        instantiation_error(component(A, B, C)),
+        context(please_verify/1, 'Entity and ComponentType must be grounded')))
+    ),
+
+    % Find component - THROW if doesn't exist
+    (component(A, B, C)
+    -> true
+    ; throw(error(
+        existence_error(component, component(A, B, C)),
+        context(please_verify/1, 'Component does not exist')))
+    ),
+
+    % NOW everything must be grounded
+    (ground(component(A, B, C))
+    -> true
+    ; throw(error(
+        instantiation_error(component(A, B, C)),
+        context(please_verify/1, 'Component value must be grounded after component/3 call')))
+    ),
+
+    % Verify with hooks and guards - ignore failures, propagate errors
+    % Failure = no verify rule (OK), Exception = verify rule exists but failed (NOT OK)
+    setup_call_cleanup(
+        assertz(in_please_verify),
+        ignore(verify(component(A, B, C))),
+        retract(in_please_verify)
+    ).
+
+docstring(please_verify,
+    {|string(_)||
+    Component-fetching verification that ensures component exists, is grounded, and satisfies constraints.
+
+    Format: please_verify(component(Entity, ComponentType, Value))
+
+    Behavior:
+    1. Checks Entity and ComponentType are grounded (throws if not)
+    2. Calls component/3 to fetch Value (may unify if Value was unbound)
+    3. Checks full component is now grounded (throws if not)
+    4. Calls verify/1 to check constraints
+
+    Use Cases:
+    - Fetch and verify component in one call
+    - Compose verifications (composite schemas verify their expansions)
+    - Check OS reality (verify/1 checks files exist, DB has valid format, etc.)
+
+    Examples:
+        % Fetch and verify git repository root
+        please_verify(component(my_app, git_repository_root, Root)).
+        % Now Root is bound AND verified to exist on disk
+
+        % Verify composite schema (auto-verifies all expanded components)
+        please_verify(component(my_app, has(project(app)), _)).
+    |}
+).
+
 % Base docstrings for ECS
 docstring(entity,
     {|string(_)||
@@ -183,6 +450,15 @@ component(Entity, docstring, Doc) :-
 % entity/1 becomes queryable as component
 component(Entity, defined, true) :-
     entity(Entity).
+
+% Guard: verify can only be called from please_verify (MUST be LAST verify clause!)
+verify(Pattern) :-
+    \+ in_please_verify,
+    !,
+    throw(error(
+        direct_verify_forbidden(Pattern),
+        context(verify/1, 'NEVER call verify/1 directly. Use please_verify/1.')
+    )).
 
 % Semantic mounting system
 :- dynamic mounted_semantic/2.  % mounted_semantic(Path, Module)

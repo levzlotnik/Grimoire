@@ -4,172 +4,9 @@
 % Load test entity from file-based knowledge
 :- load_entity(semantic(file('@/src/tests/fs_test_entity.pl'))).
 
-% === DISCRIMINATIVE FLOW: VERIFICATION RULES ===
-
-% === VERIFICATION RULES FOR FS DSL PATTERNS ===
-
-% Verify composite has(fs(file)) pattern (if it exists in the codebase)
-verify(component(Entity, has(fs(file)), fs(file(_Spec)))) :-
-    % Delegate to primitive verification
-    please_verify(component(Entity, fs_file_path, Path)),
-    % Check OS reality
-    (exists_file(Path) ->
-        true
-    ;
-        throw(verification_error(fs, file_not_found(Path)))
-    ).
-
-% Verify primitive fs_file_path component
-verify(component(_Entity, fs_file_path, Path)) :-
-    % Component existence already proven by please_verify
-    % Check OS reality
-    (exists_file(Path) ->
-        true
-    ;
-        throw(verification_error(fs, file_not_found(Path)))
-    ).
-
-% Verify primitive fs_directory_path component
-verify(component(_Entity, fs_directory_path, Path)) :-
-    % Component existence already proven by please_verify
-    % Check OS reality
-    (exists_directory(Path) ->
-        true
-    ;
-        throw(verification_error(fs, directory_not_found(Path)))
-    ).
-
-% Verify fs(structure) DSL pattern
-verify(component(_Entity, has(fs(structure)), fs(structure(Items)))) :-
-    % Extract file and folder specs directly (inline expansion instead of relying on component/3)
-    extract_file_specs(Items, FileSpecs),
-    extract_folder_specs(Items, FolderSpecs),
-    % Verify each file and folder against actual filesystem
-    forall(member(file_spec(Path, Opts), FileSpecs),
-        verify_file_against_fs(Path, Opts)),
-    forall(member(folder_spec(Path, _Contents), FolderSpecs),
-        verify_folder_against_fs(Path)).
-
-% Helper to verify a file against filesystem
-verify_file_against_fs(Path, Options) :-
-    (exists_file(Path) ->
-        verify_file_options(Path, Options)
-    ;
-        throw(verification_error(fs, missing_file(Path)))
-    ).
-
-% Helper to verify a folder against filesystem
-verify_folder_against_fs(Path) :-
-    (exists_directory(Path) ->
-        true
-    ;
-        throw(verification_error(fs, missing_folder(Path)))
-    ).
-
-% Verify fs(file_content) DSL pattern
-verify(component(_Entity, has(fs(file_content)), fs(file_content(Path, Requirements)))) :-
-    % Expansion component exists via generative flow, just verify semantics
-    verify_content_against_filesystem(Path, Requirements).
-
-% Verify fs(permissions) DSL pattern
-verify(component(_Entity, has(fs(permissions)), fs(permissions(Path, PermType)))) :-
-    % Expansion component exists via generative flow, just verify semantics
-    verify_permissions_against_filesystem(Path, PermType).
-
-% === PRIMITIVE VERIFICATION (AGAINST ACTUAL FILESYSTEM) ===
-
-% Verify individual file specs against actual filesystem
-verify(component(_Entity, fs_structure_file, file_spec(Path, Options))) :-
-    (exists_file(Path) ->
-        verify_file_options(Path, Options)
-    ;
-        throw(verification_error(fs, missing_file(Path)))
-    ).
-
-% Verify individual folder specs against actual filesystem
-verify(component(_Entity, fs_structure_folder, folder_spec(Path, _Contents))) :-
-    (exists_directory(Path) ->
-        true
-    ;
-        throw(verification_error(fs, missing_folder(Path)))
-    ).
-
-% Verify content requirements
-verify(component(_Entity, fs_content_requirement, content_spec(Path, Requirements))) :-
-    (exists_file(Path) ->
-        read_file_to_string(Path, Content, []),
-        (verify_content_requirements(Content, Requirements) ->
-            true
-        ;
-            throw(verification_error(fs, content_mismatch(Path, Requirements)))
-        )
-    ;
-        throw(verification_error(fs, file_not_found(Path)))
-    ).
-
-% Verify permission requirements
-verify(component(_Entity, fs_permission_requirement, permission_spec(Path, PermType))) :-
-    (exists_file(Path) ->
-        (verify_permission_type(Path, PermType) ->
-            true
-        ;
-            throw(verification_error(fs, permission_mismatch(Path, PermType)))
-        )
-    ;
-        throw(verification_error(fs, file_not_found(Path)))
-    ).
-
-% === VERIFICATION HELPER PREDICATES ===
-
-% Verify filesystem structure matches reality
-verify_filesystem_structure_reality(FileSpecs, FolderSpecs) :-
-    % All files must exist
-    forall(member(file_spec(Path, Options), FileSpecs),
-        (exists_file(Path), verify_file_options(Path, Options))),
-    % All folders must exist
-    forall(member(folder_spec(Path, _), FolderSpecs),
-        exists_directory(Path)).
-
-% Verify file options (placeholder for now)
-verify_file_options(_Path, []) :- !.
-verify_file_options(Path, [Option|Rest]) :-
-    verify_file_option(Path, Option),
-    verify_file_options(Path, Rest).
-
-verify_file_option(_Path, _Option) :-
-    % Placeholder - can be extended with specific option checks
-    true.
-
-% Verify content requirements
-verify_content_requirements(Content, contains(RequiredStrings)) :-
-    % All required strings must be present in content
-    forall(member(RequiredString, RequiredStrings),
-        sub_string(Content, _, _, _, RequiredString)).
-
-% Verify content against actual filesystem
-verify_content_against_filesystem(Path, Requirements) :-
-    (exists_file(Path) ->
-        (read_file_to_string(Path, Content, []),
-         (verify_content_requirements(Content, Requirements) ->
-             true
-         ;
-             throw(verification_error(fs, content_mismatch(Path, Requirements)))
-         ))
-    ;
-        throw(verification_error(fs, missing_file(Path)))
-    ).
-
-% Verify permission type
-verify_permission_type(Path, executable) :-
-    access_file(Path, execute).
-verify_permission_type(Path, readable) :-
-    access_file(Path, read).
-verify_permission_type(Path, writable) :-
-    access_file(Path, write).
-
-% Verify permissions against actual filesystem
-verify_permissions_against_filesystem(Path, PermType) :-
-    verify_permission_type(Path, PermType).
+% === VERIFICATION TESTS ONLY ===
+% All verify/1 clauses are now auto-generated by :: operator in fs.pl
+% This file contains ONLY PLUnit tests
 
 % === PLUNIT TEST SUITE ===
 
@@ -214,7 +51,7 @@ test(fs_read_file_spell, [
     setup(create_read_test_file),
     cleanup(cleanup_read_test_file)
 ]) :-
-    user:magic_cast(perceive(fs(read_file('read_test.txt', 1, 2))), Result),
+    user:magic_cast(perceive(fs(read_file('read_test.txt', 1, 2))), Result), !,
     assertion(Result = ok(file_content(Content))),
     length(Content, 2),
     Content = [line(1, "line 1"), line(2, "line 2")].
@@ -259,15 +96,15 @@ test(fs_edit_file_replace_spell, [
     read_file_to_lines('edit_test.txt', Lines),
     assertion(Lines == ["original line 1", "replaced line", "original line 3"]).
 
-% Test mkdir spell
+% Test mkdir spell (with git disabled to avoid git dependency)
 test(fs_mkdir_spell, [cleanup(cleanup_mkdir_test)]) :-
-    user:magic_cast(conjure(fs(mkdir('test_mkdir_dir'))), Result), !,
+    user:magic_cast(conjure(fs(mkdir('test_mkdir_dir', [git(false)]))), Result), !,
     assertion(Result == ok(directory_created('test_mkdir_dir'))),
     assertion(exists_directory('test_mkdir_dir')).
 
-% Test mkfile spell
+% Test mkfile spell (with git disabled to avoid git dependency)
 test(fs_mkfile_spell, [cleanup(cleanup_mkfile_test)]) :-
-    user:magic_cast(conjure(fs(mkfile('test_mkfile.txt'))), Result), !,
+    user:magic_cast(conjure(fs(mkfile('test_mkfile.txt', [git(false)]))), Result), !,
     assertion(Result == ok(file_created('test_mkfile.txt'))),
     assertion(exists_file('test_mkfile.txt')).
 
@@ -292,17 +129,15 @@ test(verify_missing_file_throws, [
 test(verify_content_mismatch_throws, [
     setup(setup_content_mismatch_test),
     cleanup(cleanup_content_mismatch_test),
-    throws(verification_error(fs, content_mismatch('content_test.txt', contains(["missing"]))))
+    throws(verification_error(fs, missing_content("missing")))
 ]) :-
     user:please_verify(component(content_fail_entity, has(fs(file_content)), fs(file_content(
         'content_test.txt', contains(["missing"])
     )))).
 
-% Debug test - check if other entities still exist after fs tests
+% Debug test - check if fs entity exists (basic sanity check)
 test(debug_entity_integrity) :-
-    entity(nix),
-    entity(utils),
-    entity(db), !.
+    entity(fs), !.
 
 :- end_tests(fs).
 

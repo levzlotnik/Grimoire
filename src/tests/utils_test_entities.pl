@@ -4,7 +4,6 @@
 :- self_entity(test_entity(utils)).
 
 % Declare test entities for different test scenarios
-entity(test_entity(utils_file_processor)).
 entity(test_entity(utils_tree_builder)).
 entity(test_entity(utils_validator)).
 entity(test_entity(utils_collection)).
@@ -17,10 +16,6 @@ entity(test_grandchild).
 
 % Validation test entity
 entity(validate_test_entity).
-
-% File processor test entity
-component(test_entity(utils_file_processor), has(utils(file_processor)),
-    utils(file_processor(type(semantics), filters([extensions(['.pl', '.plt'])])))).
 
 % Tree builder test entity
 component(test_entity(utils_tree_builder), has(utils(tree_builder)),
@@ -40,7 +35,6 @@ component(test_root, child, test_child2).
 component(test_child1, child, test_grandchild).
 
 docstring(test_entity(utils), "Test entity container for utils domain verification tests").
-docstring(test_entity(utils_file_processor), "Test entity for utils file processor verification").
 docstring(test_entity(utils_tree_builder), "Test entity for utils tree builder verification").
 docstring(test_entity(utils_validator), "Test entity for utils validator verification").
 docstring(test_entity(utils_collection), "Test entity for utils collection verification").

@@ -1,278 +1,404 @@
-:- use_module(library(plunit)).
-:- use_module(library(filesex)).
+% Git domain tests - Phase 3 behavioral testing
 
-% Load test entity from file-based knowledge
+:- use_module(library(plunit)).
+
+% Load domain semantics first
+:- grimoire_ensure_loaded('@/src/git.pl').
+
+% Load test entities from file-based knowledge
 :- load_entity(semantic(file('@/src/tests/git_test_entity.pl'))).
 
-% === DISCRIMINATIVE FLOW: VERIFICATION IMPLEMENTATIONS ===
-
-% Main repository verification overload
-verify(component(Entity, has(git(repository)), git(repository(Spec)))) :-
-    user:please_verify(component(Entity, git_repository_root, Root)),
-    user:please_verify(component(Entity, git_repository_verified, true)),
-    verify_git_repository_spec(Entity, Spec, Root).
-
-% Repository specification verification helper
-verify_git_repository_spec(Entity, Spec, Root) :-
-    verify_git_repository_exists(Root),
-    verify_git_repository_remotes(Entity, Spec),
-    verify_git_repository_clean_state(Entity, Spec).
-
-% Repository root verification
-verify(component(_Entity, git_repository_root, Root)) :-
-    (exists_directory(Root) ->
-        (atomic_list_concat([Root, '/.git'], GitDir),
-         exists_directory(GitDir) ->
-            true
-        ;
-            throw(verification_error(git, not_git_repository(Root)))
-        )
-    ;
-        throw(verification_error(git, missing_directory(Root)))
-    ).
-
-% Repository verified flag verification
-verify(component(Entity, git_repository_verified, true)) :-
-    user:please_verify(component(Entity, git_repository_root, Root)),
-    exists_directory(Root),
-    atomic_list_concat([Root, '/.git'], GitDir),
-    exists_directory(GitDir).
-
-% Repository remote URL verification
-verify(component(Entity, git_repository_remote_url, URL)) :-
-    user:please_verify(component(Entity, git_repository_root, Root)),
-    user:please_verify(component(Entity, git_repository_remote_name, RemoteName)),
-    working_directory(OldCwd, Root),
-    magic_cast(conjure(git(remote(['get-url', RemoteName]))), Result),
-    working_directory(_, OldCwd),
-    (Result = ok(result(ActualURL, _)) ->
-        (string_concat(URL, "\n", ActualURL) ->
-            true
-        ;
-            atom_string(URL, ActualURL) ->
-                true
-        ;
-            throw(verification_error(git, remote_url_mismatch(expected(URL), actual(ActualURL))))
-        )
-    ;
-        throw(verification_error(git, remote_not_found(RemoteName)))
-    ).
-
-% Repository current branch verification
-verify(component(Entity, git_repository_current_branch, Branch)) :-
-    user:please_verify(component(Entity, git_repository_root, Root)),
-    working_directory(OldCwd, Root),
-    magic_cast(conjure(git(branch(['--show-current']))), Result),
-    working_directory(_, OldCwd),
-    (Result = ok(result(Output, _)) ->
-        (string_concat(BranchAtom, "\n", Output),
-         atom_string(Branch, BranchAtom) ->
-            true
-        ;
-            throw(verification_error(git, unexpected_branch(Output)))
-        )
-    ;
-        throw(verification_error(git, branch_detection_failed))
-    ).
-
-% Repository working status verification
-verify(component(Entity, git_repository_working_status, Status)) :-
-    user:please_verify(component(Entity, git_repository_root, Root)),
-    working_directory(OldCwd, Root),
-    magic_cast(perceive(git(status)), Result),
-    working_directory(_, OldCwd),
-    (Result = ok(status_info(branch(_), working_status(ActualStatus), files(Files))) ->
-        (Status = ActualStatus ->
-            true
-        ;
-            throw(verification_error(git, working_status_mismatch(expected(Status), actual(ActualStatus), files(Files))))
-        )
-    ;
-        throw(verification_error(git, status_query_failed(Result)))
-    ).
-
-% OS Reality Verification Helpers
-verify_git_repository_exists(Root) :-
-    exists_directory(Root),
-    atomic_list_concat([Root, '/.git'], GitDir),
-    exists_directory(GitDir).
-
-verify_git_repository_remotes(Entity, Spec) :-
-    findall(remote(Name, URL), member(remote(Name, URL), Spec), Remotes),
-    maplist(verify_single_remote(Entity), Remotes).
-
-verify_single_remote(Entity, remote(_Name, URL)) :-
-    user:please_verify(component(Entity, git_repository_remote_url, URL)).
-
-verify_git_repository_clean_state(Entity, Spec) :-
-    (member(clean(true), Spec) ->
-        user:please_verify(component(Entity, git_repository_working_status, clean))
-    ;
-        true  % clean(false) or not specified - allow dirty state
-    ).
-
-% === PLUNIT TESTS ===
+% === TEST SUITE ===
 
 :- begin_tests(git).
 
-% Test basic Git entity existence
-test(git_entity_exists, [true]) :-
-    user:please_verify(component(git, defined, true)).
+% === ENTITY TESTS ===
 
-% Test Git command constructors
-test(git_command_constructors, [true]) :-
-    user:please_verify(component(conjure, ctor, git(clone))),
-    user:please_verify(component(conjure, ctor, git(init))),
-    user:please_verify(component(conjure, ctor, git(add))),
-    user:please_verify(component(conjure, ctor, git(commit))),
-    user:please_verify(component(perceive, ctor, git(status))), !.
+test(git_entity_exists) :-
+    entity(git).
 
-% Test Git subcommand declarations
-test(git_subcommands, [true]) :-
-    user:please_verify(component(git, subcommand, clone)),
-    user:please_verify(component(git, subcommand, status)),
-    user:please_verify(component(git, subcommand, diff)),
-    user:please_verify(component(git, subcommand, log)), !.
+test(git_repository_entity_from_dsl) :-
+    % test_project loaded from file with has(git(repository))
+    entity(test_project),
+    user:please_verify(component(test_project, has(git(repository)), _)).
 
-% Test Git docstrings exist
-test(git_docstrings_exist) :-
-    forall(user:please_verify(component(git, subcommand, Cmd)), (
-        user:please_verify(component(git(Cmd), docstring, _D))
-    )).
+% === COMPONENT EXPANSION TESTS ===
 
-% Test Git argument parsing (DCG)
-test(git_args_parsing, [true]) :-
-    phrase(git_args(clone("https://github.com/user/repo", "/tmp/repo")),
-           ["clone", "https://github.com/user/repo", "/tmp/repo"]),
-    phrase(git_args(status), ["status"]),
-    phrase(git_args(diff), ["diff"]).
-
-% Test Git command validation
-test(git_command_validation, [true]) :-
-    % Test that we can validate git commands exist
-    functor(clone("url", "path"), clone, 2),
-    user:please_verify(component(git, subcommand, clone)), !,
-    functor(status, status, 0),
-    user:please_verify(component(git, subcommand, status)), !.
-
-% Test spell format registrations exist
-test(git_spell_formats_exist, [true]) :-
-    register_spell(perceive(git(status)), _, _, _),
-    register_spell(perceive(git(ls_files)), _, _, _),
-    register_spell(perceive(git(current_branch)), _, _, _).
-
-% Test DSL pattern: repository fact schema expansion
-test(git_repository_dsl_expansion, [
-    setup(setup_git_repository_dsl),
-    cleanup(cleanup_git_repository_dsl)
+test(git_repository_expands_to_remote_name, [
+    setup(setup_git_test_repo),
+    cleanup(cleanup_git_test_repo)
 ]) :-
-    % Test that DSL pattern expands correctly
-    % Only test components that don't require OS verification
-    user:please_verify(component(test_project, git_repository_remote_name, origin)),
-    user:please_verify(component(test_project, git_repository_branch, main)),
-    user:please_verify(component(test_project, git_repository_clean, true)), !.
+    % Test entity expansion
+    user:please_verify(component(test_project, git_repository_remote_name, Name)),
+    assertion(Name = origin).
 
-% Test verify/1 for git_repository_root with mock directory
-test(verify_git_repository_root, [
-    setup(setup_mock_git_repo),
-    cleanup(cleanup_mock_git_repo)
+test(git_repository_expands_to_remote_url, [
+    setup(setup_git_test_repo),
+    cleanup(cleanup_git_test_repo)
 ]) :-
-    % Entity and component declared in file, just verify
-    user:please_verify(component(git_mock_entity, git_repository_root, '/tmp/test_git_mock')).
+    user:please_verify(component(test_project, git_repository_remote_url, URL)),
+    assertion(URL = 'https://github.com/test/repo').
 
-% Test verify/1 for missing git directory should fail
-test(verify_missing_git_directory, [
-    throws(verification_error(git, missing_directory(_)))
+test(git_repository_expands_to_branch, [
+    setup(setup_git_test_repo),
+    cleanup(cleanup_git_test_repo)
 ]) :-
-    % Entity declared in file with nonexistent path
+    user:please_verify(component(test_project, git_repository_branch, Branch)),
+    assertion(Branch = main).
+
+test(git_repository_expands_to_clean, [
+    setup(setup_git_test_repo),
+    cleanup(cleanup_git_test_repo)
+]) :-
+    user:please_verify(component(test_project, git_repository_clean, Clean)),
+    assertion(Clean = true).
+
+% === ROOT DERIVATION TESTS ===
+
+test(git_repository_root_from_self, [
+    setup(setup_git_test_repo),
+    cleanup(cleanup_git_test_repo)
+]) :-
+    % Root derived from self component
+    user:please_verify(component(test_project, git_repository_root, Root)),
+    assertion(Root = '/tmp/test_project').
+
+% === COMPOSITE VERIFICATION TESTS ===
+
+test(git_repository_composite_verification, [
+    setup(setup_git_test_repo),
+    cleanup(cleanup_git_test_repo)
+]) :-
+    % This verifies all expanded components using please_verify composition
+    user:please_verify(component(test_project, has(git(repository)), _)).
+
+% === LEAF VERIFICATION TESTS ===
+
+test(git_repository_root_verification_success, [
+    setup(setup_git_test_repo),
+    cleanup(cleanup_git_test_repo)
+]) :-
+    % Verify valid git repository root
+    user:please_verify(component(test_project, git_repository_root, '/tmp/test_project')).
+
+test(git_repository_root_verification_missing, [
+    throws(error(verification_failed(_), _))
+]) :-
+    % Verify missing directory throws error
     user:please_verify(component(git_bad_entity, git_repository_root, '/nonexistent/path')).
 
-% Test verify/1 for directory that is not a git repository
-test(verify_not_git_repository, [
-    setup(setup_not_git_repo),
-    cleanup(cleanup_not_git_repo),
-    throws(verification_error(git, not_git_repository(_)))
+test(git_repository_root_verification_not_git, [
+    setup(setup_not_git_directory),
+    cleanup(cleanup_not_git_directory),
+    throws(error(verification_failed(_), _))
 ]) :-
+    % Verify directory without .git throws error
     user:please_verify(component(git_not_git_entity, git_repository_root, '/tmp/test_not_git')).
 
-% Test complete repository DSL pattern
-test(verify_git_repository_complete, [
-    setup(setup_complete_mock_git),
-    cleanup(cleanup_complete_mock_git)
+test(git_repository_remote_url_verification, [
+    setup(setup_git_test_repo),
+    cleanup(cleanup_git_test_repo)
 ]) :-
-    % Entity and components declared in file
-    % Verify the DSL - verify/1 will check all derived components against OS
-    user:please_verify(component(git_complete_test, has(git(repository)), git(repository([
-        remote(origin, 'https://github.com/test/complete_repo'),
-        branch(main)
-    ])))).
+    % Valid URL formats
+    user:please_verify(component(test_project, git_repository_remote_url, 'https://github.com/test/repo')).
+
+% DELETED: This test used assertz/retract which is forbidden
+% Need to add a static test entity with invalid URL to git_test_entity.pl if we want to test this
+
+% === SPELL TESTS ===
+
+% Test git init spell
+test(spell_git_init, [
+    cleanup(cleanup_spell_init)
+]) :-
+    TestPath = '/tmp/test_git_init',
+    (exists_directory(TestPath) -> delete_directory_and_contents(TestPath) ; true),
+    make_directory_path(TestPath),
+    user:magic_cast(conjure(git(init(TestPath))), Result),
+    assertion(Result = ok(initialized(path(TestPath)))),
+    assertion(exists_directory(TestPath)),
+    atomic_list_concat([TestPath, '/.git'], GitDir),
+    assertion(exists_directory(GitDir)).
+
+% Test git add spell
+test(spell_git_add, [
+    setup(setup_git_add_test),
+    cleanup(cleanup_git_add_test)
+]) :-
+    user:magic_cast(conjure(git(add(git_root('/tmp/test_git_add'), ['test.txt']))), Result),
+    assertion(Result = ok(staged(files(['test.txt'])))).
+
+% Test git commit spell
+test(spell_git_commit, [
+    setup(setup_git_commit_test),
+    cleanup(cleanup_git_commit_test)
+]) :-
+    user:magic_cast(conjure(git(commit(git_root('/tmp/test_git_commit'), "test message"))), Result),
+    assertion(Result = ok(committed(hash(_Hash)))).
+
+% Test git status spell
+test(spell_git_status, [
+    setup(setup_git_status_test),
+    cleanup(cleanup_git_status_test)
+]) :-
+    user:magic_cast(perceive(git(status(git_root('/tmp/test_git_status')))), Result),
+    assertion(Result = ok(status_info(branch(_Branch), working_status(_Status), files(_Files)))).
+
+% Test git branch list spell
+test(spell_git_branch_list, [
+    setup(setup_git_branch_test),
+    cleanup(cleanup_git_branch_test)
+]) :-
+    user:magic_cast(perceive(git(branch(git_root('/tmp/test_git_branch'), list))), Result),
+    Result = ok(branches(Branches)),
+    assertion(is_list(Branches)).
+
+% Test git current_branch spell
+test(spell_git_current_branch, [
+    setup(setup_git_current_branch_test),
+    cleanup(cleanup_git_current_branch_test)
+]) :-
+    user:magic_cast(perceive(git(current_branch(git_root('/tmp/test_git_current_branch')))), Result),
+    assertion(Result = ok(current_branch(_Branch))).
+
+% Test git config spell
+test(spell_git_config, [
+    setup(setup_git_config_test),
+    cleanup(cleanup_git_config_test)
+]) :-
+    user:magic_cast(conjure(git(config(git_root('/tmp/test_git_config'), ['user.email']))), Result),
+    assertion(Result = ok(config_output(_Output))).
+
+% Test git diff spell
+test(spell_git_diff, [
+    setup(setup_git_diff_test),
+    cleanup(cleanup_git_diff_test)
+]) :-
+    user:magic_cast(perceive(git(diff(git_root('/tmp/test_git_diff')))), Result),
+    assertion(Result = ok(diff_output(_Output))).
+
+% Test git log spell
+test(spell_git_log, [
+    setup(setup_git_log_test),
+    cleanup(cleanup_git_log_test)
+]) :-
+    user:magic_cast(perceive(git(log(git_root('/tmp/test_git_log')))), Result),
+    assertion(Result = ok(log_output(_Output))).
+
+% === AUTO-DETECT COMPONENT TESTS ===
+
+test(git_repository_current_branch_auto_detect, [
+    setup(setup_git_auto_detect_test),
+    cleanup(cleanup_git_auto_detect_test)
+]) :-
+    % Auto-detect current branch via spell
+    user:please_verify(component(git_complete_test, git_repository_current_branch, CurrentBranch)),
+    assertion(atom(CurrentBranch)).
+
+test(git_repository_working_status_auto_detect, [
+    setup(setup_git_auto_detect_test),
+    cleanup(cleanup_git_auto_detect_test)
+]) :-
+    % Auto-detect working status via spell
+    user:please_verify(component(git_complete_test, git_repository_working_status, WorkingStatus)),
+    assertion(member(WorkingStatus, [clean, dirty, unknown])).
 
 :- end_tests(git).
 
-% === TEST SETUP/CLEANUP HELPERS ===
+% === SETUP/CLEANUP HELPERS ===
 
-% Setup DSL pattern test
-setup_git_repository_dsl :-
-    % Entity already loaded from file
-    true.
+% Main test repo setup
+setup_git_test_repo :-
+    TestPath = '/tmp/test_project',
+    (exists_directory(TestPath) -> delete_directory_and_contents(TestPath) ; true),
+    make_directory_path(TestPath),
+    user:magic_cast(conjure(git(init(TestPath))), InitResult),
+    assertion(InitResult = ok(_)),
+    user:magic_cast(conjure(git(config(git_root(TestPath), ['user.email', 'test@example.com']))), EmailResult),
+    assertion(EmailResult = ok(_)),
+    user:magic_cast(conjure(git(config(git_root(TestPath), ['user.name', 'Test User']))), NameResult),
+    assertion(NameResult = ok(_)).
 
-cleanup_git_repository_dsl :-
-    % No cleanup needed
-    true.
+cleanup_git_test_repo :-
+    TestPath = '/tmp/test_project',
+    (exists_directory(TestPath) -> delete_directory_and_contents(TestPath) ; true).
 
-% Setup mock git repository for verification tests
-setup_mock_git_repo :-
-    TestRoot = '/tmp/test_git_mock',
-    % Clean up if exists from previous run
-    (exists_directory(TestRoot) ->
-        delete_directory_and_contents(TestRoot)
-    ; true),
-    make_directory(TestRoot),
-    % Initialize git repo using direct process_create
-    working_directory(OldCwd, TestRoot),
-    process_create(path(git), ['init'], [stdout(null), stderr(null)]),
-    working_directory(_, OldCwd).
+% Not-git directory setup
+setup_not_git_directory :-
+    TestPath = '/tmp/test_not_git',
+    (exists_directory(TestPath) -> delete_directory_and_contents(TestPath) ; true),
+    make_directory_path(TestPath).
 
-cleanup_mock_git_repo :-
-    TestRoot = '/tmp/test_git_mock',
-    (exists_directory(TestRoot) ->
-        delete_directory_and_contents(TestRoot)
-    ; true).
+cleanup_not_git_directory :-
+    TestPath = '/tmp/test_not_git',
+    (exists_directory(TestPath) -> delete_directory_and_contents(TestPath) ; true).
 
-% Setup directory that is NOT a git repository
-setup_not_git_repo :-
-    TestDir = '/tmp/test_not_git',
-    % Clean up if exists from previous run
-    (exists_directory(TestDir) ->
-        delete_directory_and_contents(TestDir)
-    ; true),
-    make_directory(TestDir).
+% Git init spell cleanup
+cleanup_spell_init :-
+    TestPath = '/tmp/test_git_init',
+    (exists_directory(TestPath) -> delete_directory_and_contents(TestPath) ; true).
 
-cleanup_not_git_repo :-
-    TestDir = '/tmp/test_not_git',
-    (exists_directory(TestDir) ->
-        delete_directory_and_contents(TestDir)
-    ; true).
+% Git add spell setup
+setup_git_add_test :-
+    TestPath = '/tmp/test_git_add',
+    (exists_directory(TestPath) -> delete_directory_and_contents(TestPath) ; true),
+    make_directory_path(TestPath),
+    user:magic_cast(conjure(git(init(TestPath))), InitResult),
+    assertion(InitResult = ok(_)),
+    user:magic_cast(conjure(git(config(git_root(TestPath), ['user.email', 'test@example.com']))), EmailResult),
+    assertion(EmailResult = ok(_)),
+    user:magic_cast(conjure(git(config(git_root(TestPath), ['user.name', 'Test User']))), NameResult),
+    assertion(NameResult = ok(_)),
+    % Create a test file
+    atomic_list_concat([TestPath, '/test.txt'], TestFile),
+    open(TestFile, write, Stream),
+    write(Stream, 'test content'),
+    close(Stream).
 
-% Setup complete mock git repository with remote and branch
-setup_complete_mock_git :-
-    TestRoot = '/tmp/test_git_complete',
-    % Clean up if exists from previous run
-    (exists_directory(TestRoot) ->
-        delete_directory_and_contents(TestRoot)
-    ; true),
-    make_directory(TestRoot),
-    % Initialize git repo with direct process_create
-    working_directory(OldCwd, TestRoot),
-    process_create(path(git), ['init'], [stdout(null), stderr(null)]),
-    process_create(path(git), ['config', 'user.email', 'test@example.com'], [stdout(null), stderr(null)]),
-    process_create(path(git), ['config', 'user.name', 'Test User'], [stdout(null), stderr(null)]),
-    process_create(path(git), ['checkout', '-b', 'main'], [stdout(null), stderr(null)]),
-    process_create(path(git), ['remote', 'add', 'origin', 'https://github.com/test/complete_repo'], [stdout(null), stderr(null)]),
-    working_directory(_, OldCwd).
+cleanup_git_add_test :-
+    TestPath = '/tmp/test_git_add',
+    (exists_directory(TestPath) -> delete_directory_and_contents(TestPath) ; true).
 
-cleanup_complete_mock_git :-
-    TestRoot = '/tmp/test_git_complete',
-    (exists_directory(TestRoot) ->
-        delete_directory_and_contents(TestRoot)
-    ; true).
+% Git commit spell setup
+setup_git_commit_test :-
+    TestPath = '/tmp/test_git_commit',
+    (exists_directory(TestPath) -> delete_directory_and_contents(TestPath) ; true),
+    make_directory_path(TestPath),
+    user:magic_cast(conjure(git(init(TestPath))), InitResult),
+    assertion(InitResult = ok(_)),
+    user:magic_cast(conjure(git(config(git_root(TestPath), ['user.email', 'test@example.com']))), EmailResult),
+    assertion(EmailResult = ok(_)),
+    user:magic_cast(conjure(git(config(git_root(TestPath), ['user.name', 'Test User']))), NameResult),
+    assertion(NameResult = ok(_)),
+    % Create and stage a file
+    atomic_list_concat([TestPath, '/test.txt'], TestFile),
+    open(TestFile, write, Stream),
+    write(Stream, 'test content'),
+    close(Stream),
+    user:magic_cast(conjure(git(add(git_root(TestPath), ['test.txt']))), AddResult),
+    assertion(AddResult = ok(_)).
+
+cleanup_git_commit_test :-
+    TestPath = '/tmp/test_git_commit',
+    (exists_directory(TestPath) -> delete_directory_and_contents(TestPath) ; true).
+
+% Git status spell setup
+setup_git_status_test :-
+    TestPath = '/tmp/test_git_status',
+    (exists_directory(TestPath) -> delete_directory_and_contents(TestPath) ; true),
+    make_directory_path(TestPath),
+    user:magic_cast(conjure(git(init(TestPath))), InitResult),
+    assertion(InitResult = ok(_)),
+    user:magic_cast(conjure(git(config(git_root(TestPath), ['user.email', 'test@example.com']))), EmailResult),
+    assertion(EmailResult = ok(_)),
+    user:magic_cast(conjure(git(config(git_root(TestPath), ['user.name', 'Test User']))), NameResult),
+    assertion(NameResult = ok(_)).
+
+cleanup_git_status_test :-
+    TestPath = '/tmp/test_git_status',
+    (exists_directory(TestPath) -> delete_directory_and_contents(TestPath) ; true).
+
+% Git branch spell setup
+setup_git_branch_test :-
+    TestPath = '/tmp/test_git_branch',
+    (exists_directory(TestPath) -> delete_directory_and_contents(TestPath) ; true),
+    make_directory_path(TestPath),
+    user:magic_cast(conjure(git(init(TestPath))), InitResult),
+    assertion(InitResult = ok(_)),
+    user:magic_cast(conjure(git(config(git_root(TestPath), ['user.email', 'test@example.com']))), EmailResult),
+    assertion(EmailResult = ok(_)),
+    user:magic_cast(conjure(git(config(git_root(TestPath), ['user.name', 'Test User']))), NameResult),
+    assertion(NameResult = ok(_)).
+
+cleanup_git_branch_test :-
+    TestPath = '/tmp/test_git_branch',
+    (exists_directory(TestPath) -> delete_directory_and_contents(TestPath) ; true).
+
+% Git current_branch spell setup
+setup_git_current_branch_test :-
+    TestPath = '/tmp/test_git_current_branch',
+    (exists_directory(TestPath) -> delete_directory_and_contents(TestPath) ; true),
+    make_directory_path(TestPath),
+    user:magic_cast(conjure(git(init(TestPath))), InitResult),
+    assertion(InitResult = ok(_)),
+    user:magic_cast(conjure(git(config(git_root(TestPath), ['user.email', 'test@example.com']))), EmailResult),
+    assertion(EmailResult = ok(_)),
+    user:magic_cast(conjure(git(config(git_root(TestPath), ['user.name', 'Test User']))), NameResult),
+    assertion(NameResult = ok(_)).
+
+cleanup_git_current_branch_test :-
+    TestPath = '/tmp/test_git_current_branch',
+    (exists_directory(TestPath) -> delete_directory_and_contents(TestPath) ; true).
+
+% Git config spell setup
+setup_git_config_test :-
+    TestPath = '/tmp/test_git_config',
+    (exists_directory(TestPath) -> delete_directory_and_contents(TestPath) ; true),
+    make_directory_path(TestPath),
+    user:magic_cast(conjure(git(init(TestPath))), InitResult),
+    assertion(InitResult = ok(_)),
+    user:magic_cast(conjure(git(config(git_root(TestPath), ['user.email', 'test@example.com']))), EmailResult),
+    assertion(EmailResult = ok(_)),
+    user:magic_cast(conjure(git(config(git_root(TestPath), ['user.name', 'Test User']))), NameResult),
+    assertion(NameResult = ok(_)).
+
+cleanup_git_config_test :-
+    TestPath = '/tmp/test_git_config',
+    (exists_directory(TestPath) -> delete_directory_and_contents(TestPath) ; true).
+
+% Git diff spell setup
+setup_git_diff_test :-
+    TestPath = '/tmp/test_git_diff',
+    (exists_directory(TestPath) -> delete_directory_and_contents(TestPath) ; true),
+    make_directory_path(TestPath),
+    user:magic_cast(conjure(git(init(TestPath))), InitResult),
+    assertion(InitResult = ok(_)),
+    user:magic_cast(conjure(git(config(git_root(TestPath), ['user.email', 'test@example.com']))), EmailResult),
+    assertion(EmailResult = ok(_)),
+    user:magic_cast(conjure(git(config(git_root(TestPath), ['user.name', 'Test User']))), NameResult),
+    assertion(NameResult = ok(_)).
+
+cleanup_git_diff_test :-
+    TestPath = '/tmp/test_git_diff',
+    (exists_directory(TestPath) -> delete_directory_and_contents(TestPath) ; true).
+
+% Git log spell setup
+setup_git_log_test :-
+    TestPath = '/tmp/test_git_log',
+    (exists_directory(TestPath) -> delete_directory_and_contents(TestPath) ; true),
+    make_directory_path(TestPath),
+    user:magic_cast(conjure(git(init(TestPath))), InitResult),
+    assertion(InitResult = ok(_)),
+    user:magic_cast(conjure(git(config(git_root(TestPath), ['user.email', 'test@example.com']))), EmailResult),
+    assertion(EmailResult = ok(_)),
+    user:magic_cast(conjure(git(config(git_root(TestPath), ['user.name', 'Test User']))), NameResult),
+    assertion(NameResult = ok(_)),
+    % Create initial commit
+    atomic_list_concat([TestPath, '/test.txt'], TestFile),
+    open(TestFile, write, Stream),
+    write(Stream, 'test'),
+    close(Stream),
+    user:magic_cast(conjure(git(add(git_root(TestPath), ['test.txt']))), AddResult),
+    assertion(AddResult = ok(_)),
+    user:magic_cast(conjure(git(commit(git_root(TestPath), 'initial'))), CommitResult),
+    assertion(CommitResult = ok(_)).
+
+cleanup_git_log_test :-
+    TestPath = '/tmp/test_git_log',
+    (exists_directory(TestPath) -> delete_directory_and_contents(TestPath) ; true).
+
+% Git auto-detect setup
+setup_git_auto_detect_test :-
+    TestPath = '/tmp/test_git_complete',
+    (exists_directory(TestPath) -> delete_directory_and_contents(TestPath) ; true),
+    make_directory_path(TestPath),
+    user:magic_cast(conjure(git(init(TestPath))), InitResult),
+    assertion(InitResult = ok(_)),
+    user:magic_cast(conjure(git(config(git_root(TestPath), ['user.email', 'test@example.com']))), EmailResult),
+    assertion(EmailResult = ok(_)),
+    user:magic_cast(conjure(git(config(git_root(TestPath), ['user.name', 'Test User']))), NameResult),
+    assertion(NameResult = ok(_)).
+
+cleanup_git_auto_detect_test :-
+    TestPath = '/tmp/test_git_complete',
+    (exists_directory(TestPath) -> delete_directory_and_contents(TestPath) ; true).

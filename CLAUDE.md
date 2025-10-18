@@ -2,9 +2,11 @@
 
 This document contains critical patterns and conventions for working on the Grimoire codebase. **Read this carefully before making any changes.**
 
-## Architecture: The Dual Kernel
+## Architecture: Declarative DSL with Term Expansion
 
-Grimoire operates on a **generative-discriminative duality**:
+Grimoire uses **term expansion** to automatically generate code from declarative specifications. You write high-level DSL using operators, the system generates the implementation.
+
+### The Dual Kernel
 
 ```
 ecs_kernel.pl (Generative)  ⊣  ecs_kernel.plt (Discriminative)
@@ -12,19 +14,154 @@ ecs_kernel.pl (Generative)  ⊣  ecs_kernel.plt (Discriminative)
 semantics.pl (Expansion)     ⊣  semantics.plt (Verification)
 ```
 
-### Every Domain Follows This Pattern:
+**Every domain follows this pattern:**
+- **`semantics.pl`** - DSL schemas using operators (`==>` and `::`), spell registrations, component expansion
+- **`semantics.plt`** - PLUnit tests (NO manual `verify/1` clauses)
 
-- **`semantics.pl`** - Generative flow: entity declarations, component expansion, spell implementations
-- **`semantics.plt`** - Discriminative flow: `verify/1` predicates, PLUnit tests
+## Critical: NEVER Write verify/1 Manually
+
+**The `::` operator auto-generates `verify/1` clauses. You NEVER write them by hand.**
+
+```prolog
+% ✅ CORRECT - Use :: operator, verify/1 auto-generated
+component(_E, db_sqlite_file, File)
+    :: (atom(File) ; string(File)),
+       atom_string(File, FileStr),
+       exists_file(FileStr).
+
+% ❌ FORBIDDEN - Never write verify/1 manually
+verify(component(_E, db_sqlite_file, File)) :-
+    (atom(File) ; string(File)),
+    atom_string(File, FileStr),
+    exists_file(FileStr).
+```
+
+## Declarative Component DSL
+
+### Operators
+
+- `==>` (1150, xfx) - "expands to" - Generative AND discriminative (component expansion + verification)
+- `::` (1160, xfx) - "such that" - Discriminative ONLY (verification constraints)
+
+### The Three Fundamental Patterns
+
+Understanding these three patterns is CRITICAL:
+
+**Pattern 1: Manual `component/3` Rules** - External Activation (OS Reality → KB)
+```prolog
+% Use when component values come from EXTERNAL sources (OS, databases, git status)
+% NOT from Grimoire's KB - from external state that changes independently
+component(E, git_repository_current_branch, Branch) :-
+    component(E, git_repository_root, Root),
+    get_git_current_branch(Root, Branch).  % Query external system
+```
+**When to use:** Component depends on external factors not tracked in Grimoire's KB.
+
+**Pattern 2: `::` Operator** - Verification ONLY (KB → OS Reality Check)
+```prolog
+% ONLY generates verify/1 clause, NO component expansion
+% Used to verify KB values against OS reality at test time
+component(_E, git_repository_root, Root)
+    :: atom(Root),
+       exists_directory(Root).
+```
+**When to use:** Verify a component (already in KB) matches OS reality. Does NOT create expansion rules.
+
+**Pattern 3: `==>` Operator** - KB Implications (KB → KB, with verification)
+```prolog
+% Generates BOTH component expansion rules AND verify clause
+% Used for deriving KB components from other KB components
+component(E, has(git(repository)), git(repository(Spec)))
+    ==> component(E, git_repository_root, Root) :- member(root(Root), Spec),
+        component(E, git_repository_branch, Branch) :- member(branch(Branch), Spec).
+```
+**When to use:** One KB component logically implies other KB components. Auto-generates expansion rules + verification.
+
+### Detailed Pattern Examples
+
+**Pattern 1: Component Expansion with Verification (using `==>` operator)**
+
+```prolog
+component(Entity, has(db(sqlite)), db(sqlite(database_id(DbId), file(File), schema(Schema))))
+    ==> component(Entity, db_sqlite_id, DbId),
+        component(Entity, db_sqlite_file, File),
+        component(Entity, db_sqlite_schema, Schema)
+    ::  format('Database components valid~n').
+```
+
+**What this generates:**
+1. Three component expansion rules (generative)
+2. One `verify/1` clause that calls `please_verify` on each expansion (discriminative)
+
+### Critical: Verify Failure vs Exception Semantics
+
+**Understanding the distinction between failure and exception in `verify/1` is ESSENTIAL:**
+
+- **`verify/1` FAILS** = "No verification rule exists for this component" → **Component is valid by default**
+- **`verify/1` THROWS** = "Verification rule exists but component is invalid" → **Component is invalid**
+
+**How this works:**
+
+```prolog
+% The :: operator AUTOMATICALLY wraps your body with error handling
+component(_E, db_sqlite_file, File)
+    :: exists_file(File).
+
+% Term expansion generates this verify/1 clause:
+verify(component(_E, db_sqlite_file, File)) :-
+    (exists_file(File) -> true  % Success
+    ; throw(error(verification_failed(component(_E, db_sqlite_file, File)), ...))).  % Failure → Exception
+```
+
+**Why `please_verify/1` uses `ignore/1`:**
+
+```prolog
+please_verify(component(A, B, C)) :-
+    % ... grounding checks ...
+    ignore(verify(component(A, B, C))).  % Ignore FAILURE, propagate EXCEPTION
+```
+
+- If `verify` **fails** (no rule exists): `ignore` succeeds → component is valid
+- If `verify` **throws** (rule exists, check failed): exception propagates → component is invalid
+
+**This means:**
+- Components without verification rules are valid by default
+- Only components with `::` verification rules can be invalid
+- Verification failures are explicit exceptions, not silent failures
+
+### Pattern 2: Leaf Verification Only
+
+```prolog
+component(_E, db_sqlite_file, File)
+    :: exists_file(File),
+       access_file(File, read).
+```
+
+**What this generates:**
+1. One `verify/1` clause with the constraints
+
+### Pattern 3: Expansion Without Verification
+
+```prolog
+component(Entity, git_repository_remote_url, URL)
+    ==> component(Entity, has(git(repository)), git(repository(Spec))),
+        member(remote(_, URL), Spec).
+```
+
+**What this generates:**
+1. Component expansion rule only
+2. Verify clause that does `please_verify` on dependencies (no additional constraints)
 
 ## Critical Distinctions
 
-### 1. `cast` vs `magic_cast` - THE MOST COMMON ERROR
+### 1. `cast_impl` vs `magic_cast`
 
-**`cast/2`** = Spell **DECLARATION** (appears in HEAD)
+**`cast_impl/2`** = Spell **IMPLEMENTATION** (appears in HEAD, auto-generated by `register_spell`)
 ```prolog
-% ✅ CORRECT - declaring a spell implementation
-cast(conjure(git(commit(Message))), Result) :- ...
+% ✅ This is auto-generated - you never write it
+% register_spell(..., implementation(conjure(git(commit(Message))), Result, (...)))
+% generates:
+% cast_impl(conjure(git(commit(Message))), Result) :- ...
 ```
 
 **`magic_cast/2`** = Spell **INVOCATION** (appears in BODY)
@@ -33,108 +170,48 @@ cast(conjure(git(commit(Message))), Result) :- ...
 do_task(Result) :-
     magic_cast(conjure(git(commit("message"))), Result).
 
-% ❌ WRONG - bypasses hooks and grounding
+% ❌ WRONG - bypasses hooks, grounding, and guards
 do_task(Result) :-
-    cast(conjure(git(commit("message"))), Result).
+    cast_impl(conjure(git(commit("message"))), Result).
 ```
 
-**Why This Matters:**
-- `magic_cast` ensures terms are grounded (no uninstantiated variables)
-- `magic_cast` executes pre/post hooks (session logging, monitoring)
-- Using `cast` in bodies bypasses critical infrastructure
+**Why**: `magic_cast` ensures grounding, executes hooks, and enforces uniqueness.
 
-### 2. `verify` vs `please_verify` - SAME PRINCIPLE
+### 2. `verify` vs `please_verify`
 
-**`verify/1`** = Verification **DECLARATION** (appears in HEAD)
-```prolog
-% ✅ CORRECT - declaring verification logic
-verify(component(Entity, git_repository_root, Root)) :-
-    exists_directory(Root) -> true
-    ; throw(verification_error(git, missing_repository(Root))).
-```
+**`verify/1`** = AUTO-GENERATED by `::` operator (NEVER written manually)
 
 **`please_verify/1`** = Verification **INVOCATION** (appears in BODY)
 ```prolog
-% ✅ CORRECT - invoking composable verification
-verify(component(E, has(project(app)), project(app(Spec)))) :-
-    please_verify(component(E, project_git_repo, GitRepo)),
-    please_verify(component(E, project_nix_flake, NixFlake)),
-    verify_combination(GitRepo, NixFlake).
+% ✅ CORRECT - invoking verification in spell implementation
+cast_impl(conjure(project(create(Name))), Result) :-
+    please_verify(component(Entity, project_git_repo, GitRepo)),
+    please_verify(component(Entity, project_nix_flake, NixFlake)),
+    verify_combination(GitRepo, NixFlake),
+    Result = ok(created(Name)).
 
-% ❌ WRONG - doesn't ensure grounding or composability
-verify(component(E, has(project(app)), project(app(Spec)))) :-
-    component(E, project_git_repo, GitRepo),  % Not grounded!
-    component(E, project_nix_flake, NixFlake).
+% ❌ WRONG - doesn't ensure grounding
+cast_impl(conjure(project(create(Name))), Result) :-
+    component(Entity, project_git_repo, GitRepo),  % Not grounded!
+    component(Entity, project_nix_flake, NixFlake).
 ```
 
-**Why This Matters:**
-- `please_verify` ensures component exists AND is grounded
-- `please_verify` enables composable verification chains
-- Direct `component/3` calls don't guarantee grounding
+**Why**: `please_verify` ensures component exists AND is grounded before verification.
 
 ### 3. NEVER Use Bare Predicates in Bodies
 
 ```prolog
 % ❌ FORBIDDEN in predicate bodies:
-perceive(something(X)).        % Use magic_cast(perceive(...))
-cast(conjure(...)).           % Use magic_cast(conjure(...))
-component(E, prop, V).        % Use please_verify(component(...))
-verify(component(...)).       % Use please_verify(component(...))
+cast_impl(...)          % Use magic_cast
+component(E, prop, V)   % Use please_verify(component(...))
+verify(component(...))  % Use please_verify(component(...))
 ```
 
-**Exception:** Only spell/verification IMPLEMENTATIONS use these in HEAD position.
+## Spell Registration with register_spell/6
 
-## Component Expansion Pattern
-
-### Generative Flow (semantics.pl)
+**Every spell uses `register_spell/6` with inline implementation:**
 
 ```prolog
-% User declares high-level fact with has(domain(...))
-component(my_project, has(git(repository)), git(repository([
-    remote(origin, 'https://github.com/user/repo'),
-    branch(main)
-]))).
-
-% Domain expands into queryable properties
-component(Entity, git_repository_remote_url, URL) :-
-    component(Entity, has(git(repository)), git(repository(Spec))),
-    member(remote(_, URL), Spec).
-
-component(Entity, git_repository_branch, Branch) :-
-    component(Entity, has(git(repository)), git(repository(Spec))),
-    member(branch(Branch), Spec).
-```
-
-### Discriminative Flow (semantics.plt)
-
-```prolog
-% Verify composite by composing primitive verifications
-verify(component(Entity, has(git(repository)), git(repository(Spec)))) :-
-    % Step 1: Verify all expanded components exist and are grounded
-    please_verify(component(Entity, git_repository_remote_url, URL)),
-    please_verify(component(Entity, git_repository_branch, Branch)),
-    % Step 2: Check OS reality
-    verify_git_repository_accessible(URL, Branch).
-
-% Verify each primitive component against OS reality
-verify(component(Entity, git_repository_remote_url, URL)) :-
-    % Component existence already proven by please_verify
-    atom_string(URL, URLStr),
-    % Check OS reality
-    (valid_url(URLStr) -> true
-    ; throw(verification_error(git, invalid_remote_url(URL)))).
-```
-
-**Pattern Summary:**
-1. Generative: `has(domain(...))` expands to multiple `domain_property` components
-2. Discriminative: `verify(has(domain(...)))` uses `please_verify` on each property, then checks OS reality
-
-## Spell Registration - MANDATORY
-
-**Every `cast/2` implementation MUST have `register_spell/4` immediately above it:**
-
-```prolog
-% ALWAYS place register_spell RIGHT ABOVE cast
 register_spell(
     conjure(git(commit)),
     input(git(commit(message('Message')))),
@@ -142,27 +219,41 @@ register_spell(
         ok(committed(hash('Hash'))),
         error(commit_failed('Reason'))
     )),
-    docstring("Create a git commit with the given message")
+    "Create a git commit with the given message",
+    [],
+    implementation(conjure(git(commit(Message))), Result, (
+        % Implementation here - fully grounded Message available
+        atom_string(Message, MessageStr),
+        process_create(path(git), ['commit', '-m', MessageStr], []),
+        Result = ok(committed(hash("abc123")))
+    ))
 ).
-
-cast(conjure(git(commit(Message))), Result) :-
-    % Implementation
-    ...
 ```
 
-**What register_spell/4 Provides:**
-- Auto-generates: `component(conjure, ctor, git(commit))`
-- Auto-generates: `component(git(commit), format_input, ...)`
-- Auto-generates: `component(git(commit), format_output, ...)`
-- Auto-generates: `component(git(commit), docstring, "...")`
+**What register_spell/6 generates:**
+- `component(conjure, ctor, git(commit))` - Constructor registration
+- `component(conjure(git(commit)), docstring, "...")` - Documentation
+- `component(conjure(git(commit)), format_input, ...)` - Input format
+- `component(conjure(git(commit)), format_output, ...)` - Output format
+- `component(conjure(git(commit)), spell_options, [])` - Options
+- `cast_impl(conjure(git(commit(Message))), Result) :- (...)` - Implementation
+
+**First argument MUST be constructor with NO variables:**
+```prolog
+% ✅ CORRECT
+register_spell(conjure(git(commit)), ...)
+
+% ❌ WRONG - has variable
+register_spell(conjure(git(commit(Message))), ...)
+```
 
 ## Testing Patterns
 
-### File-Based Test Entities - NO Runtime assertz/retract
+### File-Based Test Entities
 
-**CRITICAL: Tests NEVER use `assertz`/`retract` for component/entity facts.**
+**Tests NEVER use `assertz`/`retract` for component/entity facts.**
 
-All test knowledge lives in `.pl` files under `src/tests/`:
+All test knowledge lives in `.pl` files:
 
 ```prolog
 % src/tests/git_test_entity.pl
@@ -174,11 +265,9 @@ component(test_basic_git, has(git(repository)), git(repository([
     root('/tmp/test_repo'),
     branch(main)
 ]))).
-
-component(test_basic_git, test_path, '/tmp/test_repo').
 ```
 
-### Test Implementation Pattern
+### Test Implementation
 
 ```prolog
 % src/git.plt
@@ -186,18 +275,15 @@ component(test_basic_git, test_path, '/tmp/test_repo').
 
 :- begin_tests(git_semantics).
 
-% Test component verification
 test(git_repository_verification, [
     setup(setup_test_repo),
     cleanup(cleanup_test_repo)
 ]) :-
     % Use user: prefix in tests
     user:please_verify(component(test_basic_git, has(git(repository)), _)),
-    user:please_verify(component(test_basic_git, git_repository_remote_url, _)).
+    user:please_verify(component(test_basic_git, git_repository_root, _)).
 
-% Test spell invocation
 test(git_commit_spell) :-
-    % Use user:magic_cast in tests
     user:magic_cast(conjure(git(commit("test"))), Result),
     assertion(Result = ok(_)).
 
@@ -209,33 +295,52 @@ setup_test_repo :-
     make_directory(TestPath),
     process_create(path(git), ['init'], [cwd(TestPath)]).
 
-% Cleanup removes ONLY filesystem resources
 cleanup_test_repo :-
     delete_directory_and_contents('/tmp/test_repo').
 ```
 
-### Setup/Cleanup Rules
-
+**Setup/Cleanup Rules:**
 - ✅ Create/delete directories and files
-- ✅ Run `process_create(path(git), ['init'], ...)`
-- ✅ Run `process_create(path(sqlite3), ...)`
+- ✅ Run `process_create(path(git), ...)`
 - ❌ NEVER `assertz(component(...))`
 - ❌ NEVER `retract(entity(...))`
-- ❌ NEVER modify ECS state at runtime
 
-### Tests Use `user:` Prefix
+**Tests use `user:` prefix:**
+- Inside `begin_tests(...) ... end_tests(...)` blocks: `user:please_verify(...)`, `user:magic_cast(...)`
+- Outside test blocks: no `user:` prefix
 
-**Inside `begin_tests(...) ... end_tests(...)` blocks, ALWAYS use:**
-- `user:please_verify(...)` instead of `please_verify(...)`
-- `user:magic_cast(...)` instead of `magic_cast(...)`
+## Critical Implementation Patterns
 
-**Outside test blocks, never use `user:` prefix.**
+### Uniqueness Enforcement
+
+Use `findall` to ensure exactly one match and throw informative errors:
+```prolog
+% ✅ CORRECT - enforces exactly one, throws on 0 or 2+
+findall(X, condition(X), Matches),
+(   Matches = [] -> throw(error(not_found, ...))
+;   Matches = [Unique] -> use(Unique)
+;   throw(error(ambiguous(Matches), ...))
+).
+
+% ❌ WRONG - leaves choicepoints
+condition(X), !, use(X).
+```
+
+### Debugging Choicepoints
+
+When PLUnit warns about choicepoints:
+```bash
+# Count solutions
+findall(true, my_predicate(...), Solutions), length(Solutions, N)
+
+# Check for multiple implementations or matches
+# Fix with findall pattern above or cut AFTER validation
+```
 
 ## Python Bridge Pattern
 
 For domains integrating Python (golems, protocol_clients):
 
-### Structure
 ```
 domain/
 ├── semantics.pl        # Pure Prolog (NO py_call)
@@ -244,17 +349,23 @@ domain/
 └── semantics.plt      # Tests
 ```
 
-### Critical Rule: Python Isolation
-
 **`semantics.pl` must be PURE PROLOG - NO `py_call`:**
 
 ```prolog
 % semantics.pl - PURE PROLOG ONLY
 :- use_module('python_bridge.pl', [golem_function/2]).
 
-cast(conjure(golem(task(Args))), Result) :-
-    golem_function(Args, DecodedResult),  % Already Prolog terms!
-    Result = ok(DecodedResult).
+register_spell(
+    conjure(golem(task)),
+    input(golem(task(args('Args')))),
+    output(ok(result('Result'))),
+    "Execute golem task",
+    [],
+    implementation(conjure(golem(task(Args))), Result, (
+        golem_function(Args, DecodedResult),  % Already Prolog terms!
+        Result = ok(DecodedResult)
+    ))
+).
 ```
 
 **`python_bridge.pl` contains ALL `py_call` + decoding:**
@@ -270,37 +381,6 @@ decode_golem_result(PyObj, PrologTerm) :-
     PrologTerm = result(field(Field)).
 ```
 
-**Why:** Python objects NEVER leak into `semantics.pl`.
-
-## ECS Patterns
-
-### Entity Declaration
-
-```prolog
-:- self_entity(domain_name).  % Declares entity and self component
-
-entity(explicit_entity).      % Explicit entity declaration
-```
-
-### Component Types
-
-- `ctor` - Constructors for sum types
-- `has(domain(...))` - High-level domain facts that expand
-- `domain_property` - Expanded properties from `has(domain(...))`
-- `docstring` - Documentation strings
-- `self` - Self-referential metadata
-
-### Multifile Declarations
-
-```prolog
-% Never use user: prefix for these
-:- multifile entity/1.
-:- multifile component/3.
-:- multifile docstring/2.
-:- multifile verify/1.
-:- multifile register_spell/4.
-```
-
 ## Git Practices
 
 - **NEVER** use `git add .` or `git add -A`
@@ -310,94 +390,96 @@ entity(explicit_entity).      % Explicit entity declaration
 ## Testing Workflow
 
 ```bash
-# Run all tests
-./grimoire test
+# For development/agents: Use test_plt.sh directly (faster, cleaner output)
+./test_plt.sh src/db/semantics.plt
+./test_plt.sh src/git.plt
 
-# Run specific domain tests
-./grimoire test git
-
-# Run specific test name
-./grimoire test 'git_repository_verification'
+# For users: Use grimoire test command
+./grimoire test              # Run all tests
+./grimoire test git          # Run specific domain
+./grimoire test 'test_name'  # Run specific test
 
 # Use exec for interactive testing
 ./grimoire exec
 ```
 
-## Environment Variables
+**IMPORTANT FOR AGENTS:** Always use `./test_plt.sh <file>` for testing during development. Do not use `./grimoire test`.
 
-- `GRIMOIRE_ROOT` - Project directory (where `./grimoire` is)
-- `GRIMOIRE_DATA` - Data directory (defaults to `$HOME/.grimoire`)
+## Common Anti-Patterns
 
-## Common Anti-Patterns to Avoid
+### ❌ Anti-Pattern 1: Writing verify/1 manually
+```prolog
+% WRONG - verify/1 is auto-generated by :: operator
+verify(component(E, git_repository_root, Root)) :- ...
+```
 
-### ❌ Anti-Pattern 1: Using cast in bodies
+### ❌ Anti-Pattern 2: Using cast_impl in bodies
 ```prolog
 % WRONG
 my_function(Result) :-
-    cast(conjure(something(X)), R1).  % Should be magic_cast!
+    cast_impl(conjure(something(X)), R1).  % Use magic_cast!
 ```
 
-### ❌ Anti-Pattern 2: Using bare component in bodies
+### ❌ Anti-Pattern 3: Using bare component in bodies
 ```prolog
 % WRONG
-verify(component(E, has(complex), complex(X))) :-
-    component(E, prop1, P1),  % Should be please_verify!
-    component(E, prop2, P2).
+some_predicate :-
+    component(E, prop, V).  % Use please_verify(component(...))!
 ```
 
-### ❌ Anti-Pattern 3: Missing register_spell
+### ❌ Anti-Pattern 4: Missing register_spell
 ```prolog
-% WRONG - no register_spell above cast
-cast(conjure(new_spell(X)), Result) :- ...
+% WRONG - all spells need register_spell
+cast_impl(conjure(new_spell(X)), Result) :- ...
 ```
 
-### ❌ Anti-Pattern 4: Runtime assertions in tests
+### ❌ Anti-Pattern 5: Runtime assertions in tests
 ```prolog
 % WRONG
 setup_test :-
     assertz(entity(test_entity)).  % Use file-based entities!
 ```
 
-### ❌ Anti-Pattern 5: Python objects in semantics.pl
+### ❌ Anti-Pattern 6: Python objects in semantics.pl
 ```prolog
 % WRONG - semantics.pl should never see Python objects
-cast(conjure(thing(X)), Result) :-
+cast_impl(conjure(thing(X)), Result) :-
     py_call(module:func(X), PyObj),  % Should be in python_bridge.pl!
     Result = ok(PyObj).
 ```
 
-## Key Principles Summary
+## Key Principles
 
-1. **`cast` = declare, `magic_cast` = invoke**
-2. **`verify` = declare, `please_verify` = invoke**
-3. **Every `cast` needs `register_spell/4` immediately above**
-4. **No `assertz`/`retract` in tests - file-based entities only**
-5. **Tests use `user:please_verify` and `user:magic_cast`**
-6. **Python objects never leak into `semantics.pl`**
-7. **Generative flow expands `has(domain(...))` into properties**
-8. **Discriminative flow verifies with `please_verify` then checks OS reality**
-9. **All knowledge lives in files, not runtime assertions**
+1. **NEVER write `verify/1` manually** - Use `::` operator
+2. **`cast_impl` = auto-generated, `magic_cast` = invoke**
+3. **`verify` = auto-generated, `please_verify` = invoke**
+4. **Every spell uses `register_spell/6` with inline implementation**
+5. **No `assertz`/`retract` in tests - file-based entities only**
+6. **Tests use `user:please_verify` and `user:magic_cast`**
+7. **Python objects never leak into `semantics.pl`**
+8. **Generative (`==>`) expands to multiple components**
+9. **Discriminative (`::`) auto-generates verify clauses**
+10. **All knowledge lives in files, not runtime assertions**
 
-## File Structure Convention
+## File Structure
 
 ```
 domain/
-├── semantics.pl        # Generative: expansion rules, spells
-├── semantics.plt       # Discriminative: verify/1, tests
+├── semantics.pl        # DSL schemas (==> and ::), spell registrations
+├── semantics.plt       # PLUnit tests (NO verify/1 clauses)
 └── python_bridge.pl    # (if needed) Python integration
 ```
 
 ## When Adding New Features
 
-1. Add component expansion in `semantics.pl`
-2. Add `verify/1` in `semantics.plt` using `please_verify` composition
-3. Add `register_spell/4` above any new `cast/2` implementations
-4. Create file-based test entities in `src/tests/`
-5. Write PLUnit tests using `user:please_verify` and `user:magic_cast`
+1. Add DSL schema in `semantics.pl` using `==>` and `::` operators
+2. Add `register_spell/6` for any new spells (implementation inline)
+3. Create file-based test entities in `src/tests/`
+4. Write PLUnit tests using `user:please_verify` and `user:magic_cast`
+5. **NEVER write `verify/1` clauses manually**
 
 ## Documentation References
 
 - **`README.md`** - User-facing documentation
 - **`DESIGN.md`** - Architectural deep dive
-- **`overhaul-plan.md`** - Complete system specification
-- **`review_instructions.md`** - Domain review checklist
+- **`overhaul-2/`** - Domain migration plans

@@ -76,24 +76,58 @@ docstring(fs(permissions),
         ))).
     |}).
 
-% === DSL EXPANSION RULES (GENERATIVE FLOW) ===
+% === DSL COMPONENT EXPANSION USING ==> OPERATOR ===
 
-% Expand fs(structure) declarations into detailed components
-component(Entity, fs_structure_file, file_spec(Path, Options)) :-
-    component(Entity, has(fs(structure)), fs(structure(Items))),
-    extract_file_specs(Items, FileSpecs),
-    member(file_spec(Path, Options), FileSpecs).
+% Schema 1: fs(structure) - Declarative filesystem structure
+% The ==> operator generates BOTH component expansion rules AND verify clause
+component(Entity, has(fs(structure)), fs(structure(Items)))
+    ==> (component(Entity, fs_structure_file, file_spec(Path, Opts)) :-
+            extract_file_specs(Items, FileSpecs),
+            member(file_spec(Path, Opts), FileSpecs)),
+        (component(Entity, fs_structure_folder, folder_spec(Path, Contents)) :-
+            extract_folder_specs(Items, FolderSpecs),
+            member(folder_spec(Path, Contents), FolderSpecs))
+    ::  is_list(Items).
 
-component(Entity, fs_structure_folder, folder_spec(Path, Contents)) :-
-    component(Entity, has(fs(structure)), fs(structure(Items))),
-    extract_folder_specs(Items, FolderSpecs),
-    member(folder_spec(Path, Contents), FolderSpecs).
+% Schema 2: fs(file_content) - Content requirements
+% Expands has(fs(file_content)) into fs_content_requirement component
+component(Entity, has(fs(file_content)), fs(file_content(Path, Requirements)))
+    ==> component(Entity, fs_content_requirement, content_spec(Path, Requirements))
+    ::  (atom(Path) ; string(Path)),
+        valid_content_requirements(Requirements).
 
-component(Entity, fs_content_requirement, content_spec(Path, Requirements)) :-
-    component(Entity, has(fs(file_content)), fs(file_content(Path, Requirements))).
+% Schema 3: fs(permissions) - Permission requirements
+% Expands has(fs(permissions)) into fs_permission_requirement component
+component(Entity, has(fs(permissions)), fs(permissions(Path, PermType)))
+    ==> component(Entity, fs_permission_requirement, permission_spec(Path, PermType))
+    ::  (atom(Path) ; string(Path)),
+        member(PermType, [executable, readable, writable]).
 
-component(Entity, fs_permission_requirement, permission_spec(Path, PermType)) :-
-    component(Entity, has(fs(permissions)), fs(permissions(Path, PermType))).
+% === LEAF COMPONENT VERIFICATIONS ===
+
+% Leaf verification: fs_structure_file
+component(_E, fs_structure_file, file_spec(Path, Opts))
+    :: (atom(Path) ; string(Path)),
+       is_list(Opts),
+       file_exists_and_valid(Path, Opts).
+
+% Leaf verification: fs_structure_folder
+component(_E, fs_structure_folder, folder_spec(Path, Contents))
+    :: (atom(Path) ; string(Path)),
+       is_list(Contents),
+       folder_exists_and_valid(Path).
+
+% Leaf verification: fs_content_requirement
+component(_E, fs_content_requirement, content_spec(Path, Reqs))
+    :: (atom(Path) ; string(Path)),
+       valid_content_requirements(Reqs),
+       file_exists_with_content(Path, Reqs).
+
+% Leaf verification: fs_permission_requirement
+component(_E, fs_permission_requirement, permission_spec(Path, Type))
+    :: (atom(Path) ; string(Path)),
+       member(Type, [executable, readable, writable]),
+       file_exists_with_permission(Path, Type).
 
 % Helper to extract file specs from structure items
 extract_file_specs([], []).
@@ -121,11 +155,68 @@ extract_folder_specs([file(_)|Rest], Specs) :-
 extract_folder_specs([_|Rest], Specs) :-
     extract_folder_specs(Rest, Specs).
 
-% === SPELL FORMAT REGISTRATIONS ===
+% === OS VERIFICATION HELPERS ===
 
-% Each register_spell is placed right above its cast implementation
+% Verify file exists and satisfies options
+file_exists_and_valid(Path, Opts) :-
+    (atom(Path) ; string(Path)),
+    (exists_file(Path) -> true
+    ; throw(verification_error(fs, missing_file(Path)))),
+    verify_file_opts_on_os(Path, Opts).
 
-% === PERCEIVE SPELLS (MIGRATED FROM GRIMOIRE.PL) ===
+% Verify folder exists
+folder_exists_and_valid(Path) :-
+    (atom(Path) ; string(Path)),
+    (exists_directory(Path) -> true
+    ; throw(verification_error(fs, missing_folder(Path)))).
+
+% Verify file with content requirements
+file_exists_with_content(Path, contains(Strs)) :-
+    (atom(Path) ; string(Path)),
+    (exists_file(Path) -> true
+    ; throw(verification_error(fs, file_not_found(Path)))),
+    read_file_to_string(Path, Content, []),
+    forall(member(Str, Strs),
+        (sub_string(Content, _, _, _, Str) -> true
+        ; throw(verification_error(fs, missing_content(Str))))).
+
+% Verify file with permission
+file_exists_with_permission(Path, Type) :-
+    (atom(Path) ; string(Path)),
+    (exists_file(Path) -> true
+    ; throw(verification_error(fs, file_not_found(Path)))),
+    verify_permission_on_os(Path, Type).
+
+% Verify file options against OS
+verify_file_opts_on_os(_Path, []).
+verify_file_opts_on_os(Path, [executable|Rest]) :-
+    (access_file(Path, execute) -> true
+    ; throw(verification_error(fs, not_executable(Path)))),
+    verify_file_opts_on_os(Path, Rest).
+verify_file_opts_on_os(Path, [must_exist|Rest]) :-
+    verify_file_opts_on_os(Path, Rest).
+verify_file_opts_on_os(Path, [_|Rest]) :-
+    verify_file_opts_on_os(Path, Rest).
+
+% Verify permission type on OS
+verify_permission_on_os(Path, executable) :-
+    (access_file(Path, execute) -> true
+    ; throw(verification_error(fs, not_executable(Path)))).
+verify_permission_on_os(Path, readable) :-
+    (access_file(Path, read) -> true
+    ; throw(verification_error(fs, not_readable(Path)))).
+verify_permission_on_os(Path, writable) :-
+    (access_file(Path, write) -> true
+    ; throw(verification_error(fs, not_writable(Path)))).
+
+% Validate content requirements format
+valid_content_requirements(contains(Strs)) :-
+    is_list(Strs),
+    forall(member(S, Strs), (atom(S) ; string(S))).
+
+% === SPELL REGISTRATIONS (PHASE 3) ===
+
+% === PERCEIVE SPELLS ===
 
 register_spell(
     perceive(fs(read_file)),
@@ -134,26 +225,26 @@ register_spell(
         ok(file_content(lines_with_numbers('ContentWithLineNumbers'))),
         error(fs_error('Reason'))
     )),
-    docstring("Read file with line numbers using 1-based indexing. Supports negative line numbers (-1 = last line).")
+    "Read file with line numbers using 1-based indexing. Supports negative line numbers (-1 = last line).",
+    [],
+    implementation(perceive(fs(read_file(FilePath, Start, End))), Result, (
+        catch(
+            (read_file_to_lines(FilePath, AllLines),
+             length(AllLines, TotalLines),
+             % Resolve negative line numbers
+             resolve_line_number(Start, TotalLines, StartNum),
+             resolve_line_number(End, TotalLines, EndNum),
+             % Extract requested lines with numbers
+             findall(line(LineNum, Content),
+                 (between(StartNum, EndNum, LineNum),
+                  nth1(LineNum, AllLines, Content)),
+                 ContentWithLineNumbers),
+             Result = ok(file_content(ContentWithLineNumbers))),
+            Error,
+            Result = error(fs_error(Error))
+        )
+    ))
 ).
-
-% Read file with line numbers using 1-based indexing
-cast(perceive(fs(read_file(FilePath, Start, End))), Result) :-
-    catch(
-        (read_file_to_lines(FilePath, AllLines),
-         length(AllLines, TotalLines),
-         % Resolve negative line numbers
-         resolve_line_number(Start, TotalLines, StartNum),
-         resolve_line_number(End, TotalLines, EndNum),
-         % Extract requested lines with numbers
-         findall(line(LineNum, Content),
-             (between(StartNum, EndNum, LineNum),
-              nth1(LineNum, AllLines, Content)),
-             ContentWithLineNumbers),
-         Result = ok(file_content(ContentWithLineNumbers))),
-        Error,
-        Result = error(fs_error(Error))
-    ).
 
 % Resolve negative line numbers (-1 = last line, -2 = second to last, etc.)
 resolve_line_number(Num, TotalLines, Resolved) :-
@@ -163,7 +254,65 @@ resolve_line_number(Num, TotalLines, Resolved) :-
         Resolved = Num
     ).
 
-% === CONJURE SPELLS (MIGRATED FROM GRIMOIRE.PL) ===
+register_spell(
+    perceive(fs(list_files)),
+    input(fs(list_files(directory('Dir')))),
+    output(either(ok(files('FileList')), error(fs_error('Reason')))),
+    "List all files in a directory (non-recursive)",
+    [],
+    implementation(perceive(fs(list_files(Dir))), Result, (
+        catch(
+            (directory_files(Dir, AllFiles),
+             exclude(=('.'), AllFiles, FilteredFiles),
+             exclude(=('..'), FilteredFiles, Files),
+             Result = ok(files(Files))),
+            Error,
+            Result = error(fs_error(Error))
+        )
+    ))
+).
+
+register_spell(
+    perceive(fs(glob_match)),
+    input(fs(glob_match(pattern('Pattern'), base('BaseDir')))),
+    output(either(ok(matched_files('FileList')), error(fs_error('Reason')))),
+    "Match files using glob patterns (e.g., '**/*.pl')",
+    [],
+    implementation(perceive(fs(glob_match(Pattern, BaseDir))), Result, (
+        catch(
+            (expand_file_name(Pattern, Matches),
+             (atom(BaseDir), BaseDir \= '' ->
+                 findall(Rel, (member(Abs, Matches), relative_file_name(Rel, BaseDir, Abs)), Files)
+             ;
+                 Files = Matches
+             ),
+             Result = ok(matched_files(Files))),
+            Error,
+            Result = error(fs_error(Error))
+        )
+    ))
+).
+
+register_spell(
+    perceive(fs(file_stats)),
+    input(fs(file_stats(path('Path')))),
+    output(either(ok(stats(size('Size'), modified('Time'), mode('Mode'))), error(fs_error('Reason')))),
+    "Get file statistics (size, modified time, permissions)",
+    [],
+    implementation(perceive(fs(file_stats(Path))), Result, (
+        catch(
+            (size_file(Path, Size),
+             time_file(Path, Time),
+             access_file(Path, exist),
+             (access_file(Path, execute) -> Mode = executable ; Mode = regular),
+             Result = ok(stats(size(Size), modified(Time), mode(Mode)))),
+            Error,
+            Result = error(fs_error(Error))
+        )
+    ))
+).
+
+% === CONJURE SPELLS ===
 
 register_spell(
     conjure(fs(edit_file)),
@@ -172,39 +321,37 @@ register_spell(
         ok(file_modified('Path')),
         error(edit_error('Reason'))
     )),
-    docstring("Edit file with specified operations. Supports insert, delete, replace, and append operations.")
+    "Edit file with specified operations. Supports insert, delete, replace, and append operations.",
+    [],
+    implementation(conjure(fs(edit_file(file(Path), Edits))), Result, (
+        % Handle both existing and non-existing files
+        (exists_file(Path) ->
+            read_file_to_lines(Path, Lines)
+        ;
+            Lines = []
+        ),
+        maplist(validate_edit, Edits),
+        apply_edits(Edits, Lines, NewLines),
+        write_lines_to_file(Path, NewLines),
+        Result = ok(file_modified(Path))
+    ))
 ).
-
-% Edit file operation
-cast(conjure(fs(edit_file(file(Path), Edits))), RetVal) :-
-    % Handle both existing and non-existing files
-    (exists_file(Path) ->
-        read_file_to_lines(Path, Lines)
-    ;
-        Lines = []
-    ),
-    maplist(validate_edit, Edits),
-    apply_edits(Edits, Lines, NewLines),
-    write_lines_to_file(Path, NewLines),
-    RetVal = ok(file_modified(Path)).
 
 register_spell(
     conjure(fs(mkdir)),
-    input(fs(mkdir(path('Path')))),
+    input(fs(mkdir(path('Path'), options('Options')))),
     output(either(
         ok(directory_created('Path')),
         error(fs_error('Reason'))
     )),
-    docstring("Create directory and initialize with semantics.pl file. Updates parent semantics if exists.")
-).
-
-% Create directory operation
-cast(conjure(fs(mkdir(Path))), ok(directory_created(Path))) :-
-    % Create directory using Prolog's make_directory_path
-    make_directory_path(Path),
-    % Initialize semantics.pl with proper module
-    directory_file_path(Path, "semantics.pl", SemanticsFile),
-    InitContent = {|string(Path)||
+    "Create directory and initialize with semantics.pl file. Options: [git(auto)] (default) or [git(false)] to disable auto git-add.",
+    [],
+    implementation(conjure(fs(mkdir(Path, Options))), Result, (
+        % Create directory using Prolog's make_directory_path
+        make_directory_path(Path),
+        % Initialize semantics.pl with proper module
+        directory_file_path(Path, "semantics.pl", SemanticsFile),
+        InitContent = {|string(Path)||
 :- module(semantic_{Path}, [entity/1, component/3]).
 
 % Dynamic declarations for this module
@@ -214,68 +361,28 @@ cast(conjure(fs(mkdir(Path))), ok(directory_created(Path))) :-
 % This directory's entity
 entity(folder('{Path}')).
 |},
-    write_file(SemanticsFile, InitContent),
-    % Update parent semantics if exists
-    directory_file_path(Parent, _, Path),
-    directory_file_path(Parent, "semantics.pl", ParentSemantic),
-    (exists_file(ParentSemantic) ->
-        magic_cast(conjure(fs(edit_file(file(ParentSemantic), [
-            append({|string(Path)||
+        write_file(SemanticsFile, InitContent),
+        % Update parent semantics if exists
+        directory_file_path(Parent, _, Path),
+        directory_file_path(Parent, "semantics.pl", ParentSemantic),
+        (exists_file(ParentSemantic) ->
+            magic_cast(conjure(fs(edit_file(file(ParentSemantic), [
+                append({|string(Path)||
 entity(folder('{Parent}')).
 component(folder('{Parent}'), subfolder, folder('{Path}')).
 |})
-        ]))), _)
-    ; true).
+            ]))), _)
+        ; true),
 
-register_spell(
-    conjure(fs(mkfile)),
-    input(fs(mkfile(path('Path')))),
-    output(either(
-        ok(file_created('Path')),
-        error(fs_error('Reason'))
-    )),
-    docstring("Create empty file. Updates parent semantics if exists.")
+        % Conditional git integration (default: auto)
+        option(git(GitMode), Options, auto),
+        (GitMode = false -> true
+        ; is_git_directory(Path) -> magic_cast(conjure(git(add([Path]))), _)
+        ; true),
+
+        Result = ok(directory_created(Path))
+    ))
 ).
-
-% Create file operation
-cast(conjure(fs(mkfile(Path))), RetVal) :-
-    % Create empty file
-    write_file(Path, ""),
-    % Update parent semantics if exists
-    directory_file_path(Parent, Name, Path),
-    directory_file_path(Parent, "semantics.pl", ParentSemantic),
-    (exists_file(ParentSemantic) ->
-        magic_cast(conjure(fs(edit_file(file(ParentSemantic), [
-            append({|string(Parent,Name)||
-entity(folder('{Parent}')).
-component(folder('{Parent}'), file, file('{Name}')).
-|})
-        ]))), _)
-    ; true),
-    RetVal = ok(file_created(Path)).
-
-register_spell(
-    conjure(fs(mkdir)),
-    input(fs(mkdir(path('Path'), options('Options')))),
-    output(either(
-        ok(directory_created('Path')),
-        error(fs_error('Reason'))
-    )),
-    docstring("Create directory with options. Supports git(false) to disable auto git-add.")
-).
-
-% Mkdir with options (auto git-add support)
-cast(conjure(fs(mkdir(Path, Options))), RetVal) :-
-    magic_cast(conjure(fs(mkdir(Path))), RetVal),
-    % Auto git-add if we're in a repo and not disabled
-    (option(git(false), Options) ->
-        true
-    ;
-        is_git_directory(Path) ->
-            magic_cast(conjure(git(add([Path]))), _)
-        ;
-        true
-    ).
 
 register_spell(
     conjure(fs(mkfile)),
@@ -284,116 +391,77 @@ register_spell(
         ok(file_created('Path')),
         error(fs_error('Reason'))
     )),
-    docstring("Create file with options. Supports git(false) to disable auto git-add.")
+    "Create empty file. Updates parent semantics if exists. Options: [git(auto)] (default) or [git(false)] to disable auto git-add.",
+    [],
+    implementation(conjure(fs(mkfile(Path, Options))), Result, (
+        % Create empty file
+        write_file(Path, ""),
+        % Update parent semantics if exists
+        directory_file_path(Parent, Name, Path),
+        directory_file_path(Parent, "semantics.pl", ParentSemantic),
+        (exists_file(ParentSemantic) ->
+            magic_cast(conjure(fs(edit_file(file(ParentSemantic), [
+                append({|string(Parent,Name)||
+entity(folder('{Parent}')).
+component(folder('{Parent}'), file, file('{Name}')).
+|})
+            ]))), _)
+        ; true),
+
+        % Conditional git integration (default: auto)
+        option(git(GitMode), Options, auto),
+        (GitMode = false -> true
+        ; is_git_directory(Path) -> magic_cast(conjure(git(add([Path]))), _)
+        ; true),
+
+        Result = ok(file_created(Path))
+    ))
 ).
-
-% Mkfile with options (auto git-add support)
-cast(conjure(fs(mkfile(Path, Options))), RetVal) :-
-    magic_cast(conjure(fs(mkfile(Path))), RetVal),
-    % Auto git-add if we're in a repo and not disabled
-    (option(git(false), Options) ->
-        true
-    ;
-        is_git_directory(Path) ->
-            magic_cast(conjure(git(add([Path]))), _)
-        ;
-        true
-    ).
-
-% === FILE MANIPULATION SPELLS ===
 
 register_spell(
     conjure(fs(copy_file)),
     input(fs(copy_file(source('Source'), dest('Dest')))),
     output(either(ok(file_copied('Source', 'Dest')), error(fs_error('Reason')))),
-    docstring("Copy file from source to destination path")
+    "Copy file from source to destination path",
+    [],
+    implementation(conjure(fs(copy_file(Source, Dest))), Result, (
+        catch(
+            (copy_file(Source, Dest), Result = ok(file_copied(Source, Dest))),
+            Error,
+            Result = error(fs_error(Error))
+        )
+    ))
 ).
-cast(conjure(fs(copy_file(Source, Dest))), Result) :-
-    catch(
-        (copy_file(Source, Dest), Result = ok(file_copied(Source, Dest))),
-        Error,
-        Result = error(fs_error(Error))
-    ).
 
 register_spell(
     conjure(fs(move_file)),
     input(fs(move_file(source('Source'), dest('Dest')))),
     output(either(ok(file_moved('Source', 'Dest')), error(fs_error('Reason')))),
-    docstring("Move/rename file from source to destination path")
+    "Move/rename file from source to destination path",
+    [],
+    implementation(conjure(fs(move_file(Source, Dest))), Result, (
+        catch(
+            (rename_file(Source, Dest), Result = ok(file_moved(Source, Dest))),
+            Error,
+            Result = error(fs_error(Error))
+        )
+    ))
 ).
-cast(conjure(fs(move_file(Source, Dest))), Result) :-
-    catch(
-        (rename_file(Source, Dest), Result = ok(file_moved(Source, Dest))),
-        Error,
-        Result = error(fs_error(Error))
-    ).
 
 register_spell(
     conjure(fs(delete_file)),
     input(fs(delete_file(path('Path')))),
     output(either(ok(file_deleted('Path')), error(fs_error('Reason')))),
-    docstring("Delete file at specified path")
+    "Delete file at specified path",
+    [],
+    implementation(conjure(fs(delete_file(Path))), Result, (
+        catch(
+            (delete_file(Path), Result = ok(file_deleted(Path))),
+            Error,
+            Result = error(fs_error(Error))
+        )
+    ))
 ).
-cast(conjure(fs(delete_file(Path))), Result) :-
-    catch(
-        (delete_file(Path), Result = ok(file_deleted(Path))),
-        Error,
-        Result = error(fs_error(Error))
-    ).
-
-% === FILE QUERY SPELLS ===
-
-register_spell(
-    perceive(fs(list_files)),
-    input(fs(list_files(directory('Dir')))),
-    output(either(ok(files('FileList')), error(fs_error('Reason')))),
-    docstring("List all files in a directory (non-recursive)")
-).
-cast(perceive(fs(list_files(Dir))), Result) :-
-    catch(
-        (directory_files(Dir, AllFiles),
-         exclude(=('.'), AllFiles, FilteredFiles),
-         exclude(=('..'), FilteredFiles, Files),
-         Result = ok(files(Files))),
-        Error,
-        Result = error(fs_error(Error))
-    ).
-
-register_spell(
-    perceive(fs(glob_match)),
-    input(fs(glob_match(pattern('Pattern'), base('BaseDir')))),
-    output(either(ok(matched_files('FileList')), error(fs_error('Reason')))),
-    docstring("Match files using glob patterns (e.g., '**/*.pl')")
-).
-cast(perceive(fs(glob_match(Pattern, BaseDir))), Result) :-
-    catch(
-        (expand_file_name(Pattern, Matches),
-         (atom(BaseDir), BaseDir \= '' ->
-             findall(Rel, (member(Abs, Matches), relative_file_name(Rel, BaseDir, Abs)), Files)
-         ;
-             Files = Matches
-         ),
-         Result = ok(matched_files(Files))),
-        Error,
-        Result = error(fs_error(Error))
-    ).
-
-register_spell(
-    perceive(fs(file_stats)),
-    input(fs(file_stats(path('Path')))),
-    output(either(ok(stats(size('Size'), modified('Time'), mode('Mode'))), error(fs_error('Reason')))),
-    docstring("Get file statistics (size, modified time, permissions)")
-).
-cast(perceive(fs(file_stats(Path))), Result) :-
-    catch(
-        (size_file(Path, Size),
-         time_file(Path, Time),
-         access_file(Path, exist),
-         (access_file(Path, execute) -> Mode = executable ; Mode = regular),
-         Result = ok(stats(size(Size), modified(Time), mode(Mode)))),
-        Error,
-        Result = error(fs_error(Error))
-    ).
 
 % === FILE EDITING HELPERS ===
 

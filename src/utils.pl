@@ -2,7 +2,6 @@
 :- self_entity(utils).
 
 % === ENTITY DECLARATIONS ===
-entity(utils(file_processor)).
 entity(utils(tree_builder)).
 entity(utils(validator)).
 entity(utils(collection)).
@@ -18,25 +17,19 @@ docstring(utils, "
 This entity exposes user-friendly DSL fact schemas:
 
 ```prolog
-% File processing utilities
-component(user_entity, has(utils(file_processor)), utils(file_processor(
-    type(semantics), filters([extensions(['.pl', '.plt']), pattern('semantics.*')])
-))).
-% Generatively populates: component(user_entity, utils_processor_type, semantics).
-
-% Tree building utilities
+% Tree building utilities (pure ECS traversal, no I/O)
 component(user_entity, has(utils(tree_builder)), utils(tree_builder(
     root(user_entity), relationship(child), options([max_depth(10)])
 ))).
 % Generatively populates: component(user_entity, utils_tree_root, user_entity).
 
-% Validation utilities
+% Validation utilities (pure logic, no I/O)
 component(user_entity, has(utils(validator)), utils(validator(
     rules([check_existence, check_format]), on_error(throw)
 ))).
 % Generatively populates: component(user_entity, utils_validation_rules, [check_existence, check_format]).
 
-% Collection utilities
+% Collection utilities (pure data transformation, no I/O)
 component(user_entity, has(utils(collection)), utils(collection(
     type(entities), operations([filter, map, reduce]), predicate(custom_filter/2)
 ))).
@@ -47,155 +40,165 @@ component(user_entity, has(utils(collection)), utils(collection(
 Users can use `please_verify/1` on fact schemas in their own `semantics.plt` files:
 
 ```prolog
-please_verify(component(user_entity, has(utils(file_processor)),
-    utils(file_processor(type(semantics), filters([extensions(['.pl', '.plt'])]))))).
+please_verify(component(user_entity, has(utils(tree_builder)),
+    utils(tree_builder(root(user_entity), relationship(child), options([max_depth(10)]))))).
 please_verify(component(user_entity, has(utils(validator)),
     utils(validator(rules([check_existence, check_format]), on_error(throw))))).
 ```
 
 ## Purpose
-Utils domain provides foundational utility functions and verification patterns for other Grimoire domains:
-- Entity hierarchy traversal and tree building
-- File processing and pattern matching utilities
-- Validation framework for component verification
-- Collection operations (map, filter, reduce) on entity data
+Utils domain provides pure logic utility functions for other Grimoire domains:
+- Entity hierarchy traversal and tree building (pure ECS, no I/O)
+- Validation framework for component verification (pure logic)
+- Collection operations (map, filter, reduce) on entity data (pure transformation)
+
+Note: File processing utilities have been moved to the fs domain.
 
 ## Spell Constructors
+- **perceive**: `entity_hierarchy(RootEntity)` - Build hierarchical tree from relationships
 - **perceive**: `utils(entity_hierarchy(RootEntity))` - Build hierarchical tree from relationships
 - **conjure**: `utils(validate(Entity, Rules))` - Validate entity against rules
 - **conjure**: `utils(transform(Data, Operation))` - Transform data using map/filter/reduce
 
 ## Dependencies
 - **ecs_kernel** (L0): Core ECS predicates and verification primitive
-- **run_tests** (L1): Test infrastructure for PLUnit execution
-- **grimoire** (L1): Spell system and domain loading
+- **grimoire** (L1): Spell system (for magic_cast in spell implementations)
 ").
 
-% === DSL PATTERNS: GENERATIVE EXPANSION ===
+% === DSL SCHEMA REGISTRATIONS ===
 
-% File processor generative expansion
-component(Entity, utils_file_extensions, Extensions) :-
-    component(Entity, has(utils(file_processor)), utils(file_processor(type(_), filters(FilterList)))),
-    member(extensions(Extensions), FilterList).
+% Tree builder schema - pure ECS traversal
+register_dsl_schema(
+    utils,
+    has(utils(tree_builder)),
+    signature(utils(tree_builder(root('Root'), relationship('Rel'), options('Options')))),
+    "Build hierarchical tree from entity relationships (pure ECS traversal, no I/O)",
+    (
+        component(E, has(utils(tree_builder)), utils(tree_builder(root(Root), relationship(Rel), options(Options))))
+            ==> component(E, utils_tree_root, Root),
+                component(E, utils_tree_relationship, Rel),
+                (component(E, utils_tree_max_depth, MD) :- member(max_depth(MD), Options))
+            ::  ground(Root),
+                atom(Rel),
+                is_list(Options)
+    )
+).
 
-component(Entity, utils_processor_type, Type) :-
-    component(Entity, has(utils(file_processor)), utils(file_processor(type(Type), filters(_)))).
+% Validator schema - pure logic validation
+register_dsl_schema(
+    utils,
+    has(utils(validator)),
+    signature(utils(validator(rules('Rules'), on_error('ErrorMode')))),
+    "Validate entity against rules with configurable error handling (pure logic, no I/O)",
+    (
+        component(E, has(utils(validator)), utils(validator(rules(Rules), on_error(ErrorMode))))
+            ==> component(E, utils_validation_rules, Rules),
+                component(E, utils_error_handling, ErrorMode)
+            ::  is_list(Rules),
+                atom(ErrorMode)
+    )
+).
 
-component(Entity, utils_file_pattern, Pattern) :-
-    component(Entity, has(utils(file_processor)), utils(file_processor(type(_), filters(FilterList)))),
-    member(pattern(Pattern), FilterList).
+% Collection schema - pure data transformation
+register_dsl_schema(
+    utils,
+    has(utils(collection)),
+    signature(utils(collection(type('Type'), operations('Operations'), predicate('Predicate')))),
+    "Transform collections using map/filter/reduce operations (pure data transformation, no I/O)",
+    (
+        component(E, has(utils(collection)), utils(collection(type(Type), operations(Operations), predicate(Predicate))))
+            ==> component(E, utils_collection_type, Type),
+                component(E, utils_collection_operations, Operations),
+                component(E, utils_collection_predicate, Predicate)
+            ::  atom(Type),
+                is_list(Operations),
+                callable(Predicate)
+    )
+).
 
-% Tree builder generative expansion
-component(Entity, utils_tree_root, Root) :-
-    component(Entity, has(utils(tree_builder)), utils(tree_builder(root(Root), relationship(_), options(_)))).
+% === LEAF VERIFICATIONS ===
 
-component(Entity, utils_tree_relationship, Rel) :-
-    component(Entity, has(utils(tree_builder)), utils(tree_builder(root(_), relationship(Rel), options(_)))).
+component(_, utils_tree_root, Root)
+    :: ground(Root).
 
-component(Entity, utils_tree_max_depth, MaxDepth) :-
-    component(Entity, has(utils(tree_builder)), utils(tree_builder(root(_), relationship(_), options(OptionList)))),
-    member(max_depth(MaxDepth), OptionList).
+component(_, utils_tree_relationship, Rel)
+    :: atom(Rel).
 
-% Validator generative expansion
-component(Entity, utils_validation_rules, Rules) :-
-    component(Entity, has(utils(validator)), utils(validator(rules(Rules), on_error(_)))).
+component(_, utils_tree_max_depth, MaxDepth)
+    :: integer(MaxDepth),
+       MaxDepth > 0.
 
-component(Entity, utils_error_handling, ErrorMode) :-
-    component(Entity, has(utils(validator)), utils(validator(rules(_), on_error(ErrorMode)))).
+component(_, utils_validation_rules, Rules)
+    :: is_list(Rules),
+       subset(Rules, [check_existence, check_format, check_permissions]).
 
-% Collection generative expansion
-component(Entity, utils_collection_type, Type) :-
-    component(Entity, has(utils(collection)), utils(collection(type(Type), operations(_), predicate(_)))).
+component(_, utils_error_handling, ErrorMode)
+    :: member(ErrorMode, [throw, return, log]).
 
-component(Entity, utils_collection_operations, Operations) :-
-    component(Entity, has(utils(collection)), utils(collection(type(_), operations(Operations), predicate(_)))).
+component(_, utils_collection_type, Type)
+    :: atom(Type).
 
-component(Entity, utils_collection_predicate, Predicate) :-
-    component(Entity, has(utils(collection)), utils(collection(type(_), operations(_), predicate(Predicate)))).
+component(_, utils_collection_operations, Operations)
+    :: is_list(Operations),
+       subset(Operations, [filter, map, reduce]).
+
+component(_, utils_collection_predicate, Predicate)
+    :: callable(Predicate).
 
 % === SPELL IMPLEMENTATIONS ===
 
-% Entity hierarchy spell (perceive) - short form
-register_spell(
-    perceive(entity_hierarchy),
-    input(entity_hierarchy(entity('RootEntity'))),
-    output(either(ok(hierarchy(tree('Tree'))), error(hierarchy_error('Error')))),
-    docstring("Build a hierarchical tree structure from entity child relationships.
-Returns a tree structure where each node is: tree(Entity, [ChildTree1, ChildTree2, ...])
-Only follows 'child' component relationships.")
-).
-
-cast(perceive(entity_hierarchy(RootEntity)), Result) :-
-    catch(
-        (build_entity_tree(RootEntity, Tree),
-         Result = ok(hierarchy(Tree))),
-        Error,
-        Result = error(hierarchy_error(Error))
-    ).
-
-% Entity hierarchy spell (perceive) - utils namespace
+% Entity hierarchy spell (perceive) - utils namespace only
+% Note: Short form perceive(entity_hierarchy) removed due to grimoire.pl term_expansion
+% limitations with atomic spell domains. Use perceive(utils(entity_hierarchy(...))) instead.
 register_spell(
     perceive(utils(entity_hierarchy)),
     input(utils(entity_hierarchy(entity('RootEntity')))),
     output(either(ok(hierarchy(tree('Tree'))), error(hierarchy_error('Error')))),
-    docstring("Build a hierarchical tree structure from entity child relationships.
-Returns a tree structure where each node is: tree(Entity, [ChildTree1, ChildTree2, ...])
-Only follows 'child' component relationships.")
+    "Build hierarchical tree structure from entity child relationships (pure ECS, no I/O)",
+    [],
+    implementation(perceive(utils(entity_hierarchy(RootEntity))), Result, (
+        catch(
+            (build_entity_tree(RootEntity, Tree),
+             Result = ok(hierarchy(Tree))),
+            Error,
+            Result = error(hierarchy_error(Error))
+        )
+    ))
 ).
-
-cast(perceive(utils(entity_hierarchy(RootEntity))), Result) :-
-    catch(
-        (build_entity_tree(RootEntity, Tree),
-         Result = ok(hierarchy(Tree))),
-        Error,
-        Result = error(hierarchy_error(Error))
-    ).
-
-% File list spell (perceive)
-register_spell(
-    perceive(utils(file_list)),
-    input(utils(file_list(directory('Directory'), filters('Filters')))),
-    output(either(ok(file_list(list('Files'))), error(file_list_error('Error')))),
-    docstring("List files in a directory matching specified filters.
-Filters can include: extensions(['.pl', '.plt']), pattern('semantics.*')
-Returns ok(file_list(Files)) or error(file_list_error(Reason)).")
-).
-
-cast(perceive(utils(file_list(Directory, Filters))), Result) :-
-    catch(
-        (list_files_with_filters(Directory, Filters, Files),
-         Result = ok(file_list(Files))),
-        Error,
-        Result = error(file_list_error(Error))
-    ).
 
 % Validation spell (conjure)
 register_spell(
     conjure(utils(validate)),
     input(utils(validate(entity('Entity'), rules('Rules')))),
     output(either(ok(validation_passed), error(validation_error('Reason')))),
-    docstring("Validate an entity against a set of validation rules.
-Available rules: check_existence, check_format, check_permissions.
-Returns ok(validation_passed) on success or error(validation_error(Reason)) on failure.")
+    "Validate entity against rules (pure logic, no I/O)",
+    [],
+    implementation(conjure(utils(validate(Entity, Rules))), Result, (
+        catch(
+            (validate_entity_with_rules(Entity, Rules),
+             Result = ok(validation_passed)),
+            validation_error(_, Reason),
+            Result = error(validation_error(Reason))
+        )
+    ))
 ).
-
-cast(conjure(utils(validate(Entity, Rules))), Result) :-
-    catch((validate_entity_with_rules(Entity, Rules), Result = ok(validation_passed)),
-          validation_error(_, Reason), Result = error(validation_error(Reason))).
 
 % Transform data spell (conjure)
 register_spell(
     conjure(utils(transform)),
     input(utils(transform(data('Data'), operation('Operation')))),
     output(either(ok(transformed('Result')), error(transform_error('Reason')))),
-    docstring("Transform data using map, filter, or reduce operations.
-Operations: map(Predicate), filter(Predicate), reduce(Predicate, Initial).
-Returns ok(transformed(Result)) on success or error(transform_error(Reason)) on failure.")
+    "Transform data using map/filter/reduce (pure logic, no I/O)",
+    [],
+    implementation(conjure(utils(transform(Data, Operation))), Result, (
+        catch(
+            (apply_transformation(Data, Operation, TransformedData),
+             Result = ok(transformed(TransformedData))),
+            Error,
+            Result = error(transform_error(Error))
+        )
+    ))
 ).
-
-cast(conjure(utils(transform(Data, Operation))), Result) :-
-    catch((apply_transformation(Data, Operation, TransformedData), Result = ok(transformed(TransformedData))),
-          Error, Result = error(transform_error(Error))).
 
 % === CORE UTILITY PREDICATES ===
 
@@ -206,23 +209,6 @@ build_entity_tree(Entity, tree(Entity, Children)) :-
         component(Entity, child, Child),
         build_entity_tree(Child, ChildTree)
     ), Children).
-
-% List files with filters (placeholder implementation)
-list_files_with_filters(Directory, Filters, Files) :-
-    % Basic implementation - can be extended
-    exists_directory(Directory),
-    directory_files(Directory, AllFiles),
-    include(matches_filters(Filters), AllFiles, Files).
-
-matches_filters(Filters, File) :-
-    forall(member(Filter, Filters), apply_file_filter(Filter, File)).
-
-apply_file_filter(extensions(Exts), File) :-
-    member(Ext, Exts),
-    sub_atom(File, _, _, 0, Ext).
-
-apply_file_filter(pattern(Pattern), File) :-
-    sub_atom(File, _, _, _, Pattern).
 
 % Validation helper implementations
 validate_entity_with_rules(Entity, Rules) :-
@@ -249,24 +235,9 @@ apply_transformation(Data, filter(Predicate), Result) :-
 apply_transformation(Data, reduce(Predicate, Initial), Result) :-
     foldl(Predicate, Data, Initial, Result).
 
-% Utility to check if a file is a semantics.pl or semantics.plt file
-is_semantics_file(Path) :-
-    (sub_atom(Path, _, _, 0, 'semantics.pl') ; sub_atom(Path, _, _, 0, 'semantics.plt')).
-
-% Helper to read lines from a stream
-read_lines_from_stream(Stream, Lines) :-
-    read_line_to_codes(Stream, Codes),
-    (Codes == end_of_file ->
-        Lines = []
-    ;
-        atom_codes(Line, Codes),
-        Lines = [Line|RestLines],
-        read_lines_from_stream(Stream, RestLines)
-    ).
-
 % === ENTITY-SPECIFIC DOCSTRINGS ===
 docstring(entity_hierarchy, "Build a hierarchical tree structure from entity child relationships.
-    Format: perceive(entity_hierarchy(RootEntity, Tree))
+    Format: perceive(entity_hierarchy(RootEntity))
 
     Returns a tree structure where each node is:
     tree(Entity, [ChildTree1, ChildTree2, ...])
@@ -276,10 +247,10 @@ docstring(entity_hierarchy, "Build a hierarchical tree structure from entity chi
     component(Entity, child, Child) :- component(Entity, ctor, Child).
 
     Example:
-    ?- perceive(entity_hierarchy(project, Tree)).
-    Tree = tree(project, [
+    ?- magic_cast(perceive(entity_hierarchy(project)), Result).
+    Result = ok(hierarchy(tree(project, [
         tree(project(frontend), [
             tree(project(frontend(src)), [...])
         ]),
         tree(project(backend), [])
-    ]).").
+    ]))).").

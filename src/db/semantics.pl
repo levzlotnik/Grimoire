@@ -40,13 +40,6 @@ docstring(db(create),
 entity(database(Db)) :-
     registered_db(database(Db), data(file(_)), schema(file(_))).
 
-% === DSL PATTERNS ===
-% User-friendly high-level component patterns that expand to rich components
-
-% SQLite database DSL pattern
-% component(Entity, has(db(sqlite)), db(sqlite(database_id(Id), file(DbPath), schema(SchemaPath)))).
-% Expands to multiple granular components below
-
 % === COMPONENT PATTERNS (REVERSE PROXY) ===
 
 % Database file component
@@ -64,40 +57,6 @@ component(database(Db), table, table(TableName)) :-
 % Column components
 component(database(Db), column, column(TableName, ColumnName, ColumnInfo)) :-
     registered_db_column(database(Db), column(TableName, ColumnName, ColumnInfo)).
-
-% === DSL EXPANSION PATTERNS ===
-% Expansion of high-level DSL patterns to granular components
-
-% Extract database ID from DSL pattern
-component(Entity, db_sqlite_id, Id) :-
-    component(Entity, has(db(sqlite)), db(sqlite(database_id(Id), file(_), schema(_)))).
-
-% Extract database file path from DSL pattern
-component(Entity, db_sqlite_file, DbPath) :-
-    component(Entity, has(db(sqlite)), db(sqlite(database_id(_), file(DbPath), schema(_)))).
-
-% Extract schema path from DSL pattern
-component(Entity, db_sqlite_schema, SchemaPath) :-
-    component(Entity, has(db(sqlite)), db(sqlite(database_id(_), file(_), schema(SchemaPath)))).
-
-% Derived: database validity check
-component(Entity, db_sqlite_valid, true) :-
-    component(Entity, db_sqlite_file, DbPath),
-    validate_database(DbPath).
-
-% Derived: list of tables in database
-component(Entity, db_sqlite_tables, Tables) :-
-    component(Entity, db_sqlite_file, DbPath),
-    exists_file(DbPath),
-    get_database_tables(DbPath, Tables).
-
-% Table DSL pattern expansion
-component(Entity, db_table_name, TableName) :-
-    component(Entity, has(db(table)), db(table(TableName))).
-
-% Column DSL pattern expansion
-component(Entity, db_column_info, column(TableName, ColumnName, Constraints)) :-
-    component(Entity, has(db(column)), db(column(TableName, ColumnName, Constraints))).
 
 % === DISCOVERY PREDICATES ===
 
@@ -117,6 +76,75 @@ registered_db_column(database(Db), column(TableName, ColumnName, ColumnInfo)) :-
     ColumnInfo = column(ColumnNameString, _, _, _, _),
     atom_string(ColumnName, ColumnNameString).
 
+% === COMPONENT EXPANSION USING ==> OPERATOR ===
+% The ==> operator automatically generates BOTH:
+% 1. Component expansion rules (generative)
+% 2. Verify clause with please_verify calls (discriminative)
+
+% High-level has(db(sqlite)) pattern expands to queryable properties
+component(Entity, has(db(sqlite)), db(sqlite(database_id(DbId), file(File), schema(Schema))))
+    ==> component(Entity, db_sqlite_id, DbId),
+        component(Entity, db_sqlite_file, File),
+        component(Entity, db_sqlite_schema, Schema).
+
+% === LEAF COMPONENT VERIFICATIONS USING :: OPERATOR ===
+% The :: operator ONLY generates verify clauses for leaf components
+
+% Verify database ID is valid atom
+component(_E, db_sqlite_id, DbId)
+    :: (atom(DbId) ->
+           (DbId \= '' ->
+               true
+           ;
+               throw(verification_error(db, empty_database_id))
+           )
+       ;
+           throw(verification_error(db, database_id_not_atom(DbId)))
+       ).
+
+% Verify database file exists and is readable SQLite database
+component(_E, db_sqlite_file, File)
+    :: (atom(File) ; string(File)),
+       atom_string(File, FileStr),
+       (exists_file(FileStr) ->
+           (access_file(FileStr, read) ->
+               (validate_database(FileStr) ->
+                   true
+               ;
+                   throw(verification_error(db, invalid_sqlite_file(File)))
+               )
+           ;
+               throw(verification_error(db, file_not_readable(File)))
+           )
+       ;
+           throw(verification_error(db, file_not_found(File)))
+       ).
+
+% Verify schema file exists and is readable
+component(_E, db_sqlite_schema, Schema)
+    :: (atom(Schema) ; string(Schema)),
+       atom_string(Schema, SchemaStr),
+       (exists_file(SchemaStr) ->
+           (access_file(SchemaStr, read) ->
+               true
+           ;
+               throw(verification_error(db, schema_not_readable(Schema)))
+           )
+       ;
+           throw(verification_error(db, schema_not_found(Schema)))
+       ).
+
+% Derived: database validity check (no verification - it's a query)
+component(Entity, db_sqlite_valid, true) :-
+    component(Entity, db_sqlite_file, DbPath),
+    validate_database(DbPath).
+
+% Derived: list of tables in database (no verification - it's a query)
+component(Entity, db_sqlite_tables, Tables) :-
+    component(Entity, db_sqlite_file, DbPath),
+    exists_file(DbPath),
+    get_database_tables(DbPath, Tables).
+
 % === COMMAND SYSTEM ===
 
 % Database subcommands (still needed for CLI routing)
@@ -125,46 +153,90 @@ component(db, subcommand, execute).
 component(db, subcommand, query).
 component(db, subcommand, tables).
 
-% === SPELL REGISTRATIONS AND IMPLEMENTATIONS ===
+% === PHASE 3: SPELL REGISTRATIONS ===
 
-% Create database from schema file
+% Create database - single spell handling both file and SQL patterns
+% Phase 3 doesn't support spell overloading, so we need ONE implementation
+% that branches based on schema(file(...)) vs schema(sql(...))
 register_spell(
     conjure(db(create)),
-    input(db(create(database_id('DbId'), file('DbPath'), schema(file('SchemaPath'))))),
+    input(db(create(database_id('DbId'), file('DbPath'), 'SchemaSpec'))),
     output(either(
         ok(database_created('DbId', 'DbPath', 'RegisteredDbFact')),
         error(db_error('Reason'))
     )),
-    docstring("Create a new SQLite database from a schema file. Returns the registered_db fact that should be persisted to session state.")
+    "Create a new SQLite database from a schema file or SQL string. Returns the registered_db fact that should be persisted to session state.",
+    [session_persistent(true)],
+    implementation(conjure(db(create(DbId, DbPath, SchemaSpec))), Result, (
+        % Validation
+        atom(DbId),
+        DbId \= '',
+        (atom(DbPath) ; string(DbPath)),
+
+        % Convert to strings if needed
+        (atom(DbPath) -> atom_string(DbPath, DbPathStr) ; DbPathStr = DbPath),
+
+        % Verify database path directory exists and is writable
+        file_directory_name(DbPathStr, DbDir),
+        (exists_directory(DbDir) ->
+            access_file(DbDir, write)
+        ;
+            throw(error(db_error(directory_not_found(DbDir))))
+        ),
+
+        % Verify database doesn't already exist (prevent overwrite)
+        (\+ exists_file(DbPathStr) ->
+            true
+        ;
+            throw(error(db_error(database_already_exists(DbPathStr))))
+        ),
+
+        % Handle schema(file(...)) or schema(sql(...))
+        (SchemaSpec = schema(file(SchemaFile)) ->
+            % File-based schema
+            (atom(SchemaFile) -> atom_string(SchemaFile, SchemaFileStr) ; SchemaFileStr = SchemaFile),
+            % Verify schema file exists and is valid
+            exists_file(SchemaFileStr),
+            access_file(SchemaFileStr, read),
+            % Create database
+            sqlite3_init_db(DbPathStr, SchemaFileStr),
+            % Return the schema file path
+            ActualSchemaFile = SchemaFile
+        ; SchemaSpec = schema(sql(SchemaSQL)) ->
+            % SQL string schema
+            string(SchemaSQL),
+            % Validate SQL string contains CREATE statements
+            (sub_string(SchemaSQL, _, _, _, "CREATE") ; sub_string(SchemaSQL, _, _, _, "create")),
+            % Generate schema file
+            file_name_extension(DbBaseName, db, DbPathStr),
+            format(atom(GeneratedSchemaFile), '~w.schema.sql', [DbBaseName]),
+            % Write schema to file
+            open(GeneratedSchemaFile, write, Stream),
+            write(Stream, SchemaSQL),
+            close(Stream),
+            % Verify schema file was written
+            exists_file(GeneratedSchemaFile),
+            access_file(GeneratedSchemaFile, read),
+            % Create database
+            sqlite3_init_db(DbPathStr, GeneratedSchemaFile),
+            % Return the generated schema file path
+            ActualSchemaFile = GeneratedSchemaFile
+        ;
+            throw(error(db_error(invalid_schema_spec(SchemaSpec))))
+        ),
+
+        % Verify creation succeeded
+        (exists_file(DbPathStr) ->
+            validate_database(DbPathStr)
+        ;
+            throw(error(db_error(creation_failed(DbPathStr))))
+        ),
+
+        % Return success - hook will persist to state.pl
+        RegisteredDbFact = registered_db(database(DbId), data(file(DbPath)), schema(file(ActualSchemaFile))),
+        Result = ok(database_created(DbId, DbPath, RegisteredDbFact))
+    ))
 ).
-
-cast(conjure(db(create(DbId, DbPath, schema(file(SchemaFile))))), RetVal) :-
-    sqlite3_init_db(DbPath, SchemaFile),
-    RegisteredDbFact = registered_db(database(DbId), data(file(DbPath)), schema(file(SchemaFile))),
-    RetVal = ok(database_created(DbId, DbPath, RegisteredDbFact)).
-
-% Create database from SQL string (creates schema file)
-register_spell(
-    conjure(db(create)),
-    input(db(create(database_id('DbId'), file('DbPath'), schema(sql('SchemaSQL'))))),
-    output(either(
-        ok(database_created('DbId', 'DbPath', 'RegisteredDbFact')),
-        error(db_error('Reason'))
-    )),
-    docstring("Create a new SQLite database from a SQL string. Returns the registered_db fact that should be persisted to session state.")
-).
-
-cast(conjure(db(create(DbId, DbPath, schema(sql(SchemaSQL))))), RetVal) :-
-    % Extract database base name and create schema file
-    file_name_extension(DbBaseName, db, DbPath),
-    format(atom(SchemaFile), '~w.schema.sql', [DbBaseName]),
-    open(SchemaFile, write, Stream),
-    write(Stream, SchemaSQL),
-    close(Stream),
-    % Create database using the schema file
-    sqlite3_init_db(DbPath, SchemaFile),
-    RegisteredDbFact = registered_db(database(DbId), data(file(DbPath)), schema(file(SchemaFile))),
-    RetVal = ok(database_created(DbId, DbPath, RegisteredDbFact)).
 
 % Execute SQL statement (mutation)
 register_spell(
@@ -174,16 +246,37 @@ register_spell(
         ok(executed('SQL')),
         error(db_error('Reason'))
     )),
-    docstring("Execute a SQL statement that modifies the database (INSERT, UPDATE, DELETE, etc.).")
-).
+    "Execute a SQL statement that modifies the database (INSERT, UPDATE, DELETE, etc.).",
+    [],
+    implementation(conjure(db(execute(database_id(DbId), sql(SQL)))), Result, (
+        % Validation
+        atom(DbId),
+        string(SQL),
 
-cast(conjure(db(execute(database_id(DbId), sql(SQL)))), RetVal) :-
-    (registered_db(database(DbId), data(file(DbPath)), schema(file(_))) ->
-        sqlite3_exec(DbPath, SQL),
-        RetVal = ok(executed(SQL))
-    ;
-        RetVal = error(db_error(database_not_found(DbId)))
-    ).
+        % Fetch and verify database path using please_verify
+        (registered_db(database(DbId), data(file(DbPath)), schema(file(_))) ->
+            % Verify file exists and is accessible
+            (atom(DbPath) -> atom_string(DbPath, DbPathStr) ; DbPathStr = DbPath),
+            (exists_file(DbPathStr) ->
+                (access_file(DbPathStr, write) ->
+                    (validate_database(DbPathStr) ->
+                        % Execute
+                        sqlite3_exec(DbPathStr, SQL),
+                        Result = ok(executed(SQL))
+                    ;
+                        throw(error(db_error(invalid_database(DbId))))
+                    )
+                ;
+                    throw(error(db_error(database_not_writable(DbId))))
+                )
+            ;
+                throw(error(db_error(database_file_not_found(DbId, DbPathStr))))
+            )
+        ;
+            Result = error(db_error(database_not_found(DbId)))
+        )
+    ))
+).
 
 % Query database and return results
 register_spell(
@@ -193,16 +286,37 @@ register_spell(
         ok(query_results('Results')),
         error(query_error('Reason'))
     )),
-    docstring("Execute a SQL query and return the results. Use for SELECT statements.")
-).
+    "Execute a SQL query and return the results. Use for SELECT statements.",
+    [],
+    implementation(perceive(db(query(database_id(DbId), sql(SQL)))), Result, (
+        % Validation
+        atom(DbId),
+        string(SQL),
 
-cast(perceive(db(query(database_id(DbId), sql(SQL)))), RetVal) :-
-    (registered_db(database(DbId), data(file(DbPath)), schema(file(_))) ->
-        sqlite3_query(DbPath, SQL, QueryResults),
-        RetVal = ok(query_results(QueryResults))
-    ;
-        RetVal = error(query_error(database_not_found(DbId)))
-    ).
+        % Fetch and verify database path
+        (registered_db(database(DbId), data(file(DbPath)), schema(file(_))) ->
+            % Verify file exists and is readable
+            (atom(DbPath) -> atom_string(DbPath, DbPathStr) ; DbPathStr = DbPath),
+            (exists_file(DbPathStr) ->
+                (access_file(DbPathStr, read) ->
+                    (validate_database(DbPathStr) ->
+                        % Query
+                        sqlite3_query(DbPathStr, SQL, QueryResults),
+                        Result = ok(query_results(QueryResults))
+                    ;
+                        throw(error(query_error(invalid_database(DbId))))
+                    )
+                ;
+                    throw(error(query_error(database_not_readable(DbId))))
+                )
+            ;
+                throw(error(query_error(database_file_not_found(DbId, DbPathStr))))
+            )
+        ;
+            Result = error(query_error(database_not_found(DbId)))
+        )
+    ))
+).
 
 % Get list of tables in database
 register_spell(
@@ -212,19 +326,37 @@ register_spell(
         ok(tables('TableList')),
         error(tables_error('Reason'))
     )),
-    docstring("Get a list of all tables in the specified database.")
-).
+    "Get a list of all tables in the specified database.",
+    [],
+    implementation(perceive(db(tables(database_id(DbId)))), Result, (
+        % Validation
+        atom(DbId),
 
-cast(perceive(db(tables(database_id(DbId)))), RetVal) :-
-    (registered_db(database(DbId), data(file(DbPath)), schema(file(_))) ->
-        get_database_tables(DbPath, TableList),
-        RetVal = ok(tables(TableList))
-    ;
-        RetVal = error(tables_error(database_not_found(DbId)))
-    ).
+        % Fetch and verify database path
+        (registered_db(database(DbId), data(file(DbPath)), schema(file(_))) ->
+            % Verify file exists and is readable
+            (atom(DbPath) -> atom_string(DbPath, DbPathStr) ; DbPathStr = DbPath),
+            (exists_file(DbPathStr) ->
+                (access_file(DbPathStr, read) ->
+                    (validate_database(DbPathStr) ->
+                        % Get tables
+                        get_database_tables(DbPathStr, TableList),
+                        Result = ok(tables(TableList))
+                    ;
+                        throw(error(tables_error(invalid_database(DbId))))
+                    )
+                ;
+                    throw(error(tables_error(database_not_readable(DbId))))
+                )
+            ;
+                throw(error(tables_error(database_file_not_found(DbId, DbPathStr))))
+            )
+        ;
+            Result = error(tables_error(database_not_found(DbId)))
+        )
+    ))
+).
 
 % === DOCSTRINGS ===
 
 docstring(db, "Database entity system with reverse proxy predicating. Register databases with registered_db(database(UniqueId), data(file(DbPath)), schema(file(SchemaPath))) to enable components").
-
-

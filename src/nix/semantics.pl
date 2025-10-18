@@ -8,7 +8,19 @@
     Enables functional package management where builds are pure functions of their inputs.
     |}).
 
-% Main Nix command categories from nix --help
+% === ENTITY DECLARATIONS ===
+
+% Main Nix concept entities
+entity(nix(store)).
+entity(nix(derivation)).
+entity(nix(package)).
+entity(nix(target)).
+entity(nix(flake)).
+entity(nix(develop)).
+entity(nix(develop(phase))).
+entity(nix(flake(template))).
+
+% Nix concepts
 component(nix, concept, nix(store)).
 component(nix, concept, nix(derivation)).
 component(nix, concept, nix(package)).
@@ -17,29 +29,6 @@ component(nix, concept, nix(flake)).
 component(nix, concept, nix(develop)).
 component(nix, concept, nix(search)).
 component(nix, concept, nix(run)).
-
-% Nix concepts as namespaces
-entity(nix(store)).
-entity(nix(derivation)).
-entity(nix(package)).
-entity(nix(target)).
-
-% Nix command entities
-% Removed: entity(nix(build)) - auto-derived from register_spell/4
-% Removed: entity(nix(develop)) - auto-derived from register_spell/4
-% Removed: entity(nix(run)) - auto-derived from register_spell/4
-% Removed: entity(nix(flake(new))) - auto-derived from register_spell/4
-% Removed: entity(nix(flake(show))) - auto-derived from register_spell/4
-% Removed: entity(nix(store(gc))) - auto-derived from register_spell/4
-% Removed: entity(nix(store(repair))) - auto-derived from register_spell/4
-% Removed: entity(nix(store(optimise))) - auto-derived from register_spell/4
-entity(nix(store(query))).
-% Removed: entity(nix(search)) - auto-derived from register_spell/4
-% Removed: entity(nix(log)) - auto-derived from register_spell/4
-% Removed: entity(nix(why_depends)) - auto-derived from register_spell/4
-
-% Spell constructors auto-derived from register_spell/4 declarations
-% (No manual ctor declarations needed for spells with register_spell)
 
 % Store relationships
 component(nix(store), contains, nix(derivation)).
@@ -64,6 +53,60 @@ entity(nix(target(app))).
 entity(nix(target(devShell))).
 entity(nix(target(check))).
 entity(nix(target(formatter))).
+
+% Store command constructors
+component(nix(store), ctor, gc).
+component(nix(store), ctor, repair).
+component(nix(store), ctor, optimise).
+
+% Develop command options
+component(nix(develop), option(unique), shell_cmd).
+component(nix(develop), option(unique), phase).
+
+% Develop phase constructors
+component(nix(develop(phase)), ctor, unpack).
+component(nix(develop(phase)), ctor, configure).
+component(nix(develop(phase)), ctor, build).
+component(nix(develop(phase)), ctor, check).
+component(nix(develop(phase)), ctor, install).
+component(nix(develop(phase)), ctor, installcheck).
+
+% === DOCSTRINGS ===
+
+docstring(nix(package),
+    {|string(_)||
+    Represents a Nix package.
+    Format: nix_package(Name, Version)
+    Example: entity(nix(package("hello", "2.12.1")))
+    |}
+).
+
+docstring(nix(derivation),
+    {|string(_)||
+    Represents a Nix derivation.
+    Format: nix_derivation(Path)
+    Example: entity(nix(derivation("/nix/store/...")))
+    |}
+).
+
+docstring(nix(target),
+    {|string(_)||
+    Represents a flake output target (sum type).
+    Targets are discovered dynamically from flakes via 'nix flake show --json'.
+
+    Formats:
+      nix(target(package(FlakeRef, AttrPath)))
+      nix(target(app(FlakeRef, AttrPath)))
+      nix(target(devShell(FlakeRef, AttrPath)))
+      nix(target(check(FlakeRef, AttrPath)))
+      nix(target(formatter(FlakeRef, AttrPath)))
+
+    Usage:
+      1. Define flake: entity(nix(flake(MyFlake, "path/to/flake")))
+      2. Targets auto-discovered: entity(nix(target(app("path/to/flake", "apps.x86_64-linux.hello"))))
+      3. Components auto-generated: component(nix(flake(MyFlake, "path/to/flake")), target(app), Target)
+    |}
+).
 
 docstring(nix(target(package)),
     {|string(_)||
@@ -105,10 +148,49 @@ docstring(nix(target(formatter)),
     Used to format code according to project standards.
     |}).
 
-% Dynamic target discovery - flakes define themselves, we discover their targets
-% Usage: entity(nix(flake(FlakeName, FlakeRef))) in individual semantics.pl files
+docstring(nix(store),
+    "Manipulate the Nix store - essential for system maintenance. Subcommands: gc, repair, optimise"
+).
 
-% Memoized flake introspection
+docstring(nix(store(gc)),
+    "Garbage collect unused store paths"
+).
+
+docstring(nix(store(repair)),
+    "Repair corrupted store paths"
+).
+
+docstring(nix(store(optimise)),
+    "Optimize store by hardlinking identical files"
+).
+
+docstring(nix(develop(phase)),
+    {|string(_)||
+    Nix flake build phase: unpack / configure / build / check / install / installcheck
+    |}
+).
+
+docstring(nix(flake), S) :-
+    S = {|string(_)||
+    Represents a Nix flake.
+    Flakes are a concept in Nix for reproducible, composable, and shareable development environments and packages.
+    Refer to `nix(flake(template))` for more information on existing templates.
+    |}.
+
+docstring(nix(flake(template)),
+   {|string(_)||
+   Nix flake templates that can be used to initialize projects.
+   Format: nix(flake(template(TemplateId)))
+   You can find the existing templates through the `instance` component
+   of `nix(flake(template))`: `component(nix(flake), instance, Templates)`.
+   |}).
+
+docstring(nix(templates),
+    "Grimoire project templates from grimoire-templates flake. Use perceive(nix(templates)) to list available templates.").
+
+% === MEMOIZED FLAKE INTROSPECTION ===
+
+% Memoized flake target discovery - DO NOT TOUCH (critical for performance)
 :- table get_nix_flake_targets/2.
 get_nix_flake_targets(FlakeRef, Targets) :-
     magic_cast(conjure(shell(["nix", "flake", "show", "--json", FlakeRef])), Result),
@@ -119,6 +201,7 @@ get_nix_flake_targets(FlakeRef, Targets) :-
         throw(error(flake_show_failed(FlakeRef, Result)))
     ).
 
+% Extract flake targets from JSON - DO NOT TOUCH
 extract_flake_target(JsonDict, FlakeRef, Target) :-
     % Extract packages
     get_dict(packages, JsonDict, Packages),
@@ -168,7 +251,9 @@ extract_flake_target(JsonDict, FlakeRef, Target) :-
         Target = nix(target(formatter(FlakeRef, AttrPath)))
     ; fail).
 
-% Dynamic entity generation for flake targets
+% === DYNAMIC ENTITY GENERATION ===
+
+% Dynamic entity generation for flake targets - DO NOT TOUCH
 entity(nix(target(package(FlakeRef, AttrPath)))) :-
     entity(nix(flake(_, FlakeRef))),
     get_nix_flake_targets(FlakeRef, Targets),
@@ -202,373 +287,7 @@ component(nix(flake(FlakeName, FlakeRef)), target(TargetType), Target) :-
     Target = nix(target(TargetTypeCall)),
     functor(TargetTypeCall, TargetType, _).
 
-% === DSL PATTERNS - has(nix(...)) fact schemas ===
-
-% Flake declaration expansion - from user DSL to component primitives
-component(Entity, nix_flake_ref, FlakeRef) :-
-    component(Entity, has(nix(flake)), nix(flake(ref(FlakeRef)))).
-
-component(Entity, nix_flake_targets, Targets) :-
-    component(Entity, nix_flake_ref, FlakeRef),
-    get_nix_flake_targets(FlakeRef, Targets).
-
-component(Entity, nix_flake_apps, Apps) :-
-    component(Entity, nix_flake_targets, Targets),
-    findall(App, (member(nix(target(app(_, AttrPath))), Targets), App = AttrPath), Apps).
-
-component(Entity, nix_flake_packages, Packages) :-
-    component(Entity, nix_flake_targets, Targets),
-    findall(Pkg, (member(nix(target(package(_, AttrPath))), Targets), Pkg = AttrPath), Packages).
-
-component(Entity, nix_flake_dev_shells, DevShells) :-
-    component(Entity, nix_flake_targets, Targets),
-    findall(Shell, (member(nix(target(devShell(_, AttrPath))), Targets), Shell = AttrPath), DevShells).
-
-% Build target declaration expansion
-component(Entity, nix_build_target_path, Target) :-
-    component(Entity, has(nix(build_target)), nix(build_target(Target))).
-
-component(Entity, nix_build_target_buildable, true) :-
-    component(Entity, nix_build_target_path, Target),
-    validate_build_target_syntax(Target).
-
-% Dev environment declaration expansion
-component(Entity, nix_dev_env_shell, Shell) :-
-    component(Entity, has(nix(dev_env)), nix(dev_env(shell(Shell)))).
-
-component(Entity, nix_dev_env_available, true) :-
-    component(Entity, nix_dev_env_shell, Shell),
-    validate_dev_shell_syntax(Shell).
-
-% Validation helpers for DSL expansion
-validate_build_target_syntax(Target) :-
-    atom(Target),
-    (sub_atom(Target, _, 1, _, '#') ; sub_atom(Target, 0, 5, _, '/nix/')).
-
-validate_dev_shell_syntax(Shell) :-
-    atom(Shell),
-    (sub_atom(Shell, _, 1, _, '#') ; atom(Shell)).
-
-% === SPELL IMPLEMENTATIONS ===
-% Each register_spell is placed right above its cast implementation
-
-% === DOCSTRINGS ===
-
-docstring(nix(package),
-    {|string(_)||
-    Represents a Nix package.
-    Format: nix_package(Name, Version)
-    Example: entity(nix(package("hello", "2.12.1")))
-    |}
-).
-
-docstring(nix(derivation),
-    {|string(_)||
-    Represents a Nix derivation.
-    Format: nix_derivation(Path)
-    Example: entity(nix(derivation("/nix/store/...")))
-    |}
-).
-
-docstring(nix(target),
-    {|string(_)||
-    Represents a flake output target (sum type).
-    Targets are discovered dynamically from flakes via 'nix flake show --json'.
-
-    Formats:
-      nix(target(package(FlakeRef, AttrPath)))
-      nix(target(app(FlakeRef, AttrPath)))
-      nix(target(devShell(FlakeRef, AttrPath)))
-      nix(target(check(FlakeRef, AttrPath)))
-      nix(target(formatter(FlakeRef, AttrPath)))
-
-    Usage:
-      1. Define flake: entity(nix(flake(MyFlake, "path/to/flake")))
-      2. Targets auto-discovered: entity(nix(target(app("path/to/flake", "apps.x86_64-linux.hello"))))
-      3. Components auto-generated: component(nix(flake(MyFlake, "path/to/flake")), target(app), Target)
-    |}
-).
-
-% === COMMAND IMPLEMENTATIONS ===
-
-% Search perception spell
-register_spell(
-    perceive(nix(search)),
-    input(nix(search(query('Query')))),
-    output(either(
-        ok(search_results('Results')),
-        error(nix_error('Reason'))
-    )),
-    docstring("Search for packages in nixpkgs. Query: search term(s).")
-).
-
-cast(perceive(nix(search(Query))), Result) :-
-    catch(
-        (format(atom(FlakeQuery), 'nixpkgs#~w', [Query]),
-         Args = ["nix", "search", FlakeQuery],
-         magic_cast(conjure(shell(Args)), ShellResult),
-         (ShellResult = ok(result(Results, _)) ->
-             Result = ok(search_results(Results))
-         ;
-             Result = ShellResult
-         )),
-        Error,
-        Result = error(nix_error(Error))
-    ).
-
-% Search with custom flake
-register_spell(
-    perceive(nix(search)),
-    input(nix(search(flake('Flake'), query('Query')))),
-    output(either(
-        ok(search_results('Results')),
-        error(nix_error('Reason'))
-    )),
-    docstring("Search for packages in a specific flake. Flake: flake reference, Query: search term(s).")
-).
-
-cast(perceive(nix(search(Flake, Query))), Result) :-
-    catch(
-        (format(atom(FlakeQuery), '~w#~w', [Flake, Query]),
-         Args = ["nix", "search", FlakeQuery],
-         magic_cast(conjure(shell(Args)), ShellResult),
-         (ShellResult = ok(result(Results, _)) ->
-             Result = ok(search_results(Results))
-         ;
-             Result = ShellResult
-         )),
-        Error,
-        Result = error(nix_error(Error))
-    ).
-
-docstring(nix(run),
-    "Run a Nix application. Installable: package/flake to run, Args: arguments to pass."
-).
-
-% Run conjure spell
-register_spell(
-    conjure(nix(run)),
-    input(nix(run(installable('Installable'), args('Args')))),
-    output(either(
-        ok(result(stdout('StdOut'), stderr('StdErr'))),
-        error(run_error(exit('ExitCode'), stderr('StdErr')))
-    )),
-    docstring("Run a Nix application. Installable: package/flake to run, Args: arguments to pass.")
-).
-
-cast(conjure(nix(run(Installable))), RetVal) :-
-    Args = ["nix", "run", Installable],
-    magic_cast(conjure(shell(Args, interactive)), RetVal).
-
-% Run with arguments
-register_spell(
-    conjure(nix(run)),
-    input(nix(run(installable('Installable'), args('Args')))),
-    output(either(
-        ok(result(stdout('StdOut'), stderr('StdErr'))),
-        error(run_error(exit('ExitCode'), stderr('StdErr')))
-    )),
-    docstring("Run a Nix application with arguments. Installable: package/flake to run, Args: list of arguments to pass.")
-).
-
-cast(conjure(nix(run(Installable, AppArgs))), RetVal) :-
-    flatten([["nix", "run", Installable, "--"], AppArgs], Args),
-    magic_cast(conjure(shell(Args, interactive)), RetVal).
-
-% Build conjure spell
-register_spell(
-    conjure(nix(build)),
-    input(nix(build(target('Target')))),
-    output(either(
-        ok(result(stdout('StdOut'), stderr('StdErr'))),
-        error(build_error(exit('ExitCode'), stderr('StdErr')))
-    )),
-    docstring("Build a Nix flake or derivation. Target: flake reference or installable to build (e.g., '.#default', 'nixpkgs#hello').")
-).
-
-cast(conjure(nix(build(Target))), Result) :-
-    Args = ["nix", "build", Target],
-    magic_cast(conjure(shell(Args)), ShellResult),
-    (ShellResult = ok(result(StdOut, StdErr)) ->
-        Result = ok(result(StdOut, StdErr))
-    ; ShellResult = error(shell_error(_, ExitCode, _StdOut, StdErr)) ->
-        Result = error(build_error(ExitCode, StdErr))
-    ;
-        Result = ShellResult
-    ).
-
-% Store commands
-entity(nix(store)).
-component(nix(store), ctor, gc).
-component(nix(store), ctor, repair).
-component(nix(store), ctor, optimise).
-
-docstring(nix(store),
-    "Manipulate the Nix store - essential for system maintenance. Subcommands: gc, repair, optimise"
-).
-
-docstring(nix(store(gc)),
-    "Garbage collect unused store paths"
-).
-
-% Store gc conjure spell
-register_spell(
-    conjure(nix(store(gc))),
-    input(nix(store(gc))),
-    output(either(
-        ok(result(stdout('StdOut'), stderr('StdErr'))),
-        error(store_error(exit('ExitCode'), stderr('StdErr')))
-    )),
-    docstring("Garbage collect unused store paths")
-).
-
-cast(conjure(nix(store(gc))), RetVal) :-
-    Args = ["nix", "store", "gc"],
-    magic_cast(conjure(shell(Args)), RetVal).
-
-docstring(nix(store(repair)),
-    "Repair corrupted store paths"
-).
-
-% Store repair conjure spell
-register_spell(
-    conjure(nix(store(repair))),
-    input(nix(store(repair(path('Path'))))),
-    output(either(
-        ok(result(stdout('StdOut'), stderr('StdErr'))),
-        error(store_error(exit('ExitCode'), stderr('StdErr')))
-    )),
-    docstring("Repair corrupted store paths")
-).
-
-cast(conjure(nix(store(repair(Path)))), RetVal) :-
-    Args = ["nix", "store", "repair", Path],
-    magic_cast(conjure(shell(Args)), RetVal).
-
-docstring(nix(store(optimise)),
-    "Optimize store by hardlinking identical files"
-).
-
-% Store optimise conjure spell
-register_spell(
-    conjure(nix(store(optimise))),
-    input(nix(store(optimise))),
-    output(either(
-        ok(result(stdout('StdOut'), stderr('StdErr'))),
-        error(store_error(exit('ExitCode'), stderr('StdErr')))
-    )),
-    docstring("Optimize store by hardlinking identical files")
-).
-
-cast(conjure(nix(store(optimise))), RetVal) :-
-    Args = ["nix", "store", "optimise"],
-    magic_cast(conjure(shell(Args)), RetVal).
-
-% Why-depends perception spell
-register_spell(
-    perceive(nix(why_depends)),
-    input(nix(why_depends(pkg1('Pkg1'), pkg2('Pkg2')))),
-    output(either(
-        ok(dependency_chain('Result')),
-        error(nix_error('Reason'))
-    )),
-    docstring("Show why a package has another package in its closure. Essential for understanding dependency chains.")
-).
-
-cast(perceive(nix(why_depends(Pkg1, Pkg2))), Result) :-
-    catch(
-        (Args = ["nix", "why-depends", Pkg1, Pkg2],
-         magic_cast(conjure(shell(Args)), ShellResult),
-         (ShellResult = ok(result(DepResult, _)) ->
-             Result = ok(dependency_info(DepResult))
-         ;
-             Result = ShellResult
-         )),
-        Error,
-        Result = error(nix_error(Error))
-    ).
-
-% Log perception spell
-register_spell(
-    perceive(nix(log)),
-    input(nix(log(installable('Installable')))),
-    output(either(
-        ok(build_log('Result')),
-        error(nix_error('Reason'))
-    )),
-    docstring("Show the build log of specified packages or paths. Essential for debugging build failures.")
-).
-
-cast(perceive(nix(log(Installable))), Result) :-
-    catch(
-        (Args = ["nix", "log", Installable],
-         magic_cast(conjure(shell(Args)), ShellResult),
-         (ShellResult = ok(result(LogResult, _)) ->
-             Result = ok(build_log(LogResult))
-         ;
-             Result = ShellResult
-         )),
-        Error,
-        Result = error(nix_error(Error))
-    ).
-
-component(nix(develop), option(unique), shell_cmd).
-component(nix(develop), option(unique), phase).
-
-entity(nix(develop(phase))).
-docstring(nix(develop(phase)),
-    {|string(_)||
-    Nix flake build phase: unpack / configure / build / check / install / installcheck
-    |}
-).
-
-component(nix(develop(phase)), ctor, unpack      ).
-component(nix(develop(phase)), ctor, configure   ).
-component(nix(develop(phase)), ctor, build       ).
-component(nix(develop(phase)), ctor, check       ).
-component(nix(develop(phase)), ctor, install     ).
-component(nix(develop(phase)), ctor, installcheck).
-
-docstring(nix(develop),
-    "Enters a development environment. Options: shell_cmd(Args) to execute command, phase(Phase) for specific build phase."
-).
-
-% Develop conjure spell
-register_spell(
-    conjure(nix(develop)),
-    input(nix(develop(options('Options')))),
-    output(either(
-        ok(result(stdout('StdOut'), stderr('StdErr'))),
-        error(develop_error(exit('ExitCode'), stderr('StdErr')))
-    )),
-    docstring("Enters a development environment. Options: shell_cmd(Args) to execute command, phase(Phase) for specific build phase.")
-).
-
-cast(conjure(nix(develop(Options))), RetVal) :-
-    % Convert options to args
-    findall(
-        OptionArgs,
-        (
-            member(Option, Options),
-            (Option = shell_cmd(Args) -> OptionArgs = ["--command" | Args]
-            ;Option = phase(Phase) -> OptionArgs = ["--phase", Phase]
-            )
-        ),
-        AllOptionArgs
-    ),
-    flatten([["nix", "develop"] | AllOptionArgs], Args),
-    magic_cast(conjure(shell(Args, interactive)), RetVal).
-
-% Flake commands
-entity(nix(flake)).
-% Removed legacy command ctor - using perceive above
-component(nix(flake), ctor, new).
-docstring(nix(flake), S) :-
-    S = {|string(_)||
-    Represents a Nix flake.
-    Flakes are a concept in Nix for reproducible, composable, and shareable development environments and packages.
-    Refer to `nix(flake(template))` for more information on existing templates.
-    |}.
+% === TEMPLATE SYSTEM ===
 
 % Template tools executables
 component(nix(flake), templates_tools, tools(GetCmd, InitCmd)) :-
@@ -576,16 +295,7 @@ component(nix(flake), templates_tools, tools(GetCmd, InitCmd)) :-
     directory_file_path(ToolsPath, 'getGrimoireTemplates', GetCmd),
     directory_file_path(ToolsPath, 'initGrimoireTemplate', InitCmd).
 
-entity(nix(flake(template))).
-docstring(nix(flake(template)),
-   {|string(_)||
-   Nix flake templates that can be used to initialize projects.
-   Format: nix(flake(template(TemplateId)))
-   You can find the existing templates through the `instance` component
-   of `nix(flake(template))`: `component(nix(flake), instance, Templates)`.
-   |}).
-
-%% memoize the one–time JSON fetch
+% Memoize the one-time JSON fetch - DO NOT TOUCH
 :- table nix_flake_templates/1.
 nix_flake_templates(Pairs) :-
     component(nix(flake), templates_tools, tools(GetCmd, _InitCmd)),
@@ -597,12 +307,12 @@ nix_flake_templates(Pairs) :-
         throw(error(template_fetch_failed(Result)))
     ).
 
-%% component/3 now yields one template/2 per backtrack
+% Component yields one template per backtrack - DO NOT TOUCH
 component(nix(flake(template)), instance, nix(flake(template(Id))))  :-
     nix_flake_templates(Pairs),
     member(Id-_V, Pairs).
 
-%% entity/1 and docstring/2 for nix(flake(template(Id)))
+% Entity and docstring for templates - DO NOT TOUCH
 entity(nix(flake(template(Id)))) :-
     nix_flake_templates(Pairs),
     member(Id-_, Pairs).
@@ -612,11 +322,341 @@ docstring(nix(flake(template(Id))), Desc) :-
     member(Id-V, Pairs),
     Desc = V.description.
 
-docstring(nix(flake(new)),
-    "Initialize a new flake from template. TemplateId: template ID (default: none), DestPath: where to create the new flake."
+% === PHASE 3: DSL PATTERNS ===
+
+% Flake declaration schema with expansion
+component(Entity, has(nix(flake)), nix(flake(ref(FlakeRef))))
+    ==> component(Entity, nix_flake_ref, FlakeRef).
+
+% Build target declaration expansion
+component(Entity, has(nix(build_target)), nix(build_target(Target)))
+    ==> component(Entity, nix_build_target_path, Target),
+        component(Entity, nix_build_target_buildable, true).
+
+% Dev environment declaration expansion
+component(Entity, has(nix(dev_env)), nix(dev_env(shell(Shell))))
+    ==> component(Entity, nix_dev_env_shell, Shell),
+        component(Entity, nix_dev_env_available, true).
+
+% === DYNAMIC COMPONENT GENERATION RULES ===
+
+% These are NOT wrapped in ==> because they're generation rules querying external state
+% They dynamically discover components from OS reality (nix flake show output)
+
+% Flake targets - dynamic discovery from nix flake show
+component(Entity, nix_flake_targets, Targets) :-
+    component(Entity, nix_flake_ref, FlakeRef),
+    get_nix_flake_targets(FlakeRef, Targets).
+
+% Apps list generation from targets
+component(Entity, nix_flake_apps, Apps) :-
+    component(Entity, nix_flake_targets, Targets),
+    findall(App, (member(nix(target(app(_, AttrPath))), Targets), App = AttrPath), Apps).
+
+% Packages list generation from targets
+component(Entity, nix_flake_packages, Packages) :-
+    component(Entity, nix_flake_targets, Targets),
+    findall(Pkg, (member(nix(target(package(_, AttrPath))), Targets), Pkg = AttrPath), Packages).
+
+% Dev shells list generation from targets
+component(Entity, nix_flake_dev_shells, DevShells) :-
+    component(Entity, nix_flake_targets, Targets),
+    findall(Shell, (member(nix(target(devShell(_, AttrPath))), Targets), Shell = AttrPath), DevShells).
+
+% === PHASE 3: LEAF VERIFICATIONS ===
+
+% Flake ref verification with filesystem checks for local paths
+component(_, nix_flake_ref, Ref)
+    :: (atom(Ref) ; string(Ref)),
+       (Ref = '' -> throw(verification_error(nix, empty_flake_ref)) ; true),
+       (   % Local path check (. or ./ or /)
+           (atom_concat('./', _, Ref) ; atom_concat('/', _, Ref) ; Ref = '.')
+       ->  % Verify flake.nix exists
+           (atom(Ref) -> RefPath = Ref ; atom_string(RefPath, Ref)),
+           atom_concat(RefPath, '/flake.nix', FlakePath),
+           (exists_file(FlakePath) ->
+               true
+           ;
+               throw(verification_error(nix, flake_path_not_found(Ref)))
+           )
+       ;   % URL or flake registry reference - no filesystem check
+           true
+       ).
+
+% Targets list verification
+component(_, nix_flake_targets, Targets)
+    :: is_list(Targets).
+
+% Apps list verification
+component(_, nix_flake_apps, Apps)
+    :: is_list(Apps).
+
+% Packages list verification
+component(_, nix_flake_packages, Packages)
+    :: is_list(Packages).
+
+% Dev shells list verification
+component(_, nix_flake_dev_shells, DevShells)
+    :: is_list(DevShells).
+
+% Build target path verification
+component(_, nix_build_target_path, Target)
+    :: (atom(Target) ; string(Target)),
+       validate_build_target_syntax(Target).
+
+% Dev shell path verification
+component(_, nix_dev_env_shell, Shell)
+    :: (atom(Shell) ; string(Shell)),
+       validate_dev_shell_syntax(Shell).
+
+% === VALIDATION HELPERS ===
+
+% Validate build target syntax (flake reference or attribute path)
+validate_build_target_syntax(Target) :-
+    (atom(Target) -> T = Target ; atom_string(T, Target)),
+    % Valid forms: .#attr, path#attr, flakeref#attr, or just attr, or /nix/store/...
+    (atom_concat(_, '#', T) ; sub_atom(T, 0, 5, _, '/nix/') ; atom(T)).
+
+% Validate dev shell syntax (similar to build target)
+validate_dev_shell_syntax(Shell) :-
+    (atom(Shell) -> S = Shell ; atom_string(S, Shell)),
+    (atom_concat(_, '#', S) ; atom(S)).
+
+% === PHASE 3: SPELL IMPLEMENTATIONS ===
+
+% Search for packages in nixpkgs
+register_spell(
+    perceive(nix(search)),
+    input(nix(search(query('Query')))),
+    output(either(
+        ok(search_results('Results')),
+        error(nix_error('Reason'))
+    )),
+    "Search for packages in nixpkgs. Query: search term(s).",
+    [],
+    implementation(perceive(nix(search(Query))), Result, (
+        catch(
+            (format(atom(FlakeQuery), 'nixpkgs#~w', [Query]),
+             Args = ["nix", "search", FlakeQuery],
+             magic_cast(conjure(shell(Args)), ShellResult),
+             (ShellResult = ok(result(Results, _)) ->
+                 Result = ok(search_results(Results))
+             ;
+                 Result = ShellResult
+             )),
+            Error,
+            Result = error(nix_error(Error))
+        )
+    ))
 ).
 
-% Flake new conjure spell
+% Search with custom flake
+register_spell(
+    perceive(nix(search_flake)),
+    input(nix(search_flake(flake('Flake'), query('Query')))),
+    output(either(
+        ok(search_results('Results')),
+        error(nix_error('Reason'))
+    )),
+    "Search for packages in a specific flake. Flake: flake reference, Query: search term(s).",
+    [],
+    implementation(perceive(nix(search_flake(Flake, Query))), Result, (
+        catch(
+            (format(atom(FlakeQuery), '~w#~w', [Flake, Query]),
+             Args = ["nix", "search", FlakeQuery],
+             magic_cast(conjure(shell(Args)), ShellResult),
+             (ShellResult = ok(result(Results, _)) ->
+                 Result = ok(search_results(Results))
+             ;
+                 Result = ShellResult
+             )),
+            Error,
+            Result = error(nix_error(Error))
+        )
+    ))
+).
+
+% Run a Nix application
+register_spell(
+    conjure(nix(run)),
+    input(nix(run(installable('Installable')))),
+    output(either(
+        ok(result(stdout('StdOut'), stderr('StdErr'))),
+        error(run_error(exit('ExitCode'), stderr('StdErr')))
+    )),
+    "Run a Nix application. Installable: package/flake to run.",
+    [],
+    implementation(conjure(nix(run(Installable))), RetVal, (
+        Args = ["nix", "run", Installable],
+        magic_cast(conjure(shell(Args, interactive)), RetVal)
+    ))
+).
+
+% Run with arguments
+register_spell(
+    conjure(nix(run_with_args)),
+    input(nix(run_with_args(installable('Installable'), args('Args')))),
+    output(either(
+        ok(result(stdout('StdOut'), stderr('StdErr'))),
+        error(run_error(exit('ExitCode'), stderr('StdErr')))
+    )),
+    "Run a Nix application with arguments. Installable: package/flake to run, Args: list of arguments to pass.",
+    [],
+    implementation(conjure(nix(run_with_args(Installable, AppArgs))), RetVal, (
+        flatten([["nix", "run", Installable, "--"], AppArgs], Args),
+        magic_cast(conjure(shell(Args, interactive)), RetVal)
+    ))
+).
+
+% Build a Nix target
+register_spell(
+    conjure(nix(build)),
+    input(nix(build(target('Target')))),
+    output(either(
+        ok(result(stdout('StdOut'), stderr('StdErr'))),
+        error(build_error(exit('ExitCode'), stderr('StdErr')))
+    )),
+    "Build a Nix flake or derivation. Target: flake reference or installable to build (e.g., '.#default', 'nixpkgs#hello').",
+    [],
+    implementation(conjure(nix(build(Target))), Result, (
+        Args = ["nix", "build", Target],
+        magic_cast(conjure(shell(Args)), ShellResult),
+        (ShellResult = ok(result(StdOut, StdErr)) ->
+            Result = ok(result(StdOut, StdErr))
+        ; ShellResult = error(shell_error(_, ExitCode, _StdOut, StdErr)) ->
+            Result = error(build_error(ExitCode, StdErr))
+        ;
+            Result = ShellResult
+        )
+    ))
+).
+
+% Store garbage collection
+register_spell(
+    conjure(nix(store(gc))),
+    input(nix(store(gc))),
+    output(either(
+        ok(result(stdout('StdOut'), stderr('StdErr'))),
+        error(store_error(exit('ExitCode'), stderr('StdErr')))
+    )),
+    "Garbage collect unused store paths",
+    [],
+    implementation(conjure(nix(store(gc))), RetVal, (
+        Args = ["nix", "store", "gc"],
+        magic_cast(conjure(shell(Args)), RetVal)
+    ))
+).
+
+% Store repair
+register_spell(
+    conjure(nix(store(repair))),
+    input(nix(store(repair(path('Path'))))),
+    output(either(
+        ok(result(stdout('StdOut'), stderr('StdErr'))),
+        error(store_error(exit('ExitCode'), stderr('StdErr')))
+    )),
+    "Repair corrupted store paths",
+    [],
+    implementation(conjure(nix(store(repair(Path)))), RetVal, (
+        Args = ["nix", "store", "repair", Path],
+        magic_cast(conjure(shell(Args)), RetVal)
+    ))
+).
+
+% Store optimise
+register_spell(
+    conjure(nix(store(optimise))),
+    input(nix(store(optimise))),
+    output(either(
+        ok(result(stdout('StdOut'), stderr('StdErr'))),
+        error(store_error(exit('ExitCode'), stderr('StdErr')))
+    )),
+    "Optimize store by hardlinking identical files",
+    [],
+    implementation(conjure(nix(store(optimise))), RetVal, (
+        Args = ["nix", "store", "optimise"],
+        magic_cast(conjure(shell(Args)), RetVal)
+    ))
+).
+
+% Why-depends query
+register_spell(
+    perceive(nix(why_depends)),
+    input(nix(why_depends(pkg1('Pkg1'), pkg2('Pkg2')))),
+    output(either(
+        ok(dependency_chain('Result')),
+        error(nix_error('Reason'))
+    )),
+    "Show why a package has another package in its closure. Essential for understanding dependency chains.",
+    [],
+    implementation(perceive(nix(why_depends(Pkg1, Pkg2))), Result, (
+        catch(
+            (Args = ["nix", "why-depends", Pkg1, Pkg2],
+             magic_cast(conjure(shell(Args)), ShellResult),
+             (ShellResult = ok(result(DepResult, _)) ->
+                 Result = ok(dependency_info(DepResult))
+             ;
+                 Result = ShellResult
+             )),
+            Error,
+            Result = error(nix_error(Error))
+        )
+    ))
+).
+
+% Build log query
+register_spell(
+    perceive(nix(log)),
+    input(nix(log(installable('Installable')))),
+    output(either(
+        ok(build_log('Result')),
+        error(nix_error('Reason'))
+    )),
+    "Show the build log of specified packages or paths. Essential for debugging build failures.",
+    [],
+    implementation(perceive(nix(log(Installable))), Result, (
+        catch(
+            (Args = ["nix", "log", Installable],
+             magic_cast(conjure(shell(Args)), ShellResult),
+             (ShellResult = ok(result(LogResult, _)) ->
+                 Result = ok(build_log(LogResult))
+             ;
+                 Result = ShellResult
+             )),
+            Error,
+            Result = error(nix_error(Error))
+        )
+    ))
+).
+
+% Develop environment
+register_spell(
+    conjure(nix(develop)),
+    input(nix(develop(options('Options')))),
+    output(either(
+        ok(result(stdout('StdOut'), stderr('StdErr'))),
+        error(develop_error(exit('ExitCode'), stderr('StdErr')))
+    )),
+    "Enters a development environment. Options: shell_cmd(Args) to execute command, phase(Phase) for specific build phase.",
+    [],
+    implementation(conjure(nix(develop(Options))), RetVal, (
+        % Convert options to args
+        findall(
+            OptionArgs,
+            (
+                member(Option, Options),
+                (Option = shell_cmd(Args) -> OptionArgs = ["--command" | Args]
+                ;Option = phase(Phase) -> OptionArgs = ["--phase", Phase]
+                )
+            ),
+            AllOptionArgs
+        ),
+        flatten([["nix", "develop"] | AllOptionArgs], Args),
+        magic_cast(conjure(shell(Args, interactive)), RetVal)
+    ))
+).
+
+% Flake new - initialize from template
 register_spell(
     conjure(nix(flake(new))),
     input(nix(flake(new(template_id('TemplateId'), dest_path('DestPath'))))),
@@ -624,27 +664,24 @@ register_spell(
         ok(template_initialized('TemplateId', 'DestPath')),
         error(nix_error('Reason'))
     )),
-    docstring("Initialize a new flake from template. TemplateId: template ID (default: none), DestPath: where to create the new flake.")
+    "Initialize a new flake from template. TemplateId: template ID (default: none), DestPath: where to create the new flake.",
+    [],
+    implementation(conjure(nix(flake(new(TemplateId, DestPath)))), RetVal, (
+        component(nix(flake), templates_tools, tools(_GetCmd, InitCmd)),
+        ( TemplateId = none -> TId = "default" ; atom_string(TemplateId, TId) ),
+        atom_string(DestPath, DestPathStr),
+        magic_cast(conjure(shell([InitCmd, TId, DestPathStr])), Result),
+        (Result = ok(result(_Stdout, _Stderr)) ->
+            RetVal = ok(template_initialized(TemplateId, DestPath))
+        ; Result = error(Error) ->
+            RetVal = error(nix_error(Error))
+        ;
+            RetVal = error(nix_error(unexpected_result))
+        )
+    ))
 ).
 
-cast(conjure(nix(flake(new(TemplateId, DestPath)))), RetVal) :-
-    component(nix(flake), templates_tools, tools(_GetCmd, InitCmd)),
-    ( TemplateId = none -> TId = "default" ; atom_string(TemplateId, TId) ),
-    atom_string(DestPath, DestPathStr),
-    magic_cast(conjure(shell([InitCmd, TId, DestPathStr])), Result),
-    (Result = ok(result(_Stdout, _Stderr)) ->
-        % shell already checked exit code - if we got ok(), command succeeded
-        % stderr contains informational output like "wrote: /path/file"
-        RetVal = ok(template_initialized(TemplateId, DestPath))
-    ; Result = error(Error) ->
-        RetVal = error(nix_error(Error))
-    ;
-        RetVal = error(nix_error(unexpected_result))
-    ).
-
-% === PERCEIVE PREDICATES - Structured Nix Queries ===
-
-% Flake show perception spell
+% Flake show - display flake metadata
 register_spell(
     perceive(nix(flake(show))),
     input(nix(flake(show(ref('FlakeRef'))))),
@@ -652,20 +689,21 @@ register_spell(
         ok(flake_info(apps('Apps'), packages('Packages'), dev_shells('DevShells'))),
         error(nix_error('Reason'))
     )),
-    docstring("Show flake metadata, apps, and packages. FlakeRef: flake reference (path or URL).")
+    "Show flake metadata, apps, and packages. FlakeRef: flake reference (path or URL).",
+    [],
+    implementation(perceive(nix(flake(show(FlakeRef)))), Result, (
+        catch(
+            (get_nix_flake_targets(FlakeRef, Targets),
+             partition_flake_targets(Targets, Apps, Packages, DevShells),
+             Result = ok(flake_info(apps(Apps), packages(Packages), dev_shells(DevShells)))
+            ),
+            Error,
+            Result = error(nix_error(Error))
+        )
+    ))
 ).
 
-cast(perceive(nix(flake(show(FlakeRef)))), Result) :-
-    catch(
-        (get_nix_flake_targets(FlakeRef, Targets),
-         partition_flake_targets(Targets, Apps, Packages, DevShells),
-         Result = ok(flake_info(apps(Apps), packages(Packages), dev_shells(DevShells)))
-        ),
-        Error,
-        Result = error(nix_error(Error))
-    ).
-
-% Partition flake targets by type
+% Helper: Partition flake targets by type
 partition_flake_targets([], [], [], []).
 partition_flake_targets([Target|Rest], Apps, Packages, DevShells) :-
     partition_flake_targets(Rest, RestApps, RestPackages, RestDevShells),
@@ -687,15 +725,7 @@ partition_flake_targets([Target|Rest], Apps, Packages, DevShells) :-
         DevShells = RestDevShells
     ).
 
-% === TEMPLATE SYSTEM ===
-
-docstring(nix(templates),
-    "Grimoire project templates from grimoire-templates flake. Use perceive(nix(templates)) to list available templates.").
-
-docstring(nix(template(init)),
-    "Initialize a new project from a Grimoire template. Use conjure(nix(template(init(TemplateId, ProjectDir)))) to create a project.").
-
-% List available Grimoire templates
+% List Grimoire templates
 register_spell(
     perceive(nix(templates)),
     input(nix(templates)),
@@ -703,20 +733,21 @@ register_spell(
         ok(templates('TemplateList')),
         error(nix_error('Reason'))
     )),
-    docstring("List available Grimoire project templates from grimoire-templates flake.")
+    "List available Grimoire project templates from grimoire-templates flake.",
+    [],
+    implementation(perceive(nix(templates)), Result, (
+        catch(
+            (magic_cast(conjure(shell(["getGrimoireTemplates"])), ShellResult),
+             (ShellResult = ok(result(JsonOutput, _)) ->
+                 atom_json_dict(JsonOutput, Dict, []),
+                 get_dict(templates, Dict, TemplatesDict),
+                 dict_keys(TemplatesDict, TemplateList),
+                 Result = ok(templates(TemplateList))
+             ;
+                 Result = error(nix_error(failed_to_get_templates))
+             )),
+            Error,
+            Result = error(nix_error(Error))
+        )
+    ))
 ).
-
-cast(perceive(nix(templates)), Result) :-
-    catch(
-        (magic_cast(conjure(shell(["getGrimoireTemplates"])), ShellResult),
-         (ShellResult = ok(result(JsonOutput, _)) ->
-             atom_json_dict(JsonOutput, Dict, []),
-             get_dict(templates, Dict, TemplatesDict),
-             dict_keys(TemplatesDict, TemplateList),
-             Result = ok(templates(TemplateList))
-         ;
-             Result = error(nix_error(failed_to_get_templates))
-         )),
-        Error,
-        Result = error(nix_error(Error))
-    ).

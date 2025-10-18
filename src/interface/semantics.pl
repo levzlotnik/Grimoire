@@ -128,155 +128,210 @@ ensure_local_project_loaded(ProjectEntity) :-
 % === INTERFACE COMMAND IMPLEMENTATIONS ===
 
 % Component types listing
-register_spell(conjure(interface(compt)), input(interface(compt)), output(ok(component_types('Entity', 'TypeList'))), docstring("Query component types")).
-cast(conjure(interface(compt)), RetVal) :-
-    current_entity(Entity),
-    interface_compt(Entity, Types),
-    RetVal = ok(component_types(Entity, Types)).
+register_spell(
+    conjure(interface(compt)),
+    input(interface(compt)),
+    output(ok(component_types('Entity', 'TypeList'))),
+    "Query component types for current entity",
+    [],
+    implementation(conjure(interface(compt)), RetVal, (
+        current_entity(Entity),
+        interface_compt(Entity, Types),
+        RetVal = ok(component_types(Entity, Types))
+    ))
+).
 
-cast(conjure(interface(compt(EntityPath))), RetVal) :-
-    resolve_entity_path(EntityPath, Entity),
-    interface_compt(Entity, Types),
-    RetVal = ok(component_types(Entity, Types)).
+register_spell(
+    conjure(interface(compt('E'))),
+    input(interface(compt(entity_path('EntityPath')))),
+    output(ok(component_types('Entity', 'TypeList'))),
+    "Query component types for specified entity",
+    [],
+    implementation(conjure(interface(compt(EntityPath))), RetVal, (
+        resolve_entity_path(EntityPath, Entity),
+        interface_compt(Entity, Types),
+        RetVal = ok(component_types(Entity, Types))
+    ))
+).
 
 % Component listing with new argument order: entity first, then type
-register_spell(conjure(interface(comp('E','T'))), input(interface(comp('E','T'))), output(ok(components('E','T','List'))), docstring("Query components")).
-cast(conjure(interface(comp(EntityPath, Type))), RetVal) :-
-    resolve_entity_path(EntityPath, Entity),
-    interface_comp(Entity, Type, Components),
-    RetVal = ok(components(Entity, Type, Components)).
+register_spell(
+    conjure(interface(comp('E','T'))),
+    input(interface(comp(entity_path('EntityPath'), type('Type')))),
+    output(ok(components('Entity','Type','ComponentList'))),
+    "Query components of specific type for entity",
+    [],
+    implementation(conjure(interface(comp(EntityPath, Type))), RetVal, (
+        resolve_entity_path(EntityPath, Entity),
+        interface_comp(Entity, Type, Components),
+        RetVal = ok(components(Entity, Type, Components))
+    ))
+).
 
 % Documentation retrieval
-register_spell(conjure(interface(doc)), input(interface(doc)), output(ok(documentation('Entity', 'Doc'))), docstring("Get documentation")).
-cast(conjure(interface(doc)), RetVal) :-
-    current_entity(Entity),
-    interface_doc(Entity, Doc),
-    RetVal = ok(documentation(Entity, Doc)).
+register_spell(
+    conjure(interface(doc)),
+    input(interface(doc)),
+    output(ok(documentation('Entity', 'Doc'))),
+    "Get documentation for current entity",
+    [],
+    implementation(conjure(interface(doc)), RetVal, (
+        current_entity(Entity),
+        interface_doc(Entity, Doc),
+        RetVal = ok(documentation(Entity, Doc))
+    ))
+).
 
-cast(conjure(interface(doc(Entity))), RetVal) :-
-    interface_doc(Entity, Doc),
-    RetVal = ok(documentation(Entity, Doc)).
+register_spell(
+    conjure(interface(doc('E'))),
+    input(interface(doc(entity('Entity')))),
+    output(ok(documentation('Entity', 'Doc'))),
+    "Get documentation for specified entity",
+    [],
+    implementation(conjure(interface(doc(Entity))), RetVal, (
+        interface_doc(Entity, Doc),
+        RetVal = ok(documentation(Entity, Doc))
+    ))
+).
 
 % Entities listing
-register_spell(conjure(interface(entities)), input(interface(entities)), output(ok(entities('EntityList'))), docstring("List all entities")).
-cast(conjure(interface(entities)), RetVal) :-
-    interface_entities(Entities),
-    RetVal = ok(entities(Entities)).
+register_spell(
+    conjure(interface(entities)),
+    input(interface(entities)),
+    output(ok(entities('EntityList'))),
+    "List all entities in the system",
+    [],
+    implementation(conjure(interface(entities)), RetVal, (
+        interface_entities(Entities),
+        RetVal = ok(entities(Entities))
+    ))
+).
 
 % REPL command - delegate to existing implementation
 register_spell(
     conjure(interface(repl)),
     input(interface(repl)),
     output(either(ok(repl_completed), error(repl_failed('Error')))),
-    docstring("Start interactive REPL with context awareness")
+    "Start interactive REPL with context awareness",
+    [],
+    implementation(conjure(interface(repl)), RetVal, (
+        catch(
+            (grimoire_ensure_loaded('@/src/repl.pl'), grimoire_repl_command, RetVal = ok(repl_completed)),
+            Error,
+            RetVal = error(repl_failed(Error))
+        )
+    ))
 ).
-cast(conjure(interface(repl)), RetVal) :-
-    % Load and call existing REPL functionality
-    catch(
-        (grimoire_ensure_loaded('@/src/repl.pl'), grimoire_repl_command, RetVal = ok(repl_completed))
-    ,
-        Error,
-        RetVal = error(repl_failed(Error))
-    ).
 
 % Test command - delegate to existing implementation
 register_spell(
     conjure(interface(test)),
     input(interface(test)),
     output(either(ok(tests_passed), error(tests_failed('Reason')))),
-    docstring("Run all tests")
+    "Run all tests",
+    [],
+    implementation(conjure(interface(test)), RetVal, (
+        catch(
+            (grimoire_ensure_loaded('@/src/run_tests.pl'), run_all_tests, RetVal = ok(tests_passed)),
+            Error,
+            RetVal = error(tests_failed(Error))
+        )
+    ))
 ).
-cast(conjure(interface(test)), RetVal) :-
-    catch(
-        (grimoire_ensure_loaded('@/src/run_tests.pl'), run_all_tests, RetVal = ok(tests_passed))
-    ,
-        Error,
-        RetVal = error(tests_failed(Error))
-    ).
 
 % Test command with specific test arguments
 register_spell(
-    conjure(interface(test('TestArgs'))),
-    input(interface(test('TestArgs'))),
+    conjure(interface(test('Args'))),
+    input(interface(test(test_args('TestArgs')))),
     output(either(ok(tests_passed), error(tests_failed('Reason')))),
-    docstring("Run tests with optional filtering arguments")
+    "Run tests with optional filtering arguments",
+    [],
+    implementation(conjure(interface(test(TestArgs))), RetVal, (
+        catch(
+            (grimoire_ensure_loaded('@/src/run_tests.pl'),
+             (member('--list', TestArgs) ->
+                 (list_available_tests,
+                  RetVal = ok(tests_listed))
+             ;
+                 (run_specific_tests(TestArgs),
+                  RetVal = ok(tests_passed))
+             )),
+            Error,
+            RetVal = error(tests_failed(Error))
+        )
+    ))
 ).
-cast(conjure(interface(test(TestArgs))), RetVal) :-
-    catch(
-        (grimoire_ensure_loaded('@/src/run_tests.pl'),
-         (member('--list', TestArgs) ->
-             (list_available_tests,
-              RetVal = ok(tests_listed))
-         ;
-             (run_specific_tests(TestArgs),
-              RetVal = ok(tests_passed))
-         ))
-    ,
-        Error,
-        RetVal = error(tests_failed(Error))
-    ).
 
 % Test files command - run tests from specific .plt files
 register_spell(
     conjure(interface(test_files('TestNames', 'FilePaths'))),
-    input(interface(test_files('TestNames', 'FilePaths'))),
+    input(interface(test_files(test_names('TestNames'), file_paths('FilePaths')))),
     output(either(ok(tests_passed), error(tests_failed('Reason')))),
-    docstring("Run tests from specific .plt files")
+    "Run tests from specific .plt files",
+    [],
+    implementation(conjure(interface(test_files(TestNames, FilePaths))), RetVal, (
+        catch(
+            (grimoire_ensure_loaded('@/src/run_tests.pl'),
+             run_test_files(TestNames, FilePaths),
+             RetVal = ok(tests_passed)),
+            Error,
+            RetVal = error(tests_failed(Error))
+        )
+    ))
 ).
-cast(conjure(interface(test_files(TestNames, FilePaths))), RetVal) :-
-    catch(
-        (grimoire_ensure_loaded('@/src/run_tests.pl'),
-         run_test_files(TestNames, FilePaths),
-         RetVal = ok(tests_passed))
-    ,
-        Error,
-        RetVal = error(tests_failed(Error))
-    ).
 
 % Conjure command - execute conjuration spells
 register_spell(
     conjure(interface(conjure('SpellTerm'))),
-    input(interface(conjure('SpellTerm'))),
+    input(interface(conjure(spell_term('SpellTerm')))),
     output('DomainDependentResult'),
-    docstring("Delegate conjure spell to appropriate domain")
+    "Delegate conjure spell to appropriate domain",
+    [],
+    implementation(conjure(interface(conjure(SpellTerm))), RetVal, (
+        magic_cast(conjure(SpellTerm), RetVal)
+    ))
 ).
-cast(conjure(interface(conjure(SpellTerm))), RetVal) :-
-    magic_cast(conjure(SpellTerm), RetVal).
 
 % Perceive command - execute perception spells directly
 register_spell(
     perceive(interface(perceive('QueryTerm'))),
-    input(interface(perceive('QueryTerm'))),
+    input(interface(perceive(query_term('QueryTerm')))),
     output(either(ok(query_succeeded), error(query_failed))),
-    docstring("Delegate perceive query to appropriate domain")
+    "Delegate perceive query to appropriate domain",
+    [],
+    implementation(conjure(interface(perceive(QueryTerm))), RetVal, (
+        magic_cast(perceive(QueryTerm), Result),
+        (Result = ok(_) ->
+            RetVal = ok(query_succeeded)
+        ;
+            RetVal = error(query_failed)
+        )
+    ))
 ).
-cast(conjure(interface(perceive(QueryTerm))), RetVal) :-
-    magic_cast(perceive(QueryTerm), Result),
-    (Result = ok(_) ->
-        RetVal = ok(query_succeeded)
-    ;
-        RetVal = error(query_failed)
-    ).
 
 % Read file command - delegate to fs domain
 register_spell(
     conjure(interface(read_file('FilePath', 'Start', 'End'))),
-    input(interface(read_file('FilePath', 'Start', 'End'))),
+    input(interface(read_file(file_path('FilePath'), start('Start'), end('End')))),
     output(either(ok(lines('ContentWithLineNumbers')), error(read_file_failed))),
-    docstring("Read lines from a file with 1-based indexing (delegated to fs domain)")
+    "Read lines from a file with 1-based indexing (delegated to fs domain)",
+    [],
+    implementation(conjure(interface(read_file(FilePath, Start, End))), RetVal, (
+        magic_cast(perceive(fs(read_file(FilePath, Start, End))), RetVal)
+    ))
 ).
-cast(conjure(interface(read_file(FilePath, Start, End))), RetVal) :-
-    magic_cast(perceive(fs(read_file(FilePath, Start, End))), RetVal).
 
 % Edit file command - delegate to fs domain
 register_spell(
     conjure(interface(edit_file('FilePath', 'Edits'))),
-    input(interface(edit_file('FilePath', 'Edits'))),
+    input(interface(edit_file(file_path('FilePath'), edits('Edits')))),
     output('FsDomainResult'),
-    docstring("Edit file with specified operations (delegated to fs domain)")
+    "Edit file with specified operations (delegated to fs domain)",
+    [],
+    implementation(conjure(interface(edit_file(FilePath, Edits))), RetVal, (
+        magic_cast(conjure(fs(edit_file(file(FilePath), Edits))), RetVal)
+    ))
 ).
-cast(conjure(interface(edit_file(FilePath, Edits))), RetVal) :-
-    magic_cast(conjure(fs(edit_file(file(FilePath), Edits))), RetVal).
 
 % === CORE INTERFACE FUNCTIONS ===
 % These return structured data, no printing

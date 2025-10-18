@@ -2,380 +2,424 @@
 
 ## Executive Summary
 
-Grimoire is a knowledge-based operating system built on Entity-Component-System (ECS) architecture with a mathematically principled **dual kernel**: a generative flow (expansion) and a discriminative flow (verification), unified through composable predicates. The system treats semantic knowledge as first-class entities, stored declaratively in files, with verification against operating system reality.
+Grimoire is a knowledge-based operating system built on a **declarative DSL with term expansion**. You write high-level schemas using operators, and the system automatically generates all verification and expansion code. The core principle: **you never write implementation code manually - the system generates it from your declarations**.
 
-**Current Status**: v0.1.0 - Production-ready core with all subsystems operational. The system passes comprehensive test suites covering ECS semantics, spell execution, domain integrations, and multi-frontend interfaces.
-
----
-
-## Part 1: Core Architecture
-
-### The Fundamental Duality
-
-Grimoire operates on a **generative-discriminative duality**, a pattern inspired by machine learning where:
-
-- **Generative Flow** (Covariant): Expands high-level facts into rich component graphs
-- **Discriminative Flow** (Contravariant): Verifies components exist and match OS reality
-
-```
-ecs_kernel.pl (Generative Kernel)  ⊣  ecs_kernel.plt (Discriminative Kernel)
-            ↓                                    ↓
-    semantics.pl (Expansion)            ⊣   semantics.plt (Verification)
-```
-
-This duality ensures:
-- Everything generated must be verifiable
-- Everything verified must have been generated
-- No inconsistent knowledge can exist in the system
-
-### The ECS Kernel
-
-#### `ecs_kernel.pl` - Generative Kernel
-
-The generative kernel provides the foundational predicates:
-
-```prolog
-% Core ECS predicates
-:- multifile entity/1.
-:- multifile component/3.
-:- multifile docstring/2.
-
-% Self-entity pattern for automatic entity detection
-:- multifile self_entity/1.
-
-% Component integration for baseline predicates
-component(Entity, docstring, Doc) :-
-    docstring(Entity, Doc).
-
-component(Entity, defined, true) :-
-    entity(Entity).
-
-% Entity registry
-component(entity_registry, entity, Entity) :-
-    entity(Entity).
-```
-
-**Loading Mechanism:**
-
-```prolog
-% Single-arity loading API
-load_entity(semantic(folder(Path))) :- ...
-load_entity(semantic(file(Path))) :- ...
-
-% Self-entity auto-detection
-% Detects semantic source from prolog_load_context/2
-% Creates component(Entity, self, semantic(file/folder(...))) automatically
-```
-
-#### `ecs_kernel.plt` - Discriminative Kernel
-
-The discriminative kernel provides composable verification through `please_verify/1`:
-
-```prolog
-% The composable verification primitive with hooks and grounding
-please_verify(component(A, B, C)) :-
-    component(A, B, C),                    % Component exists (may unify vars)
-    ground(component(A, B, C)),            % NOW ground after unification
-    verify_pre_hooks(component(A, B, C)),
-    verify(component(A, B, C)), !,         % Try domain verification
-    verify_post_hooks(component(A, B, C)).
-
-please_verify(component(A, B, C)) :-
-    component(A, B, C),                    % Base case - existence is enough
-    ground(component(A, B, C)).            % Ground after unification
-
-please_verify(component(A, B, C)) :-
-    \+ component(A, B, C),                 % Component doesn't exist
-    format(string(E), "Component not found: ~w", [component(A, B, C)]),
-    throw(verification_error(missing_component, E)).
-```
-
-**Key Properties:**
-
-1. **Free Existence Proofs**: When `verify/1` is called, `component(A, B, C)` is already proven
-2. **Grounding Requirement**: All terms must be ground (no uninstantiated variables)
-3. **Hook Infrastructure**: Extensible behavior through pre/post hooks
-4. **Composability**: `please_verify` calls can be nested and composed
+**Current Status**: v0.1.0 - Production-ready core with declarative DSL, term expansion, and comprehensive domain integrations.
 
 ---
 
-## Part 2: Domain Pattern
+## Core Principle: Declarative DSL
 
-Every domain in Grimoire follows an identical pattern, creating consistency across the system.
+### The Most Important Rule
 
-### Domain Generative Flow (`semantics.pl`)
+**YOU NEVER WRITE `verify/1` MANUALLY. EVER.**
 
-**Structure:**
+Instead, you use the `::` operator to declare verification constraints:
+
 ```prolog
-:- self_entity(domain).
+% ✅ CORRECT - Declarative DSL with :: operator
+component(_E, git_repository_root, Root)
+    :: atom(Root),
+       exists_directory(Root).
 
-% Entity declarations for domain concepts
-entity(domain(concept1)).
-entity(domain(concept2)).
-
-% Documentation
-docstring(domain, "Domain description").
-
-% Component expansion rules: has(domain(...)) → rich components
-component(Entity, domain_prop1, Value) :-
-    component(Entity, has(domain(fact)), domain(fact(Spec))),
-    member(prop1(Value), Spec).
-
-component(Entity, domain_prop2, Value) :-
-    component(Entity, has(domain(fact)), domain(fact(Spec))),
-    derive_prop2(Spec, Value).
+% ❌ FORBIDDEN - Never write verify/1 manually
+verify(component(_E, git_repository_root, Root)) :-
+    atom(Root),
+    exists_directory(Root).
 ```
 
-**The `has(domain(...))` Pattern:**
+The `::` operator is processed by **term expansion** at compile time, automatically generating the `verify/1` clause.
 
-Users declare high-level facts using `has(domain(...))`:
+### Term Expansion Architecture
+
+Grimoire's power comes from automatic code generation through term expansion:
 
 ```prolog
-% User declares this
-component(my_project, has(git(repository)), git(repository([
-    remote(origin, 'https://github.com/user/repo'),
-    branch(main),
-    root('/path/to/repo')
-]))).
+% You write this declarative schema
+component(_E, db_sqlite_file, File)
+    :: (atom(File) ; string(File)),
+       atom_string(File, FileStr),
+       exists_file(FileStr).
+
+% Term expansion automatically generates this at compile time
+verify(component(_E, db_sqlite_file, File)) :-
+    (atom(File) ; string(File)),
+    atom_string(File, FileStr),
+    exists_file(FileStr).
 ```
 
-The domain **expands** this into queryable properties:
+**Benefits:**
+- No boilerplate code
+- Type-safe by construction
+- Self-documenting schemas
+- Impossible to forget verification logic
+
+---
+
+## Part 1: The Two Operators
+
+Grimoire provides two fundamental operators for declarative specification:
+
+### `::` - Verification Constraints
+
+The `::` operator declares "this component must satisfy these constraints":
 
 ```prolog
-% Domain provides these expansions
-component(Entity, git_repository_remote_name, origin) :-
-    component(Entity, has(git(repository)), git(repository(Spec))),
-    member(remote(origin, _), Spec).
+% Simple type constraint
+component(_E, project_name, Name)
+    :: atom(Name).
 
-component(Entity, git_repository_remote_url, URL) :-
+% Complex OS reality check
+component(_E, git_repository_remote_url, URL)
+    :: atom(URL),
+       atom_string(URL, URLStr),
+       valid_git_url(URLStr).
+
+% Conjunction of multiple constraints
+component(_E, db_sqlite_database, DB)
+    :: atom(DB),
+       exists_file(DB),
+       sqlite_database_valid(DB).
+```
+
+**Generated Code:**
+
+Each `::` declaration automatically generates a `verify/1` clause with the exact same body:
+
+```prolog
+verify(component(_E, project_name, Name)) :-
+    atom(Name).
+
+verify(component(_E, git_repository_remote_url, URL)) :-
+    atom(URL),
+    atom_string(URL, URLStr),
+    valid_git_url(URLStr).
+```
+
+### `==>` - Component Expansion
+
+The `==>` operator declares "this high-level fact expands to these queryable properties":
+
+```prolog
+% High-level git repository declaration expands to multiple properties
+component(Entity, has(git(repository)), git(repository(Spec)))
+    ==> [
+        component(Entity, git_repository_root, Root) :-
+            member(root(Root), Spec),
+
+        component(Entity, git_repository_branch, Branch) :-
+            member(branch(Branch), Spec),
+
+        component(Entity, git_repository_remote_url, URL) :-
+            member(remote(_, URL), Spec)
+    ].
+```
+
+**Generated Code:**
+
+The `==>` operator generates multiple component expansion rules:
+
+```prolog
+component(Entity, git_repository_root, Root) :-
     component(Entity, has(git(repository)), git(repository(Spec))),
-    member(remote(_, URL), Spec).
+    member(root(Root), Spec).
 
 component(Entity, git_repository_branch, Branch) :-
     component(Entity, has(git(repository)), git(repository(Spec))),
     member(branch(Branch), Spec).
 
-component(Entity, git_repository_root, Root) :-
+component(Entity, git_repository_remote_url, URL) :-
     component(Entity, has(git(repository)), git(repository(Spec))),
-    member(root(Root), Spec).
+    member(remote(_, URL), Spec).
 ```
-
-### Domain Discriminative Flow (`semantics.plt`)
-
-**Structure:**
-```prolog
-:- use_module(library(plunit)).
-
-% Load test entities from file-based knowledge
-:- load_entity(semantic(file('@/src/tests/domain_test_entities.pl'))).
-
-% High-level fact verification (composite)
-verify(component(Entity, has(domain(fact)), domain(fact(Spec)))) :-
-    % component(...) already proven to exist via please_verify!
-    % Compose primitive verifications
-    please_verify(component(Entity, domain_prop1, DP1)),
-    please_verify(component(Entity, domain_prop2, DP2)),
-    % Then verify the combination against OS reality
-    verify_os_reality_combination(DP1, DP2).
-
-% Primitive verifications (check OS reality)
-verify(component(Entity, domain_prop1, Value)) :-
-    % Already proven: component(Entity, domain_prop1, Value)
-    % Just check OS reality
-    check_os_reality_prop1(Value) -> true
-    ; throw(verification_error(domain, failed_prop1(Value))).
-
-% PLUnit tests
-:- begin_tests(domain_semantics).
-
-test(domain_component_verification) :-
-    % Use user: prefix in tests
-    user:please_verify(component(domain_entity, has(domain(fact)), _)),
-    user:please_verify(component(domain_entity, domain_prop1, _)).
-
-test(domain_spell) :-
-    user:magic_cast(conjure(domain(operation(args))), Result),
-    assertion(Result = ok(_)).
-
-:- end_tests(domain_semantics).
-```
-
-**Verification Layers:**
-
-1. **Composite Verification**: Verifies `has(domain(...))` by composing primitive verifications
-2. **Primitive Verification**: Each expanded property verified against OS reality
-3. **PLUnit Tests**: Comprehensive test coverage using `user:please_verify` and `user:magic_cast`
 
 ---
 
-## Part 3: The Spell System
+## Part 2: The Dual Kernel
+
+Grimoire operates on a **generative-discriminative duality**:
+
+```
+ecs_kernel.pl (Generative)  ⊣  ecs_kernel.plt (Discriminative)
+     ↓                              ↓
+semantics.pl (Expansion)     ⊣  semantics.plt (Verification)
+```
+
+### Generative Flow (Left Side)
+
+The generative flow **expands** high-level facts into rich component graphs:
+
+```prolog
+% User declares high-level fact
+component(my_project, has(git(repository)), git(repository([
+    root('/home/user/my_project'),
+    branch(main),
+    remote(origin, 'https://github.com/user/my_project')
+]))).
+
+% System auto-expands to queryable properties (via ==> operator)
+% - component(my_project, git_repository_root, '/home/user/my_project')
+% - component(my_project, git_repository_branch, main)
+% - component(my_project, git_repository_remote_url, 'https://github.com/user/my_project')
+```
+
+### Discriminative Flow (Right Side)
+
+The discriminative flow **verifies** components against OS reality:
+
+```prolog
+% User declares verification constraints (via :: operator)
+component(_E, git_repository_root, Root)
+    :: atom(Root),
+       exists_directory(Root).
+
+component(_E, git_repository_remote_url, URL)
+    :: atom(URL),
+       valid_git_url(URL).
+
+% System auto-generates verify/1 clauses at compile time
+% verify(component(_E, git_repository_root, Root)) :- ...
+% verify(component(_E, git_repository_remote_url, URL)) :- ...
+```
+
+### Composable Verification
+
+The discriminative flow uses `please_verify/1` for composable verification:
+
+```prolog
+% Composite verification uses please_verify to check all sub-components
+component(Entity, has(git(repository)), git(repository(Spec)))
+    :: please_verify(component(Entity, git_repository_root, _)),
+       please_verify(component(Entity, git_repository_branch, _)),
+       please_verify(component(Entity, git_repository_remote_url, _)).
+```
+
+**What `please_verify/1` does:**
+1. Fetches the component (unifying variables)
+2. Ensures it's grounded (no uninstantiated variables)
+3. Calls `verify/1` if it exists (otherwise succeeds)
+4. Throws if component doesn't exist or verification fails
+
+**Critical: Verify Failure vs Exception Semantics**
+
+Understanding the distinction between failure and exception in `verify/1` is essential:
+
+- **`verify/1` FAILS** = "No verification rule exists for this component" → **Component is valid by default**
+- **`verify/1` THROWS** = "Verification rule exists but component is invalid" → **Component is invalid**
+
+How the `::` operator implements this:
+
+```prolog
+% You write:
+component(_E, db_sqlite_file, File)
+    :: exists_file(File).
+
+% Term expansion generates:
+verify(component(_E, db_sqlite_file, File)) :-
+    (exists_file(File) -> true
+    ; throw(error(verification_failed(component(_E, db_sqlite_file, File)), ...))).
+```
+
+Why `please_verify/1` uses `ignore/1`:
+
+```prolog
+please_verify(component(A, B, C)) :-
+    % ... grounding checks ...
+    ignore(verify(component(A, B, C))).  % Ignore FAILURE, propagate EXCEPTION
+```
+
+- If `verify` **fails** (no rule exists): `ignore` succeeds → component is valid by default
+- If `verify` **throws** (rule exists, check failed): exception propagates → component is invalid
+
+This enables verification **composition** - complex facts verified by composing primitive verifications.
+
+---
+
+## Part 3: Domain Pattern
+
+Every domain follows the same declarative pattern:
+
+### Structure
+
+```
+domain/
+├── semantics.pl        # Generative: expansion with ==> operator
+├── semantics.plt       # Discriminative: verification with :: operator, tests
+└── python_bridge.pl    # (optional) Python integration
+```
+
+### Generative Flow: `semantics.pl`
+
+```prolog
+:- self_entity(git).
+
+% Self-reference for domain metadata
+component(git, self, semantic(folder('@/src/git'))).
+
+% Entities for domain concepts
+entity(git(repository)).
+entity(git(commit)).
+entity(git(branch)).
+
+% Documentation
+docstring(git, "Git repository management and version control operations").
+
+% Component expansion using ==> operator
+component(Entity, has(git(repository)), git(repository(Spec)))
+    ==> [
+        component(Entity, git_repository_root, Root) :-
+            member(root(Root), Spec),
+
+        component(Entity, git_repository_branch, Branch) :-
+            member(branch(Branch), Spec),
+
+        component(Entity, git_repository_remote_url, URL) :-
+            member(remote(_, URL), Spec),
+
+        component(Entity, git_repository_remote_name, Name) :-
+            member(remote(Name, _), Spec)
+    ].
+
+% Spell implementations (discussed later)
+% cast_impl/2 is auto-generated from spell schemas
+```
+
+### Discriminative Flow: `semantics.plt`
+
+```prolog
+:- use_module(library(plunit)).
+
+% Load test entities from file
+:- load_entity(semantic(file('@/src/tests/git_test_entity.pl'))).
+
+% Verification constraints using :: operator
+component(_E, git_repository_root, Root)
+    :: atom(Root),
+       exists_directory(Root).
+
+component(_E, git_repository_remote_url, URL)
+    :: atom(URL),
+       atom_string(URL, URLStr),
+       valid_git_url(URLStr).
+
+component(_E, git_repository_branch, Branch)
+    :: atom(Branch).
+
+% Composite verification using please_verify
+component(Entity, has(git(repository)), git(repository(_Spec)))
+    :: please_verify(component(Entity, git_repository_root, _)),
+       please_verify(component(Entity, git_repository_remote_url, _)),
+       please_verify(component(Entity, git_repository_branch, _)).
+
+% PLUnit tests
+:- begin_tests(git_semantics).
+
+test(git_repository_expansion, [
+    setup(setup_test_repo),
+    cleanup(cleanup_test_repo)
+]) :-
+    user:please_verify(component(test_basic_git, has(git(repository)), _)),
+    user:please_verify(component(test_basic_git, git_repository_root, Root)),
+    assertion(Root = '/tmp/test_repo').
+
+test(git_commit_spell) :-
+    user:magic_cast(conjure(git(commit("test"))), Result),
+    assertion(Result = ok(_)).
+
+:- end_tests(git_semantics).
+
+% Setup/cleanup create ONLY filesystem resources
+setup_test_repo :-
+    make_directory('/tmp/test_repo'),
+    process_create(path(git), ['init'], [cwd('/tmp/test_repo')]).
+
+cleanup_test_repo :-
+    delete_directory_and_contents('/tmp/test_repo').
+```
+
+**Key Points:**
+- All verification uses `::` operator (auto-generates `verify/1`)
+- Tests use `user:please_verify` and `user:magic_cast`
+- Setup/cleanup manipulate ONLY filesystem (never `assertz`/`retract`)
+- Test entities declared in separate `.pl` files
+
+---
+
+## Part 4: The Spell System
+
+Grimoire provides **spells** - typed, composable operations with automatic implementation generation.
 
 ### Spell Categories
 
-Grimoire provides two spell categories inspired by fantasy magic systems:
+- **`conjure`** - State-changing operations (git commit, database insert, file write)
+- **`perceive`** - Read-only operations (git status, database query, file read)
 
-- **`conjure`** - State-changing operations (mutations)
-- **`perceive`** - Read-only operations (queries)
+### Spell Declaration with Automatic Implementation
 
-### Spell Declaration and Invocation
+**YOU NEVER WRITE `cast/2` MANUALLY. EVER.**
 
-#### **`cast/2`** - Spell Implementation (HEAD)
-
-```prolog
-% Declaring a spell implementation
-cast(conjure(git(commit(Message))), Result) :-
-    % Implementation logic
-    ...
-```
-
-#### **`magic_cast/2`** - Spell Invocation (BODY)
+Instead, you declare spell schemas and let term expansion generate `cast_impl/2`:
 
 ```prolog
-% Invoking a spell (correct)
-do_task(Result) :-
-    magic_cast(conjure(git(commit("message"))), Result).
-
-% Invoking a spell (WRONG - bypasses hooks)
-do_task(Result) :-
-    cast(conjure(git(commit("message"))), Result).  % ❌ WRONG!
-```
-
-**Why `magic_cast`?**
-
-```prolog
-magic_cast(Term, Result, CastPreOuts, CastPostOuts) :-
-    ground(Term),  % Ensures all variables instantiated
-    cast_pre_hooks(Term, CastPreOuts),
-    catch(
-        cast(Term, Result),
-        E,
-        Result = error(cast_failed(E))
-    ),
-    cast_post_hooks(Term, CastPostOuts).
-```
-
-**Benefits:**
-- **Grounding Check**: Ensures no uninstantiated variables
-- **Pre/Post Hooks**: Session logging, monitoring, validation
-- **Error Handling**: Standardized error propagation
-- **Atomic Operations**: Integration with transaction system
-
-### Spell Registration - `register_spell/4`
-
-**Every spell MUST be registered immediately above its implementation:**
-
-```prolog
-% Registration with format specification and docstring
-register_spell(
+% ✅ CORRECT - Declarative spell schema
+spell(
     conjure(git(commit)),
     input(git(commit(message('Message')))),
     output(either(
         ok(committed(hash('Hash'))),
         error(commit_failed('Reason'))
     )),
-    docstring("Create a git commit with the given message")
+    "Create a git commit with the given message"
+) :: (
+    % Implementation body goes here
+    string(Message),
+    phrase(git_args(commit(Message)), Args),
+    magic_cast(conjure(executable_program(git, Args)), Result)
 ).
 
-% Implementation immediately follows
-cast(conjure(git(commit(Message))), Result) :-
+% ❌ FORBIDDEN - Never write cast_impl/2 manually
+cast_impl(conjure(git(commit(Message))), Result) :-
+    string(Message),
     phrase(git_args(commit(Message)), Args),
     magic_cast(conjure(executable_program(git, Args)), Result).
 ```
 
-**Auto-Generated Components:**
+**What Term Expansion Generates:**
 
 ```prolog
-% From register_spell/4, system auto-generates:
+% Auto-generates metadata components
 component(conjure, ctor, git(commit)).
-component(git(commit), format_input, git(commit(message('Message')))).
-component(git(commit), format_output, either(ok(committed(hash('Hash'))), error(commit_failed('Reason')))).
-component(git(commit), docstring, "Create a git commit with the given message").
+component(conjure(git(commit)), format_input, input(git(commit(message(_))))).
+component(conjure(git(commit)), format_output, output(either(ok(committed(hash(_))), error(commit_failed(_))))).
+component(conjure(git(commit)), docstring, "Create a git commit with the given message").
+
+% Auto-generates implementation
+cast_impl(conjure(git(commit(Message))), Result) :-
+    string(Message),
+    phrase(git_args(commit(Message)), Args),
+    magic_cast(conjure(executable_program(git, Args)), Result).
 ```
 
-**Benefits:**
-- Self-documenting spell system
-- Type safety through format specifications
-- Introspection capabilities for tooling
-- Automatic constructor registration
+### Spell Invocation vs Implementation
 
----
-
-## Part 4: Composable Verification
-
-### The `please_verify/1` Primitive
-
-`please_verify/1` is the cornerstone of Grimoire's verification system:
+**`cast_impl/2`** - Spell implementation (auto-generated, appears in HEAD)
+**`magic_cast/2`** - Spell invocation (user calls, appears in BODY)
 
 ```prolog
-% Three cases for please_verify:
+% ✅ CORRECT - Invoking a spell
+do_task(Result) :-
+    magic_cast(conjure(git(commit("message"))), Result).
 
-% Case 1: Component exists, is grounded, verify/1 exists and succeeds
-please_verify(component(A, B, C)) :-
-    component(A, B, C),                    % May unify variables
-    ground(component(A, B, C)),            % NOW ground
-    verify_pre_hooks(component(A, B, C)),
-    verify(component(A, B, C)), !,         % Domain verification
-    verify_post_hooks(component(A, B, C)).
-
-% Case 2: Component exists, is grounded, no verify/1 needed
-please_verify(component(A, B, C)) :-
-    component(A, B, C),
-    ground(component(A, B, C)).
-
-% Case 3: Component doesn't exist - error
-please_verify(component(A, B, C)) :-
-    \+ component(A, B, C),
-    throw(verification_error(missing_component, component(A, B, C))).
+% ❌ WRONG - Bypasses hooks and grounding
+do_task(Result) :-
+    cast_impl(conjure(git(commit("message"))), Result).
 ```
 
-### Verification Composition Pattern
-
-**Example - Git Domain:**
-
-```prolog
-% Composite verification using please_verify
-verify(component(Entity, has(git(repository)), git(repository(Spec)))) :-
-    % Component existence already proven by please_verify
-    % Verify all expanded primitive components
-    please_verify(component(Entity, git_repository_remote_url, URL)),
-    please_verify(component(Entity, git_repository_branch, Branch)),
-    please_verify(component(Entity, git_repository_root, Root)),
-    % Then check OS reality
-    exists_directory(Root),
-    git_repository_accessible(URL).
-
-% Primitive verification against OS reality
-verify(component(Entity, git_repository_root, Root)) :-
-    % Component existence proven - just check OS
-    exists_directory(Root) -> true
-    ; throw(verification_error(git, missing_repository(Root))).
-
-verify(component(Entity, git_repository_remote_url, URL)) :-
-    % Validate URL format against OS reality
-    atom_string(URL, URLStr),
-    valid_git_url(URLStr) -> true
-    ; throw(verification_error(git, invalid_url(URL))).
-```
-
-**Pattern:**
-1. Composite `verify/1` uses `please_verify` to check all sub-components
-2. After all sub-components verified, check their combination
-3. Each primitive component has its own `verify/1` checking OS reality
-
-### Cross-Domain Verification
-
-Domains can compose verifications from other domains:
-
-```prolog
-% Project domain composes git + nix verifications
-verify(component(Entity, has(project(app)), project(app(Spec)))) :-
-    please_verify(component(Entity, has(git(repository)), _)),
-    please_verify(component(Entity, has(nix(flake)), _)),
-    please_verify(component(Entity, project_source_dir, SourceDir)),
-    % Verify combination
-    exists_directory(SourceDir),
-    directory_has_source_files(SourceDir).
-```
+**Why `magic_cast/2`?**
+- Ensures terms are grounded (no uninstantiated variables)
+- Executes pre/post hooks (session logging, monitoring)
+- Validates spell exists and is uniquely registered
+- Handles errors consistently
 
 ---
 
@@ -383,9 +427,9 @@ verify(component(Entity, has(project(app)), project(app(Spec)))) :-
 
 ### File-Based Test Entities
 
-**CRITICAL PRINCIPLE: NO `assertz`/`retract` in tests.**
+**CRITICAL: Tests NEVER use `assertz`/`retract` for component/entity facts.**
 
-All test knowledge lives in declarative `.pl` files:
+All test knowledge lives in declarative `.pl` files under `src/tests/`:
 
 ```prolog
 % src/tests/git_test_entity.pl
@@ -403,98 +447,320 @@ component(test_basic_git, has(git(repository)), git(repository([
 
 component(test_basic_git, test_path, '/tmp/test_repo').
 
-% Advanced test entity
 component(test_advanced_git, has(git(repository)), git(repository([
     root('/tmp/advanced_repo'),
-    branch(development),
-    clean(false)
+    branch(development)
 ]))).
 
 docstring(test_entities(git), "Test entities for git domain").
 ```
 
-### Test Implementation Pattern
+### Test Implementation
 
 ```prolog
 % src/git.plt
-:- use_module(library(plunit)).
 :- load_entity(semantic(file('@/src/tests/git_test_entity.pl'))).
 
 :- begin_tests(git_semantics).
 
-% Test component expansion and verification
-test(git_repository_expansion, [
+test(git_component_expansion, [
     setup(setup_test_repo),
     cleanup(cleanup_test_repo)
 ]) :-
-    % Entities already loaded from file - just verify
+    % Test entities already loaded from file
     user:please_verify(component(test_basic_git, has(git(repository)), _)),
     user:please_verify(component(test_basic_git, git_repository_root, Root)),
     assertion(Root = '/tmp/test_repo'),
     user:please_verify(component(test_basic_git, git_repository_branch, Branch)),
     assertion(Branch = main).
 
-% Test spell invocation
-test(git_commit_spell, [
-    setup(setup_test_repo),
-    cleanup(cleanup_test_repo)
-]) :-
-    user:magic_cast(conjure(git(commit("test commit"))), Result),
+test(git_spell_invocation) :-
+    user:magic_cast(conjure(git(commit("test"))), Result),
     assertion(Result = ok(_)).
-
-% Test error conditions
-test(git_invalid_repository) :-
-    catch(
-        user:please_verify(component(nonexistent, git_repository_root, _)),
-        verification_error(missing_component, _),
-        true
-    ).
 
 :- end_tests(git_semantics).
 
-% Setup creates ONLY filesystem resources matching entity declarations
+% Setup/cleanup manipulate ONLY filesystem
 setup_test_repo :-
-    TestPath = '/tmp/test_repo',
-    (exists_directory(TestPath) ->
-        delete_directory_and_contents(TestPath)
-    ; true),
-    make_directory(TestPath),
-    process_create(path(git), ['init'], [cwd(TestPath)]),
-    process_create(path(git), ['config', 'user.name', 'Test'], [cwd(TestPath)]),
-    process_create(path(git), ['config', 'user.email', 'test@example.com'], [cwd(TestPath)]).
+    make_directory('/tmp/test_repo'),
+    process_create(path(git), ['init'], [cwd('/tmp/test_repo')]).
 
-% Cleanup removes ONLY filesystem resources
 cleanup_test_repo :-
-    TestPath = '/tmp/test_repo',
-    (exists_directory(TestPath) ->
-        delete_directory_and_contents(TestPath)
-    ; true).
+    delete_directory_and_contents('/tmp/test_repo').
 ```
 
-### Setup/Cleanup Rules
-
-**What Goes in Setup/Cleanup:**
-- ✅ Creating/deleting directories
-- ✅ Creating/deleting files
-- ✅ Running `process_create(path(git), ['init'], ...)`
-- ✅ Running `process_create(path(sqlite3), ...)`
+**Setup/Cleanup Rules:**
+- ✅ Create/delete directories and files
+- ✅ Run `process_create(path(git), ...)`
+- ✅ Run `process_create(path(sqlite3), ...)`
 - ❌ NEVER `assertz(component(...))`
 - ❌ NEVER `retract(entity(...))`
-- ❌ NEVER `assertz(entity(...))`
+- ❌ NEVER modify ECS state at runtime
 
 **Rationale:**
-- Test entities declared in files are order-independent
+- Test entities in files are order-independent
 - No state pollution between tests
 - Declarative test data is visible and debuggable
 - Matches production pattern (all knowledge in files)
 
 ---
 
-## Part 6: Hook System
+## Part 6: Python Bridge Pattern
 
-### Hook Infrastructure
+For domains integrating Python (golems, protocol_clients):
+
+### Structure
+
+```
+domain/
+├── semantics.pl        # Pure Prolog (NO py_call)
+├── python_bridge.pl    # ALL py_call + decoding to Prolog
+├── client.py          # Python implementation
+└── semantics.plt      # Tests
+```
+
+### Separation of Concerns
+
+**`semantics.pl` - PURE PROLOG ONLY:**
+
+```prolog
+:- use_module('python_bridge.pl', [
+    golem_execute_task/2,
+    golem_list_capabilities/1
+]).
+
+% Spell implementation using bridge (no py_call here!)
+spell(
+    conjure(golem(execute)),
+    input(golem(execute(task('Task')))),
+    output(ok(result('Result'))),
+    "Execute a task using a golem agent"
+) :: (
+    golem_execute_task(Task, DecodedResult),  % Already Prolog terms!
+    Result = ok(DecodedResult)
+).
+```
+
+**`python_bridge.pl` - ALL py_call + DECODING:**
+
+```prolog
+:- use_foreign_library(foreign(janus)).
+
+golem_execute_task(Task, DecodedResult) :-
+    py_call(golem_module:execute_task(Task), PyResult),
+    decode_golem_result(PyResult, DecodedResult).  % Convert to Prolog
+
+decode_golem_result(PyObj, golem_result(Status, Data)) :-
+    py_call(getattr(PyObj, 'status'), Status),
+    py_call(getattr(PyObj, 'data'), Data).
+```
+
+**`client.py` - Python Implementation:**
+
+```python
+from pydantic_ai import Agent
+
+class GolemExecutor:
+    def __init__(self):
+        self.agent = Agent(model='openai:gpt-4')
+
+    def execute_task(self, task):
+        result = self.agent.run_sync(task)
+        return GolemResult(status='success', data=result.data)
+```
+
+**Key Principle:** Python objects NEVER leak into `semantics.pl` - all decoding happens in `python_bridge.pl`.
+
+---
+
+## Part 7: ECS Architecture
+
+### Entity-Component-System Pattern
+
+```prolog
+% Entity - A thing that exists
+entity(my_project).
+entity(git(repository)).
+
+% Component - A property of an entity
+component(my_project, git_repository_root, '/home/user/my_project').
+component(my_project, project_name, 'MyProject').
+
+% System - Operations on entities (implemented via spells)
+magic_cast(conjure(git(commit("Initial commit"))), Result).
+```
+
+### Component Types
+
+- **`ctor`** - Constructors for sum types (spell signatures)
+- **`has(domain(...))`** - High-level domain facts that expand
+- **`domain_property`** - Expanded properties from `has(domain(...))`
+- **`docstring`** - Documentation strings
+- **`self`** - Self-referential metadata (file/folder location)
+- **`format_input`** - Spell input format specification
+- **`format_output`** - Spell output format specification
+
+### Self-Entity Pattern
+
+```prolog
+% Domains declare themselves
+:- self_entity(git).
+
+% System auto-generates
+component(git, self, semantic(folder('@/src/git'))).
+entity(git).
+```
+
+### Multifile Declarations
+
+```prolog
+% Core ECS predicates (never use user: prefix)
+:- multifile entity/1.
+:- multifile component/3.
+:- multifile docstring/2.
+:- multifile verify/1.  % Auto-generated by :: operator
+```
+
+---
+
+## Part 8: Domain Levels
+
+Grimoire organizes domains into dependency levels:
+
+### Level 0: Foundation
+- **`ecs_kernel`** - Core ECS with operators (`::` and `==>`) and `please_verify/1`
+- **`run_tests`** - Test infrastructure and PLUnit integration
+
+### Level 1: Orchestration
+- **`grimoire`** - Core orchestration, spell system (`magic_cast/2`), domain loading
+
+### Level 2: System Domains
+- **`git`** - Version control operations and repository modeling
+- **`nix`** - Package management and reproducible builds
+- **`fs`** - Filesystem operations with atomic guarantees
+- **`db`** - SQLite integration with schema validation
+- **`utils`** - Utility predicates (validation, tree building, collections)
+
+### Level 3: Coordination
+- **`interface`** - Multi-frontend access (CLI/HTTP/MCP)
+- **`protocol_clients`** - External service clients (HTTP/MCP)
+- **`project`** - Project structure composing git+nix+fs
+
+### Level 5: External Interfaces
+- **`golems`** - AI agents with PydanticAI integration
+
+---
+
+## Part 9: Term Expansion Internals
+
+### How `::` Operator Works
+
+```prolog
+% User writes this
+component(_E, db_sqlite_file, File)
+    :: (atom(File) ; string(File)),
+       exists_file(File).
+
+% term_expansion/2 hook in ecs_kernel.pl processes it
+term_expansion(
+    (component(A, B, C) :: Body),
+    verify(component(A, B, C)) :- Body
+).
+
+% Result: verify/1 clause auto-generated at compile time
+verify(component(_E, db_sqlite_file, File)) :-
+    (atom(File) ; string(File)),
+    exists_file(File).
+```
+
+### How `==>` Operator Works
+
+```prolog
+% User writes this
+component(Entity, has(git(repository)), git(repository(Spec)))
+    ==> [
+        component(Entity, git_repository_root, Root) :-
+            member(root(Root), Spec),
+
+        component(Entity, git_repository_branch, Branch) :-
+            member(branch(Branch), Spec)
+    ].
+
+% term_expansion/2 hook processes it
+term_expansion(
+    (component(A, B, C) ==> Expansions),
+    [component(A, B, C), ExpandedRules]
+) :-
+    % Keep the base component declaration
+    % Generate expansion rules with component(A, B, C) guard
+    maplist(add_guard(component(A, B, C)), Expansions, ExpandedRules).
+
+% Result: Multiple component/3 clauses generated
+component(Entity, has(git(repository)), git(repository(Spec))).
+
+component(Entity, git_repository_root, Root) :-
+    component(Entity, has(git(repository)), git(repository(Spec))),
+    member(root(Root), Spec).
+
+component(Entity, git_repository_branch, Branch) :-
+    component(Entity, has(git(repository)), git(repository(Spec))),
+    member(branch(Branch), Spec).
+```
+
+### How Spell Schema Works
+
+```prolog
+% User writes this
+spell(
+    conjure(git(commit)),
+    input(git(commit(message('Message')))),
+    output(ok(committed(hash('Hash')))),
+    "Create a git commit"
+) :: (
+    string(Message),
+    % ... implementation ...
+).
+
+% term_expansion/2 in grimoire.pl processes it
+term_expansion(
+    spell(SpellSig, Input, Output, Doc) :: Body,
+    [Metadata, Implementation]
+) :-
+    SpellSig =.. [SpellType, Constructor],
+    % Generate metadata
+    Metadata = [
+        component(SpellType, ctor, Constructor),
+        component(SpellSig, format_input, Input),
+        component(SpellSig, format_output, Output),
+        component(SpellSig, docstring, Doc)
+    ],
+    % Generate implementation
+    Implementation = (cast_impl(SpellTerm, Result) :- Body).
+
+% Result: Metadata + cast_impl/2 auto-generated
+component(conjure, ctor, git(commit)).
+component(conjure(git(commit)), format_input, input(git(commit(message(_))))).
+component(conjure(git(commit)), format_output, output(ok(committed(hash(_))))).
+component(conjure(git(commit)), docstring, "Create a git commit").
+
+cast_impl(conjure(git(commit(Message))), Result) :-
+    string(Message),
+    % ... implementation ...
+```
+
+**Key Insight:** Term expansion happens at **compile time**, so all code generation is complete before runtime. This ensures:
+- Zero runtime overhead
+- Type checking at compile time
+- Full introspection capabilities
+- Impossible to bypass generated code
+
+---
+
+## Part 10: Hook System
 
 Grimoire provides extensible hook points for cross-cutting concerns:
+
+### Hook Infrastructure
 
 ```prolog
 :- dynamic([
@@ -502,23 +768,14 @@ Grimoire provides extensible hook points for cross-cutting concerns:
     cast_post_hook/3,
     verify_pre_hook/2,
     verify_post_hook/2
-], [
-    discontiguous(true),
-    multifile(true)
 ]).
 
-% Hook collection
+% Hooks called by magic_cast and please_verify
 cast_pre_hooks(Term, Outs) :-
     findall(Out, (is_hook(Hook), cast_pre_hook(Term, Hook, Out)), Outs).
 
-cast_post_hooks(Term, Outs) :-
-    findall(Out, (is_hook(Hook), cast_post_hook(Term, Hook, Out)), Outs).
-
 verify_pre_hooks(Term) :-
     findall(_, (is_hook(Hook), verify_pre_hook(Term, Hook)), _).
-
-verify_post_hooks(Term) :-
-    findall(_, (is_hook(Hook), verify_post_hook(Term, Hook)), _).
 ```
 
 ### Hook Applications
@@ -547,241 +804,166 @@ cast_pre_hook(conjure(git(commit(Msg))), validator, validated) :-
     validate_commit_message(Msg).
 ```
 
-**Permission Checks:**
-```prolog
-verify_pre_hook(component(Entity, _, _), permission_checker) :-
-    has_permission_to_verify(Entity).
-```
-
 ---
 
-## Part 7: Python Bridge Pattern
+## Part 11: Benefits of This Design
 
-### Architecture
+### Declarative Simplicity
 
-For domains integrating with Python (golems, protocol_clients):
+Users never write implementation code:
+- **Verification**: Use `::` operator, `verify/1` auto-generated
+- **Expansion**: Use `==>` operator, component rules auto-generated
+- **Spells**: Use `spell(...) ::` schema, `cast_impl/2` auto-generated
 
-```
-domain/
-├── semantics.pl        # Pure Prolog (NO py_call)
-├── python_bridge.pl    # ALL py_call + decoding
-├── client.py          # Python implementation
-└── semantics.plt      # Tests
-```
+### Type Safety
 
-### Separation of Concerns
+Term expansion ensures:
+- Every spell has registered metadata
+- Every component has optional verification
+- No unregistered spells can be called
+- All spells validated for uniqueness
 
-**`semantics.pl` - PURE PROLOG:**
-```prolog
-:- use_module('python_bridge.pl', [
-    mcp_call_tool/4,
-    mcp_list_tools/2
-]).
+### Composability
 
-cast(conjure(protocol_client(mcp(call(Server, Tool, Args)))), Result) :-
-    mcp_call_tool(Server, Tool, Args, DecodedResult),  % Already Prolog!
-    Result = ok(DecodedResult).
-```
+`please_verify/1` enables natural composition:
+- Primitive verifications compose into complex verifications
+- Cross-domain dependencies work seamlessly
+- Verification chains are declarative and complete
 
-**`python_bridge.pl` - ALL py_call + DECODING:**
-```prolog
-mcp_call_tool(Server, Tool, Args, DecodedResult) :-
-    py_call(mcp_client:call_tool(Server, Tool, Args), PyResult),
-    decode_mcp_result(PyResult, DecodedResult).  % Decode to Prolog terms
+### Testability
 
-decode_mcp_result(PyResult, mcp_result(Content, IsError)) :-
-    py_call(getattr(PyResult, 'content'), Content),
-    py_call(getattr(PyResult, 'isError'), IsError).
-```
-
-**`client.py` - Python Implementation:**
-```python
-from fastmcp import FastMCPClient
-
-class MCPClientRegistry:
-    def __init__(self):
-        self.clients = {}
-
-    def call_tool(self, server, tool, args):
-        client = self.clients[server]
-        return client.call(tool, args)
-```
-
-**Key Principle:** Python objects NEVER leak into `semantics.pl` - all decoding happens in `python_bridge.pl`.
-
----
-
-## Part 8: Domain Levels
-
-Grimoire organizes domains into dependency levels:
-
-### Level 0: Foundation
-- **`ecs_kernel`** - Core ECS predicates and verification primitive
-- **`run_tests`** - Test infrastructure and PLUnit integration
-
-### Level 1: Orchestration
-- **`grimoire`** - Core system orchestration, spell system, domain loading
-
-### Level 2: System Domains
-- **`git`** - Version control operations and repository modeling
-- **`nix`** - Package management and reproducible builds
-- **`fs`** - Filesystem operations and pattern matching
-- **`db`** - SQLite integration with schema discovery
-- **`utils`** - Utility predicates (tree building, collections)
-
-### Level 3: Coordination & Composition
-- **`interface`** - Multi-frontend access (CLI/HTTP/MCP)
-- **`protocol_clients`** - External service consumption (HTTP/MCP clients)
-- **`project`** - Project structure composing git+nix+fs
-
-### Level 5: External Interfaces
-- **`golems`** - AI agents with PydanticAI integration
-
----
-
-## Part 9: Implementation Details
-
-### Directory Structure
-
-```
-Grimoire/
-├── src/
-│   ├── ecs_kernel.pl           # Generative kernel
-│   ├── ecs_kernel.plt          # Discriminative kernel
-│   ├── grimoire.pl             # Core orchestration
-│   ├── grimoire.plt            # Core tests
-│   ├── git.pl                  # Git domain
-│   ├── git.plt                 # Git tests
-│   ├── fs.pl                   # Filesystem domain
-│   ├── fs.plt                  # Filesystem tests
-│   ├── db/
-│   │   ├── semantics.pl        # Database domain
-│   │   ├── semantics.plt       # Database tests
-│   │   └── sqlite3.pl          # SQLite interface
-│   ├── nix/
-│   │   ├── semantics.pl        # Nix domain
-│   │   └── semantics.plt       # Nix tests
-│   ├── project/
-│   │   ├── semantics.pl        # Project domain
-│   │   └── semantics.plt       # Project tests
-│   ├── interface/
-│   │   ├── semantics.pl        # Interface domain
-│   │   ├── semantics.plt       # Interface tests
-│   │   └── api/
-│   │       ├── semantics.pl    # API implementation
-│   │       └── mcp_server.py   # MCP server
-│   ├── protocol_clients/
-│   │   ├── semantics.pl        # Protocol clients coordination
-│   │   ├── semantics.plt       # Tests
-│   │   ├── http/
-│   │   │   ├── semantics.pl    # HTTP client (pure Prolog)
-│   │   │   ├── python_bridge.pl # py_call + decoding
-│   │   │   └── http_client.py   # httpx implementation
-│   │   └── mcp/
-│   │       ├── semantics.pl    # MCP client (pure Prolog)
-│   │       ├── python_bridge.pl # py_call + FastMCP decoding
-│   │       └── mcp_client.py    # FastMCP implementation
-│   ├── golems/
-│   │   ├── semantics.pl        # Golems domain (pure Prolog)
-│   │   ├── semantics.plt       # Golems tests
-│   │   └── python_bridge.pl    # py_call + PydanticAI decoding
-│   ├── utils.pl                # Utility predicates
-│   ├── utils.plt               # Utility tests
-│   └── tests/
-│       ├── git_test_entity.pl  # Git test entities
-│       ├── fs_test_entity.pl   # Filesystem test entities
-│       └── ...
-├── README.md                   # User documentation
-├── CLAUDE.md                   # Development guide
-├── DESIGN.md                   # This document
-├── overhaul-plan.md            # Complete specification
-├── review_instructions.md      # Review checklist
-└── flake.nix                   # Nix package specification
-```
-
-### Environment Variables
-
-- **`GRIMOIRE_ROOT`** - Project directory (auto-detected from `./grimoire` script location)
-- **`GRIMOIRE_DATA`** - Data storage directory (defaults to `$HOME/.grimoire`)
-
-Path resolution:
-```prolog
-grimoire_resolve_path('@/src/git.pl', '/home/user/Projects/Grimoire/src/git.pl').
-```
-
----
-
-## Part 10: Benefits of This Design
+File-based entities ensure:
+- Order-independent tests (no state pollution)
+- Declarative test data (visible in source)
+- Reproducible test runs
+- Matches production patterns
 
 ### Mathematical Correctness
 
 The generative-discriminative duality ensures:
-- **Consistency**: Everything generated must be verifiable
-- **Completeness**: Everything verified must have been generated
-- **No Contradictions**: Inconsistent knowledge cannot exist
-
-### Composability
-
-`please_verify/1` enables clean composition:
-- Domains verify sub-components recursively
-- Cross-domain dependencies work naturally
-- Verification chains are composable and complete
-
-### Simplicity for Users
-
-Users only need to:
-1. Declare high-level facts using `has(domain(...))` in `semantics.pl`
-2. Domain automatically expands into queryable properties
-3. Tests verify properties using `user:please_verify`
-4. System handles verification automatically
-
-### Flexibility
-
-The design allows:
-- Unification patterns in verification
-- Optional verification (base case in `please_verify`)
-- Cross-domain composition
-- Extensible hooks for custom behavior
-
-### Testability
-
-File-based test entities ensure:
-- Order-independent tests (no state pollution)
-- Declarative test data (visible in source)
-- Matches production patterns (knowledge in files)
-- Reproducible test runs
-
-### Python Integration
-
-Python bridge pattern provides:
-- Type safety (Python objects never leak to Prolog)
-- Clear separation of concerns
-- Easy debugging (Python and Prolog layers separate)
-- Flexible integration with external libraries
+- **Consistency**: Everything expanded can be verified
+- **Completeness**: Everything verified has been expanded
+- **Soundness**: Invalid states cannot be represented
 
 ---
 
-## Part 11: Future Directions
+## Part 12: Implementation Checklist
 
-### Planned Enhancements
+When adding a new domain:
 
-1. **Incremental Verification** - Cache verification results for performance
-2. **Distributed Knowledge** - Git-like distribution of semantic knowledge
-3. **Type Inference** - Automatic derivation of component types
-4. **Visual Tools** - Graph visualization of component relationships
-5. **Template Expansion** - More sophisticated project templates
+### 1. Create Directory Structure
 
-### Research Directions
+```bash
+mkdir -p src/domain
+touch src/domain/semantics.pl
+touch src/domain/semantics.plt
+mkdir -p src/tests
+touch src/tests/domain_test_entity.pl
+```
 
-1. **Category Theory** - Formalize generative-discriminative as adjoint functors
-2. **Modal Logic** - Express verification modalities formally
-3. **Dependent Types** - Type-level verification of components
-4. **Linear Logic** - Resource management through linear types
+### 2. Write Generative Flow (`semantics.pl`)
+
+```prolog
+:- self_entity(domain).
+
+% Entities
+entity(domain(concept)).
+
+% Documentation
+docstring(domain, "Domain description").
+
+% Component expansion using ==> operator
+component(Entity, has(domain(fact)), domain(fact(Spec)))
+    ==> [
+        component(Entity, domain_property1, Value) :-
+            member(prop1(Value), Spec),
+
+        component(Entity, domain_property2, Value) :-
+            derive_property2(Spec, Value)
+    ].
+
+% Spell schemas using spell(...) :: syntax
+spell(
+    conjure(domain(operation)),
+    input(domain(operation(arg('Arg')))),
+    output(ok(result('Result'))),
+    "Perform domain operation"
+) :: (
+    % Implementation
+    validate_arg(Arg),
+    perform_operation(Arg, Result)
+).
+```
+
+### 3. Write Discriminative Flow (`semantics.plt`)
+
+```prolog
+:- use_module(library(plunit)).
+:- load_entity(semantic(file('@/src/tests/domain_test_entity.pl'))).
+
+% Verification constraints using :: operator
+component(_E, domain_property1, Value)
+    :: atom(Value).
+
+component(_E, domain_property2, Value)
+    :: integer(Value),
+       Value > 0.
+
+% Composite verification using please_verify
+component(Entity, has(domain(fact)), domain(fact(_Spec)))
+    :: please_verify(component(Entity, domain_property1, _)),
+       please_verify(component(Entity, domain_property2, _)).
+
+% Tests
+:- begin_tests(domain_semantics).
+
+test(domain_expansion) :-
+    user:please_verify(component(test_entity, has(domain(fact)), _)),
+    user:please_verify(component(test_entity, domain_property1, _)).
+
+test(domain_spell) :-
+    user:magic_cast(conjure(domain(operation(arg))), Result),
+    assertion(Result = ok(_)).
+
+:- end_tests(domain_semantics).
+
+% Setup/cleanup
+setup_test :-
+    % Create filesystem resources only
+    make_directory('/tmp/test_domain').
+
+cleanup_test :-
+    delete_directory_and_contents('/tmp/test_domain').
+```
+
+### 4. Create Test Entities
+
+```prolog
+% src/tests/domain_test_entity.pl
+:- self_entity(test_entities(domain)).
+
+entity(test_entity).
+
+component(test_entity, has(domain(fact)), domain(fact([
+    prop1(value1),
+    prop2(42)
+]))).
+
+docstring(test_entities(domain), "Test entities for domain").
+```
+
+### 5. Run Tests
+
+```bash
+./grimoire test domain
+```
 
 ---
 
 ## Conclusion
 
-Grimoire demonstrates that knowledge-based operating systems can be both theoretically principled and practically useful. The dual kernel architecture provides mathematical correctness while remaining accessible to users. The ECS pattern enables flexible modeling, the spell system provides safety, and the verification system ensures correctness.
+Grimoire demonstrates that a knowledge-based operating system can be both theoretically principled and practically simple. The declarative DSL with term expansion eliminates boilerplate, the dual kernel ensures correctness, and the composable verification enables flexible modeling.
 
-The result is a system where semantic knowledge, operating system reality, and formal verification are unified in a coherent, composable architecture.
+**The result:** A system where you declare what you want, and the system automatically generates all implementation code, verifies it against reality, and provides type-safe operations.
+
+**Remember the golden rule:** You never write `verify/1` or `cast_impl/2` manually - you use the `::` and `==>` operators, and let term expansion do the work.
