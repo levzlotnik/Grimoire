@@ -150,6 +150,64 @@ test(perceive_entities) :-
     assertion(is_list(Entities)),
     assertion(member(system, Entities)).
 
+%% Test Case 11: Meta-introspection spells - prove_it
+
+test(prove_it_derived_component) :-
+    % Test with a simple component to verify prove_it works
+    % First find the value so it's grounded
+    user:component(system, root_dir, RootDir),
+    user:magic_cast(perceive(prove_it(component(system, root_dir, RootDir))), Result),
+    assertion(Result = ok(qed(
+        component(system, root_dir, RootDir),
+        generated_by(_Generation),
+        _Verification
+    ))).
+
+%% Test Case 12: Meta-introspection spells - sauce_me
+
+test(sauce_me_perceive_spell) :-
+    % Test with perceive(entities)
+    user:magic_cast(perceive(sauce_me(spell(perceive(entities)))), Result),
+    Result = ok(magic_sauce(
+        spell(perceive(entities)),
+        registered_at(source_location(File, _Line)),
+        implementation(ImplText),
+        input_format(_Input),
+        output_format(_Output),
+        docstring(Doc),
+        options(_Options)
+    )),
+    % Verify we got the source file (grimoire.pl)
+    assertion(atom(File)),
+    assertion(atom_concat(_, 'grimoire.pl', File)),
+    % Verify we got documentation (stored as string)
+    assertion(string(Doc)),
+    assertion(Doc \= ''),
+    % Verify we got implementation (stored as string)
+    assertion(string(ImplText)).
+
+test(sauce_me_conjure_spell) :-
+    % Test with conjure(it_is_what_it_is)
+    user:magic_cast(perceive(sauce_me(spell(conjure(it_is_what_it_is)))), Result),
+    Result = ok(magic_sauce(
+        spell(conjure(it_is_what_it_is)),
+        registered_at(source_location(File, _Line)),
+        implementation(ImplText),
+        input_format(_Input),
+        output_format(_Output),
+        docstring(Doc),
+        options(_Options)
+    )),
+    % Verify source location (grimoire.pl)
+    assertion(atom(File)),
+    assertion(atom_concat(_, 'grimoire.pl', File)),
+    % Verify docstring contains "It is what it is"
+    assertion(string(Doc)),
+    assertion(sub_string(Doc, _, _, _, 'It is what it is')),
+    % Verify implementation (stored as string)
+    assertion(string(ImplText)),
+    assertion(sub_string(ImplText, _, _, _, 'implementation')).
+
 :- end_tests(grimoire).
 
 %% Setup/cleanup for test file

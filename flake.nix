@@ -71,6 +71,11 @@
         flask
         # YAML support (needed by MCP server)
         pyyaml
+        # Scientific computing
+        numpy
+        scipy
+        # ML/Generative models
+        huggingface-hub
         # Additional grimoire packages
         grimoire-golems
         grimoire-api

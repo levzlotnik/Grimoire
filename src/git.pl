@@ -166,6 +166,7 @@ git_args(in(git_root(Root), reset(Args))) --> { is_list(Args) }, ["-C", Root, "r
 git_args(in(git_root(Root), merge(Args))) --> { is_list(Args) }, ["-C", Root, "merge" | Args].
 git_args(in(git_root(Root), config(Args))) --> { is_list(Args) }, ["-C", Root, "config" | Args].
 git_args(in(git_root(Root), remote(Args))) --> { is_list(Args) }, ["-C", Root, "remote" | Args].
+git_args(in(git_root(Root), ls_files)) --> ["-C", Root, "ls-files"].
 
 % === PHASE 3: SPELL REGISTRATIONS ===
 
@@ -451,23 +452,18 @@ register_spell(
 % List tracked files
 register_spell(
     perceive(git(ls_files)),
-    input(git(ls_files(directory('Directory')))),
+    input(git(ls_files(git_root('Root')))),
     output(either(ok(tracked_files('Files')), error(git_error('Reason')))),
     "List all files tracked by git in the specified directory",
     [],
-    implementation(perceive(git(ls_files(directory(Directory)))), Result, (
-        catch(
-            (process_create(path(git), ['ls-files'], [
-                 stdout(pipe(Out)),
-                 stderr(null),
-                 cwd(Directory)
-             ]),
-             read_lines_from_stream(Out, Files),
-             close(Out),
-             Result = ok(tracked_files(Files))
-            ),
-            Error,
-            Result = error(git_error(Error))
+    implementation(perceive(git(ls_files(git_root(Root)))), Result, (
+        phrase(git_args(in(git_root(Root), ls_files)), Args),
+        magic_cast(conjure(executable_program(program(git), args(Args))), ExecResult),
+        (ExecResult = ok(result(stdout(Stdout), stderr(_))) ->
+            string_lines(Stdout, Lines),
+            Result = ok(tracked_files(Lines))
+        ; ExecResult = error(E) ->
+            Result = error(git_error(E))
         )
     ))
 ).

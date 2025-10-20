@@ -47,6 +47,11 @@ let
       flask
       # YAML support
       pyyaml
+      # Scientific computing
+      numpy
+      scipy
+      # ML/Generative models
+      huggingface-hub
     ]
   );
 

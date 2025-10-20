@@ -1,3 +1,5 @@
+it_is_what_it_is :- !.
+
 %% ============================================================================
 %% LIBRARY IMPORTS
 %% ============================================================================
@@ -5,6 +7,7 @@
 :- use_module(library(option)).
 :- use_module(library(filesex)).
 :- use_module(library(http/json)).
+:- use_module(library(prolog_stack)).
 
 % Load ECS kernel first - bootstrap with direct ensure_loaded
 % We need ecs_kernel.pl to get grimoire_ensure_loaded, so we load it directly
@@ -453,6 +456,18 @@ entity(conjure(Spell)) :-
 % Grimoire-level spell registrations
 
 register_spell(
+    conjure(it_is_what_it_is),
+    input(it_is_what_it_is),
+    output(ok(it_is_what_it_is)),
+    "It is what it is.",
+    [],
+    implementation(conjure(it_is_what_it_is), Promise, (
+        it_is_what_it_is,
+        Promise = ok(it_is_what_it_is)
+    ))
+).
+
+register_spell(
     perceive(search_regex),
     input(search_regex(content('ContentWithLineNumbers'), pattern('Pattern'))),
     output(either(ok(search_results('MatchedLines')), error(grimoire_error('Reason')))),
@@ -600,6 +615,249 @@ docstring(list_mounted_semantics,
     Returns list of absolute paths to mounted semantic files.
     |}
 ).
+
+% ========================================================================
+% META-INTROSPECTION SPELLS
+% ========================================================================
+
+% Prove component provenance - show where it comes from and how it's verified
+register_spell(
+    perceive(prove_it),
+    input(prove_it(component('Entity', 'ComponentType', 'Value'))),
+    output(either(
+        ok(qed(
+            component('Entity', 'ComponentType', 'Value'),
+            generated_by('Generation'),
+            discriminated_by('Verification')
+        )),
+        error(sus('Reason'))
+    )),
+    "Trace component provenance: where it was generated (fact or derivation) and how it's verified. Returns qed(...) on success, sus(...) when something's off.",
+    [],
+    implementation(perceive(prove_it(component(Entity, ComponentType, Value))), Result, (
+        catch(
+            (prove_component_provenance(component(Entity, ComponentType, Value), Proof),
+             Proof = proof(_, GenBy, Verif),
+             Result = ok(qed(
+                component(Entity, ComponentType, Value),
+                GenBy,
+                Verif
+             ))),
+            Error,
+            Result = error(sus(Error))
+        )
+    ))
+).
+
+% Spell sauce - show complete spell metadata including source location
+register_spell(
+    perceive(sauce_me),
+    input(sauce_me(spell('SpellConstructor'))),
+    output(either(
+        ok(magic_sauce(
+            spell('SpellConstructor'),
+            registered_at('Location'),
+            implementation('ImplText'),
+            input_format('Input'),
+            output_format('Output'),
+            docstring('Doc'),
+            options('Options')
+        )),
+        error(tragic_sauce('Reason'))
+    )),
+    "Show complete spell metadata: where registered, implementation source, formats, docs, options. Returns the magic_sauce on success, tragic_sauce when not found.",
+    [],
+    implementation(perceive(sauce_me(spell(SpellCtor))), Result, (
+        catch(
+            (extract_spell_sauce(SpellCtor, sauce(Loc, Impl, Input, Output, Doc, Opts)),
+             Result = ok(magic_sauce(
+                spell(SpellCtor),
+                Loc,
+                Impl,
+                Input,
+                Output,
+                Doc,
+                Opts
+             ))),
+            Error,
+            Result = error(tragic_sauce(Error))
+        )
+    ))
+).
+
+% === PROVE_IT IMPLEMENTATION ===
+
+prove_component_provenance(component(E, C, V), Proof) :-
+    % Set up trace collection
+    setup_call_cleanup(
+        start_component_trace(TraceId),
+        catch(
+            please_verify(component(E, C, V)),
+            error(ErrorTerm, _Context),
+            (stop_component_trace(TraceId, Events),
+             extract_verification_from_trace(component(E, C, V), Events, Verification),
+             Proof = error(verification_failed(component(E, C, V), ErrorTerm, Verification)))
+        ),
+        (var(Proof) -> stop_component_trace(TraceId, Events) ; true)
+    ),
+    (var(Proof) ->
+        analyze_trace(Events, component(E, C, V), Proof)
+    ;
+        true
+    ).
+
+start_component_trace(TraceId) :-
+    gensym(trace, TraceId),
+    nb_setval(current_trace_id, TraceId),
+    assertz((
+        user:prolog_trace_interception(Port, Frame, _PC, continue) :-
+            nb_getval(current_trace_id, TID),
+            catch(
+                (
+                    prolog_frame_attribute(Frame, goal, Goal),
+                    (   (Goal = component(_, _, _) ; Goal = user:component(_, _, _))
+                    ->  prolog_frame_attribute(Frame, level, Level),
+                        (   catch(prolog_frame_attribute(Frame, clause, Clause), _, fail)
+                        ->  ClauseInfo = clause(Clause)
+                        ;   ClauseInfo = no_clause
+                        ),
+                        recordz(TID, trace_event(Port, Level, Goal, ClauseInfo))
+                    ;   (Goal = verify(_) ; Goal = user:verify(_))
+                    ->  prolog_frame_attribute(Frame, level, Level),
+                        (   catch(prolog_frame_attribute(Frame, clause, Clause), _, fail)
+                        ->  ClauseInfo = clause(Clause)
+                        ;   ClauseInfo = no_clause
+                        ),
+                        recordz(TID, trace_event(Port, Level, Goal, ClauseInfo))
+                    ;   true
+                    )
+                ),
+                _,
+                true
+            )
+    )),
+    trace.
+
+stop_component_trace(TraceId, Events) :-
+    notrace,
+    retractall(user:prolog_trace_interception(_, _, _, _)),
+    findall(Event, recorded(TraceId, Event, _Ref), Events),
+    forall(recorded(TraceId, _, Ref), erase(Ref)),
+    nb_delete(current_trace_id).
+
+analyze_trace(Events, component(E, C, V), Proof) :-
+    findall(
+        Level-trace_event(exit, Level, Goal, ClauseInfo),
+        (member(trace_event(exit, Level, Goal, ClauseInfo), Events),
+         unify_goals(Goal, component(E, C, V))),
+        ExitEvents
+    ),
+    (   ExitEvents = []
+    ->  Proof = no_proof(component(E, C, V))
+    ;   sort(ExitEvents, SortedExits),
+        reverse(SortedExits, [TopLevel-trace_event(exit, _, SuccessGoal, ClauseInfo)|_]),
+        extract_provenance(SuccessGoal, ClauseInfo, Events, TopLevel, Generation),
+        extract_verification_from_trace(component(E, C, V), Events, Verification),
+        Proof = proof(
+            component(E, C, V),
+            generated_by(Generation),
+            Verification
+        )
+    ).
+
+unify_goals(user:component(E1, C1, V1), component(E2, C2, V2)) :- !,
+    E1 = E2, C1 = C2, V1 = V2.
+unify_goals(component(E1, C1, V1), user:component(E2, C2, V2)) :- !,
+    E1 = E2, C1 = C2, V1 = V2.
+unify_goals(component(E1, C1, V1), component(E2, C2, V2)) :-
+    E1 = E2, C1 = C2, V1 = V2.
+
+extract_provenance(_Goal, no_clause, _Events, _TopLevel, unknown_source) :- !.
+
+extract_provenance(Goal, clause(ClauseRef), Events, TopLevel, Generation) :-
+    catch(clause_property(ClauseRef, file(File)), _, File = '<no file>'),
+    catch(clause_property(ClauseRef, line_count(Line)), _, Line = 0),
+    catch(clause(Goal, Body, ClauseRef), _, Body = unknown),
+    (   Body = true
+    ->  Generation = fact(source_location(File, Line))
+    ;   Body = unknown
+    ->  Generation = unknown_body(source_location(File, Line))
+    ;   find_dependency(Body, Events, TopLevel, Dependency),
+        Generation = derived_from(Dependency, source_location(File, Line))
+    ).
+
+find_dependency(_Body, Events, TopLevel, Dependency) :-
+    findall(
+        Goal,
+        (member(trace_event(exit, Level, Goal, _ClauseInfo), Events),
+         Level > TopLevel,
+         (Goal = component(_, _, _) ; Goal = user:component(_, _, _)),
+         strip_user_prefix(Goal, CleanGoal),
+         CleanGoal = component(E, _, _),
+         E \= component),
+        ComponentCalls
+    ),
+    (   ComponentCalls = []
+    ->  Dependency = body_goal(unknown)
+    ;   ComponentCalls = [SingleDep|_]
+    ->  strip_user_prefix(SingleDep, Dependency)
+    ).
+
+strip_user_prefix(user:Goal, Goal) :- !.
+strip_user_prefix(Goal, Goal).
+
+extract_verification_from_trace(Component, Events, Verification) :-
+    findall(
+        verify_event(Level, Goal, ClauseInfo, Port),
+        (member(trace_event(Port, Level, Goal, ClauseInfo), Events),
+         (Port = exit ; Port = redo(_) ; Port = exception(_)),
+         ClauseInfo = clause(_),
+         strip_user_prefix(Goal, CleanGoal),
+         CleanGoal = verify(VerifyArg),
+         VerifyArg = Component),
+        VerifyEvents
+    ),
+    (VerifyEvents = [] ->
+        Verification = no_verifier
+    ;   sort(VerifyEvents, SortedVerifyEvents),
+        reverse(SortedVerifyEvents, [verify_event(_, _, ClauseInfo, _Port)|_]),
+        (ClauseInfo = clause(ClauseRef) ->
+            catch(clause_property(ClauseRef, file(File)), _, File = '<no file>'),
+            catch(clause_property(ClauseRef, line_count(Line)), _, Line = 0),
+            catch(clause(verify(Component), Body, ClauseRef), _, Body = unknown),
+            (Body = ((\+ in_please_verify), _, _) ->
+                Verification = no_verifier
+            ;   Verification = discriminated_by(
+                    verifier(verify(Component) :- Body, source_location(File, Line))
+                )
+            )
+        ;   Verification = no_verifier
+        )
+    ).
+
+% === SAUCE IMPLEMENTATION ===
+
+extract_spell_sauce(SpellCtor, Sauce) :-
+    % Get all metadata from component facts (generated by register_spell)
+    (   component(SpellCtor, docstring, Doc)
+    ->  true
+    ;   throw(error(spell_not_found(SpellCtor)))
+    ),
+
+    component(SpellCtor, format_input, Input),
+    component(SpellCtor, format_output, Output),
+    component(SpellCtor, spell_options, Options),
+    component(SpellCtor, source_location, Location),
+    component(SpellCtor, implementation, Implementation),
+
+    Sauce = sauce(
+        registered_at(Location),
+        implementation(Implementation),
+        input_format(Input),
+        output_format(Output),
+        docstring(Doc),
+        options(Options)
+    ).
 
 % ========================================================================
 % CORE PERCEIVE SPELLS
