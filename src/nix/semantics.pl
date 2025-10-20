@@ -193,8 +193,8 @@ docstring(nix(templates),
 % Memoized flake target discovery - DO NOT TOUCH (critical for performance)
 :- table get_nix_flake_targets/2.
 get_nix_flake_targets(FlakeRef, Targets) :-
-    magic_cast(conjure(shell(["nix", "flake", "show", "--json", FlakeRef])), Result),
-    (Result = ok(result(JsonOutput, _Stderr)) ->
+    magic_cast(conjure(shell(args(["nix", "flake", "show", "--json", FlakeRef]))), Result),
+    (Result = ok(result(stdout(JsonOutput), stderr(_Stderr))) ->
         atom_json_dict(JsonOutput, JsonDict, []),
         findall(Target, extract_flake_target(JsonDict, FlakeRef, Target), Targets)
     ;
@@ -299,8 +299,8 @@ component(nix(flake), templates_tools, tools(GetCmd, InitCmd)) :-
 :- table nix_flake_templates/1.
 nix_flake_templates(Pairs) :-
     component(nix(flake), templates_tools, tools(GetCmd, _InitCmd)),
-    magic_cast(conjure(shell([GetCmd])), Result),
-    (Result = ok(result(JsonOutput, _Stderr)) ->
+    magic_cast(conjure(shell(args([GetCmd]))), Result),
+    (Result = ok(result(stdout(JsonOutput), stderr(_Stderr))) ->
         atom_json_dict(JsonOutput, JsonDict, []),
         dict_pairs(JsonDict.templates, _Tag, Pairs)
     ;
@@ -434,12 +434,12 @@ register_spell(
     )),
     "Search for packages in nixpkgs. Query: search term(s).",
     [],
-    implementation(perceive(nix(search(Query))), Result, (
+    implementation(perceive(nix(search(query(Query)))), Result, (
         catch(
             (format(atom(FlakeQuery), 'nixpkgs#~w', [Query]),
              Args = ["nix", "search", FlakeQuery],
-             magic_cast(conjure(shell(Args)), ShellResult),
-             (ShellResult = ok(result(Results, _)) ->
+             magic_cast(conjure(shell(args(Args))), ShellResult),
+             (ShellResult = ok(result(stdout(Results), stderr(_))) ->
                  Result = ok(search_results(Results))
              ;
                  Result = ShellResult
@@ -460,12 +460,12 @@ register_spell(
     )),
     "Search for packages in a specific flake. Flake: flake reference, Query: search term(s).",
     [],
-    implementation(perceive(nix(search_flake(Flake, Query))), Result, (
+    implementation(perceive(nix(search_flake(flake(Flake), query(Query)))), Result, (
         catch(
             (format(atom(FlakeQuery), '~w#~w', [Flake, Query]),
              Args = ["nix", "search", FlakeQuery],
-             magic_cast(conjure(shell(Args)), ShellResult),
-             (ShellResult = ok(result(Results, _)) ->
+             magic_cast(conjure(shell(args(Args))), ShellResult),
+             (ShellResult = ok(result(stdout(Results), stderr(_))) ->
                  Result = ok(search_results(Results))
              ;
                  Result = ShellResult
@@ -486,9 +486,9 @@ register_spell(
     )),
     "Run a Nix application. Installable: package/flake to run.",
     [],
-    implementation(conjure(nix(run(Installable))), RetVal, (
+    implementation(conjure(nix(run(installable(Installable)))), RetVal, (
         Args = ["nix", "run", Installable],
-        magic_cast(conjure(shell(Args, interactive)), RetVal)
+        magic_cast(conjure(shell(args(Args), interactive)), RetVal)
     ))
 ).
 
@@ -502,9 +502,9 @@ register_spell(
     )),
     "Run a Nix application with arguments. Installable: package/flake to run, Args: list of arguments to pass.",
     [],
-    implementation(conjure(nix(run_with_args(Installable, AppArgs))), RetVal, (
+    implementation(conjure(nix(run_with_args(installable(Installable), args(AppArgs)))), RetVal, (
         flatten([["nix", "run", Installable, "--"], AppArgs], Args),
-        magic_cast(conjure(shell(Args, interactive)), RetVal)
+        magic_cast(conjure(shell(args(Args), interactive)), RetVal)
     ))
 ).
 
@@ -518,10 +518,10 @@ register_spell(
     )),
     "Build a Nix flake or derivation. Target: flake reference or installable to build (e.g., '.#default', 'nixpkgs#hello').",
     [],
-    implementation(conjure(nix(build(Target))), Result, (
+    implementation(conjure(nix(build(target(Target)))), Result, (
         Args = ["nix", "build", Target],
-        magic_cast(conjure(shell(Args)), ShellResult),
-        (ShellResult = ok(result(StdOut, StdErr)) ->
+        magic_cast(conjure(shell(args(Args))), ShellResult),
+        (ShellResult = ok(result(stdout(StdOut), stderr(StdErr))) ->
             Result = ok(result(StdOut, StdErr))
         ; ShellResult = error(shell_error(_, ExitCode, _StdOut, StdErr)) ->
             Result = error(build_error(ExitCode, StdErr))
@@ -543,7 +543,7 @@ register_spell(
     [],
     implementation(conjure(nix(store(gc))), RetVal, (
         Args = ["nix", "store", "gc"],
-        magic_cast(conjure(shell(Args)), RetVal)
+        magic_cast(conjure(shell(args(Args))), RetVal)
     ))
 ).
 
@@ -557,9 +557,9 @@ register_spell(
     )),
     "Repair corrupted store paths",
     [],
-    implementation(conjure(nix(store(repair(Path)))), RetVal, (
+    implementation(conjure(nix(store(repair(path(Path))))), RetVal, (
         Args = ["nix", "store", "repair", Path],
-        magic_cast(conjure(shell(Args)), RetVal)
+        magic_cast(conjure(shell(args(Args))), RetVal)
     ))
 ).
 
@@ -575,7 +575,7 @@ register_spell(
     [],
     implementation(conjure(nix(store(optimise))), RetVal, (
         Args = ["nix", "store", "optimise"],
-        magic_cast(conjure(shell(Args)), RetVal)
+        magic_cast(conjure(shell(args(Args))), RetVal)
     ))
 ).
 
@@ -589,11 +589,11 @@ register_spell(
     )),
     "Show why a package has another package in its closure. Essential for understanding dependency chains.",
     [],
-    implementation(perceive(nix(why_depends(Pkg1, Pkg2))), Result, (
+    implementation(perceive(nix(why_depends(pkg1(Pkg1), pkg2(Pkg2)))), Result, (
         catch(
             (Args = ["nix", "why-depends", Pkg1, Pkg2],
-             magic_cast(conjure(shell(Args)), ShellResult),
-             (ShellResult = ok(result(DepResult, _)) ->
+             magic_cast(conjure(shell(args(Args))), ShellResult),
+             (ShellResult = ok(result(stdout(DepResult), stderr(_))) ->
                  Result = ok(dependency_info(DepResult))
              ;
                  Result = ShellResult
@@ -614,11 +614,11 @@ register_spell(
     )),
     "Show the build log of specified packages or paths. Essential for debugging build failures.",
     [],
-    implementation(perceive(nix(log(Installable))), Result, (
+    implementation(perceive(nix(log(installable(Installable)))), Result, (
         catch(
             (Args = ["nix", "log", Installable],
-             magic_cast(conjure(shell(Args)), ShellResult),
-             (ShellResult = ok(result(LogResult, _)) ->
+             magic_cast(conjure(shell(args(Args))), ShellResult),
+             (ShellResult = ok(result(stdout(LogResult), stderr(_))) ->
                  Result = ok(build_log(LogResult))
              ;
                  Result = ShellResult
@@ -639,7 +639,7 @@ register_spell(
     )),
     "Enters a development environment. Options: shell_cmd(Args) to execute command, phase(Phase) for specific build phase.",
     [],
-    implementation(conjure(nix(develop(Options))), RetVal, (
+    implementation(conjure(nix(develop(options(Options)))), RetVal, (
         % Convert options to args
         findall(
             OptionArgs,
@@ -652,7 +652,7 @@ register_spell(
             AllOptionArgs
         ),
         flatten([["nix", "develop"] | AllOptionArgs], Args),
-        magic_cast(conjure(shell(Args, interactive)), RetVal)
+        magic_cast(conjure(shell(args(Args), interactive)), RetVal)
     ))
 ).
 
@@ -666,12 +666,12 @@ register_spell(
     )),
     "Initialize a new flake from template. TemplateId: template ID (default: none), DestPath: where to create the new flake.",
     [],
-    implementation(conjure(nix(flake(new(TemplateId, DestPath)))), RetVal, (
+    implementation(conjure(nix(flake(new(template_id(TemplateId), dest_path(DestPath))))), RetVal, (
         component(nix(flake), templates_tools, tools(_GetCmd, InitCmd)),
         ( TemplateId = none -> TId = "default" ; atom_string(TemplateId, TId) ),
         atom_string(DestPath, DestPathStr),
-        magic_cast(conjure(shell([InitCmd, TId, DestPathStr])), Result),
-        (Result = ok(result(_Stdout, _Stderr)) ->
+        magic_cast(conjure(shell(args([InitCmd, TId, DestPathStr]))), Result),
+        (Result = ok(result(stdout(_Stdout), stderr(_Stderr))) ->
             RetVal = ok(template_initialized(TemplateId, DestPath))
         ; Result = error(Error) ->
             RetVal = error(nix_error(Error))
@@ -691,7 +691,7 @@ register_spell(
     )),
     "Show flake metadata, apps, and packages. FlakeRef: flake reference (path or URL).",
     [],
-    implementation(perceive(nix(flake(show(FlakeRef)))), Result, (
+    implementation(perceive(nix(flake(show(ref(FlakeRef))))), Result, (
         catch(
             (get_nix_flake_targets(FlakeRef, Targets),
              partition_flake_targets(Targets, Apps, Packages, DevShells),
@@ -737,8 +737,8 @@ register_spell(
     [],
     implementation(perceive(nix(templates)), Result, (
         catch(
-            (magic_cast(conjure(shell(["getGrimoireTemplates"])), ShellResult),
-             (ShellResult = ok(result(JsonOutput, _)) ->
+            (magic_cast(conjure(shell(args(["getGrimoireTemplates"]))), ShellResult),
+             (ShellResult = ok(result(stdout(JsonOutput), stderr(_))) ->
                  atom_json_dict(JsonOutput, Dict, []),
                  get_dict(templates, Dict, TemplatesDict),
                  dict_keys(TemplatesDict, TemplateList),

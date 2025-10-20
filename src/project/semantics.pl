@@ -1,5 +1,8 @@
 % Core entities
-:- self_entity(project).
+:- self_entity(project, {|string(_)||
+    Project domain for composing git + nix + fs into development environments.
+    Manages project creation, validation, and cross-domain composition.
+    |}).
 
 entity(mkproject).
 entity(conjure(mkproject)).
@@ -8,51 +11,58 @@ entity(project(context(build))).
 entity(project(context(runtime))).
 entity(project(context(test))).
 
-docstring(project, "Project domain for composing git + nix + fs into development environments").
+% === PHASE 3: COMPONENT DSL WITH ==> AND :: OPERATORS ===
 
-% === PURE DSL EXPANSION RULES (NO assertz) ===
+% Project app DSL expansion with conditional components
+component(Entity, has(project(app)), project(app(Options)))
+    ==> (component(Entity, project_type, Type) :- member(type(Type), Options)),
+        (component(Entity, project_git_origin, Origin) :- member(git(repository(origin(Origin))), Options)),
+        (component(Entity, project_nix_flake, nix(flake(Ref))) :- member(nix(flake(ref(Ref))), Options)),
+        (component(Entity, project_fs_structure, Structure) :- member(fs(structure(Structure)), Options))
+    ::  is_list(Options).
 
-% Extract project type from app DSL
-component(Entity, project_type, Type) :-
-    component(Entity, has(project(app)), project(app(Options))),
-    member(type(Type), Options).
+% Project context build DSL expansion
+component(Entity, has(project(context(build))), project(context(build(Options))))
+    ==> (component(Entity, project_context_outputs, Outputs) :- member(outputs(Outputs), Options))
+    ::  is_list(Options).
 
-% Extract git origin from app DSL
-component(Entity, project_git_origin, Origin) :-
-    component(Entity, has(project(app)), project(app(Options))),
-    member(git(repository(origin(Origin))), Options).
-
-% Extract nix flake from app DSL - preserve term structure
-component(Entity, project_nix_flake, nix(flake(Ref))) :-
-    component(Entity, has(project(app)), project(app(Options))),
-    member(nix(flake(ref(Ref))), Options).
-
-% Extract fs structure from app DSL
-component(Entity, project_fs_structure, Structure) :-
-    component(Entity, has(project(app)), project(app(Options))),
-    member(fs(structure(Structure)), Options).
-
-% Extract context outputs
-component(Entity, project_context_outputs, Outputs) :-
-    component(Entity, has(project(context(build))), project(context(build(Options)))),
-    member(outputs(Outputs), Options).
-
-% === CROSS-DOMAIN TRIGGERING (Level 2 composition) ===
+% === REVERSE BRIDGE RULES (Pattern 3: KB → KB expansion) ===
+% These trigger OTHER domain schemas from project components
 
 % Project git origin triggers git repository component
-component(Entity, has(git(repository)), git(repository(origin(Origin)))) :-
-    component(Entity, project_git_origin, Origin).
+component(Entity, project_git_origin, Origin)
+    ==> component(Entity, has(git(repository)), git(repository(origin(Origin)))).
 
 % Project nix flake triggers nix flake component
-component(Entity, has(nix(flake)), NixFlake) :-
-    component(Entity, project_nix_flake, NixFlake).
+component(Entity, project_nix_flake, NixFlake)
+    ==> component(Entity, has(nix(flake)), NixFlake).
 
 % Project fs structure triggers fs structure component
-component(Entity, has(fs(structure)), fs(structure(Patterns))) :-
-    component(Entity, project_fs_structure, Patterns).
+component(Entity, project_fs_structure, Patterns)
+    ==> component(Entity, has(fs(structure)), fs(structure(Patterns))).
 
-% === SPELL IMPLEMENTATIONS ===
+% === LEAF COMPONENT VERIFICATIONS USING :: OPERATOR ===
 
+% Verify project type is valid
+component(_, project_type, Type)
+    :: atom(Type),
+       member(Type, [web_service, cli_tool, library, package]).
+
+% Verify git origin is valid URL or path
+component(_, project_git_origin, Origin)
+    :: (atom(Origin) ; string(Origin)).
+
+% Verify fs structure is valid
+component(_, project_fs_structure, Structure)
+    :: is_list(Structure).
+
+% Verify context outputs is valid
+component(_, project_context_outputs, Outputs)
+    :: is_list(Outputs).
+
+% === PHASE 3: SPELL REGISTRATIONS WITH INLINE IMPLEMENTATIONS ===
+
+% Create new project from template or basic structure
 register_spell(
     conjure(mkproject),
     input(mkproject(folder_path('FolderPath'), project_name('ProjectName'), options('Options'))),
@@ -60,17 +70,18 @@ register_spell(
         ok(project_created(path('ProjectPath'), name('ProjectName'))),
         error(project_error('Reason'))
     )),
-    docstring("Creates a new project directory with full initialization. Options: git(bool), template(TemplateId)")
+    "Creates a new project directory with full initialization. Options: git(bool), template(TemplateId)",
+    [],
+    implementation(conjure(mkproject(FolderPath, ProjectName, Options)), RetVal, (
+        catch(
+            mkproject_impl(FolderPath, ProjectName, Options, RetVal),
+            Error,
+            RetVal = error(conjure_failed(Error))
+        )
+    ))
 ).
 
-% mkproject spell - create new project from template or basic structure
-cast(conjure(mkproject(FolderPath, ProjectName, Options)), RetVal) :-
-    catch(
-        mkproject_impl(FolderPath, ProjectName, Options, RetVal),
-        Error,
-        RetVal = error(conjure_failed(Error))
-    ).
-
+% Validate project entity composition
 register_spell(
     perceive(project(validate)),
     input(project(validate(entity('Entity')))),
@@ -78,27 +89,28 @@ register_spell(
         ok(valid),
         error(validation_failed(domain('Domain'), reason('Reason')))
     )),
-    docstring("Validates a project entity against its declared components and cross-domain requirements")
+    "Validates a project entity against its declared components and cross-domain requirements",
+    [],
+    implementation(perceive(project(validate(Entity))), Result, (
+        catch(
+            (please_verify(component(Entity, has(project(app)), _)),
+             please_verify(component(Entity, project_type, _)),
+             % Optionally verify git if specified
+             (component(Entity, project_git_origin, _) ->
+                 please_verify(component(Entity, has(git(repository)), _))
+             ; true),
+             % Optionally verify nix if specified
+             (component(Entity, project_nix_flake, _) ->
+                 please_verify(component(Entity, has(nix(flake)), _))
+             ; true),
+             Result = ok(valid)),
+            verification_error(Domain, Reason),
+            Result = error(validation_failed(Domain, Reason))
+        )
+    ))
 ).
 
-% project validate spell - verify project entity composition
-cast(perceive(project(validate(Entity))), Result) :-
-    catch(
-        (please_verify(component(Entity, has(project(app)), _)),
-         please_verify(component(Entity, project_type, _)),
-         % Optionally verify git if specified
-         (component(Entity, project_git_origin, _) ->
-             please_verify(component(Entity, has(git(repository)), _))
-         ; true),
-         % Optionally verify nix if specified
-         (component(Entity, project_nix_flake, _) ->
-             please_verify(component(Entity, has(nix(flake)), _))
-         ; true),
-         Result = ok(valid)),
-        verification_error(Domain, Reason),
-        Result = error(validation_failed(Domain, Reason))
-    ).
-
+% Query project structure information
 register_spell(
     perceive(project(structure)),
     input(project(structure(entity('Entity')))),
@@ -107,19 +119,19 @@ register_spell(
         sources('Sources'),
         contexts('Contexts')
     ))),
-    docstring("Queries project structure, including type, source patterns, and available contexts")
+    "Queries project structure, including type, source patterns, and available contexts",
+    [],
+    implementation(perceive(project(structure(Entity))), Result, (
+        catch(
+            (please_verify(component(Entity, project_type, Type)),
+             findall(Source, component(Entity, project_fs_structure, Source), Sources),
+             findall(Context, component(Entity, has(project(context(Context))), _), Contexts),
+             Result = ok(project_info(type(Type), sources(Sources), contexts(Contexts)))),
+            Error,
+            Result = error(structure_query_failed(Error))
+        )
+    ))
 ).
-
-% project structure spell - query project structure information
-cast(perceive(project(structure(Entity))), Result) :-
-    catch(
-        (please_verify(component(Entity, project_type, Type)),
-         findall(Source, component(Entity, project_fs_structure, Source), Sources),
-         findall(Context, component(Entity, has(project(context(Context))), _), Contexts),
-         Result = ok(project_info(type(Type), sources(Sources), contexts(Contexts)))),
-        Error,
-        Result = error(structure_query_failed(Error))
-    ).
 
 % === HELPER PREDICATES ===
 
@@ -156,7 +168,7 @@ create_project_structure(ProjectPath, ProjectName, Options, RetVal) :-
 
 apply_template_or_basic(ProjectPath, ProjectName, Options, Result) :-
     (member(template(Template), Options) ->
-        magic_cast(conjure(nix(flake(new(Template, ProjectPath)))), TemplateResult),
+        magic_cast(conjure(nix(flake(new(template_id(Template), dest_path(ProjectPath))))), TemplateResult),
         (TemplateResult = ok(_) ->
             rename_project_entities(ProjectPath, Template, ProjectName, Result)
         ;
@@ -171,7 +183,7 @@ init_git_if_requested(ProjectPath, Options, RetVal, ProjectName) :-
     (member(git(false), Options) ->
         RetVal = ok(project_created(ProjectPath, ProjectName))
     ;
-        magic_cast(conjure(git(init(ProjectPath))), GitResult),
+        magic_cast(conjure(git(init(path(ProjectPath)))), GitResult),
         (GitResult = ok(_) ->
             RetVal = ok(project_created(ProjectPath, ProjectName))
         ;
@@ -286,23 +298,3 @@ discover_available_templates(Templates) :-
     findall(TemplateId,
             component(nix(flake(template)), instance, nix(flake(template(TemplateId)))),
             Templates).
-
-docstring(mkproject,
-    {|string(_)||
-    Creates a new project directory with full initialization.
-    Format: cast(conjure(mkproject(FolderPath, ProjectName, Options))).
-    Parameters:
-    - FolderPath: Base path where to create the project
-    - ProjectName: Name of the project and entity ID for semantics.pl
-    - Options: List of options:
-      - git(bool): Initialize git repo (default: true)
-      - template(Template): Flake template to use (default: none)
-    |}).
-
-docstring(conjure(mkproject), S) :- docstring(mkproject, S).
-
-% Subscribe project ctors as children for hierarchy (if they're entities)
-component(Entity, child, EntityCtor) :-
-    component(Entity, ctor, Ctor),
-    EntityCtor =.. [Entity, Ctor],
-    entity(EntityCtor).

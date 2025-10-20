@@ -1,0 +1,2 @@
+CREATE TABLE test_expanded (id INTEGER PRIMARY KEY, value TEXT);
+CREATE TABLE another_table (id INTEGER PRIMARY KEY);

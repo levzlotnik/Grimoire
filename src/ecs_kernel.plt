@@ -206,4 +206,12 @@ test(dsl_schema_expands_components) :-
 test(dsl_schema_verification_works) :-
     user:please_verify(component(test_entity_dsl_2, has(test_domain(schema)), test_domain(schema(field(another_value))))).
 
+%% ============================================================================
+%% Test Case 9: Core dump - System health verification
+%% ============================================================================
+
+test(system_healthy) :-
+    core_dump(core_dump(verified(_), broken(BrokenOntology))),
+    BrokenOntology = [].
+
 :- end_tests(ecs_kernel).

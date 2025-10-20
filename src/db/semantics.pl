@@ -1,7 +1,6 @@
-% Database entity system with reverse proxy predicating
 :- grimoire_ensure_loaded('@/src/db/sqlite3.pl').
 
-:- self_entity(db).
+:- self_entity(db, "Database domain - create and query SQLite databases using explicit database objects").
 
 % === ENTITY DECLARATIONS ===
 
@@ -10,6 +9,8 @@ entity(db(create)).
 entity(db(execute)).
 entity(db(query)).
 entity(db(tables)).
+entity(db(write_table)).
+entity(db(read_table)).
 
 % Database type entities
 entity(db(sqlite)).
@@ -26,84 +27,23 @@ docstring(db(create),
     |}
 ).
 
-% === DYNAMIC REGISTRATION SYSTEM ===
-
-% Db should be a unique identifier
-% registered_db(database(Db), data(file(DbPath)), schema(file(SchemaPath)))
-:- dynamic registered_db/3.
-:- multifile registered_db/3.
-:- discontiguous registered_db/3.
-
-% === ENTITY PATTERNS ===
-
-% Database entities
-entity(database(Db)) :-
-    registered_db(database(Db), data(file(_)), schema(file(_))).
-
-% === COMPONENT PATTERNS (REVERSE PROXY) ===
-
-% Database file component
-component(database(Db), data, data(file(DbFile))) :-
-    registered_db(database(Db), data(file(DbFile)), schema(file(_))).
-
-% Schema component
-component(database(Db), schema, schema(file(SchemaPath))) :-
-    registered_db(database(Db), data(file(_)), schema(file(SchemaPath))).
-
-% Table components
-component(database(Db), table, table(TableName)) :-
-    registered_db_table(database(Db), table(TableName)).
-
-% Column components
-component(database(Db), column, column(TableName, ColumnName, ColumnInfo)) :-
-    registered_db_column(database(Db), column(TableName, ColumnName, ColumnInfo)).
-
-% === DISCOVERY PREDICATES ===
-
-% Query SQLite for tables
-registered_db_table(database(Db), table(TableName)) :-
-    registered_db(database(Db), data(file(DbFile)), schema(file(_))),
-    exists_file(DbFile),
-    get_database_tables(DbFile, TableStrings),
-    member(TableString, TableStrings),
-    atom_string(TableName, TableString).
-
-% Query SQLite for columns
-registered_db_column(database(Db), column(TableName, ColumnName, ColumnInfo)) :-
-    registered_db(database(Db), data(file(DbFile)), schema(file(_))),
-    get_table_columns(DbFile, TableName, Columns),
-    member(ColumnInfo, Columns),
-    ColumnInfo = column(ColumnNameString, _, _, _, _),
-    atom_string(ColumnName, ColumnNameString).
-
 % === COMPONENT EXPANSION USING ==> OPERATOR ===
 % The ==> operator automatically generates BOTH:
 % 1. Component expansion rules (generative)
 % 2. Verify clause with please_verify calls (discriminative)
 
 % High-level has(db(sqlite)) pattern expands to queryable properties
-component(Entity, has(db(sqlite)), db(sqlite(database_id(DbId), file(File), schema(Schema))))
-    ==> component(Entity, db_sqlite_id, DbId),
-        component(Entity, db_sqlite_file, File),
-        component(Entity, db_sqlite_schema, Schema).
+% Schema is derived dynamically from the database file itself
+component(Entity, has(db(sqlite)), db(sqlite(file(File))))
+    ==> component(Entity, db_sqlite_file, File),
+        (component(Entity, db_sqlite_schema, Schema) :- get_database_schema(File, Schema))
+        :: Schema = sql(Sql), atom_string(Sql, SqlStr), SqlStr \= ''.
 
 % === LEAF COMPONENT VERIFICATIONS USING :: OPERATOR ===
 % The :: operator ONLY generates verify clauses for leaf components
 
-% Verify database ID is valid atom
-component(_E, db_sqlite_id, DbId)
-    :: (atom(DbId) ->
-           (DbId \= '' ->
-               true
-           ;
-               throw(verification_error(db, empty_database_id))
-           )
-       ;
-           throw(verification_error(db, database_id_not_atom(DbId)))
-       ).
-
 % Verify database file exists and is readable SQLite database
-component(_E, db_sqlite_file, File)
+component(_, db_sqlite_file, File)
     :: (atom(File) ; string(File)),
        atom_string(File, FileStr),
        (exists_file(FileStr) ->
@@ -120,30 +60,10 @@ component(_E, db_sqlite_file, File)
            throw(verification_error(db, file_not_found(File)))
        ).
 
-% Verify schema file exists and is readable
-component(_E, db_sqlite_schema, Schema)
-    :: (atom(Schema) ; string(Schema)),
-       atom_string(Schema, SchemaStr),
-       (exists_file(SchemaStr) ->
-           (access_file(SchemaStr, read) ->
-               true
-           ;
-               throw(verification_error(db, schema_not_readable(Schema)))
-           )
-       ;
-           throw(verification_error(db, schema_not_found(Schema)))
-       ).
-
-% Derived: database validity check (no verification - it's a query)
-component(Entity, db_sqlite_valid, true) :-
-    component(Entity, db_sqlite_file, DbPath),
-    validate_database(DbPath).
-
-% Derived: list of tables in database (no verification - it's a query)
-component(Entity, db_sqlite_tables, Tables) :-
-    component(Entity, db_sqlite_file, DbPath),
-    exists_file(DbPath),
-    get_database_tables(DbPath, Tables).
+% Derive tables from database file
+component(Entity, db_sqlite_file, DbPath) ==>
+    (component(Entity, db_sqlite_tables, Tables) :- exists_file(DbPath), get_database_tables(DbPath, Tables))
+    ::  exists_file(DbPath).
 
 % === COMMAND SYSTEM ===
 
@@ -160,23 +80,19 @@ component(db, subcommand, tables).
 % that branches based on schema(file(...)) vs schema(sql(...))
 register_spell(
     conjure(db(create)),
-    input(db(create(database_id('DbId'), file('DbPath'), 'SchemaSpec'))),
+    input(db(create(file('DbPath'), schema('SchemaSpec')))),
     output(either(
-        ok(database_created('DbId', 'DbPath', 'RegisteredDbFact')),
+        ok(db(sqlite(file('DbPath')))),
         error(db_error('Reason'))
     )),
-    "Create a new SQLite database from a schema file or SQL string. Returns the registered_db fact that should be persisted to session state.",
-    [session_persistent(true)],
-    implementation(conjure(db(create(DbId, DbPath, SchemaSpec))), Result, (
-        % Validation
-        atom(DbId),
-        DbId \= '',
-        (atom(DbPath) ; string(DbPath)),
-
-        % Convert to strings if needed
+    "Create a new SQLite database from a schema file or SQL string. Returns a database object.",
+    [session_persistence(has(db(sqlite)))],
+    implementation(conjure(db(create(file(DbPath), schema(SchemaSpec)))), Result, (
+        % Validate path
+        ((atom(DbPath) ; string(DbPath)) -> true ; throw(error(db_error(invalid_db_path(DbPath))))),
         (atom(DbPath) -> atom_string(DbPath, DbPathStr) ; DbPathStr = DbPath),
 
-        % Verify database path directory exists and is writable
+        % Validate directory exists and is writable
         file_directory_name(DbPathStr, DbDir),
         (exists_directory(DbDir) ->
             access_file(DbDir, write)
@@ -184,96 +100,57 @@ register_spell(
             throw(error(db_error(directory_not_found(DbDir))))
         ),
 
-        % Verify database doesn't already exist (prevent overwrite)
-        (\+ exists_file(DbPathStr) ->
-            true
-        ;
+        % Check DB doesn't already exist
+        (exists_file(DbPathStr) ->
             throw(error(db_error(database_already_exists(DbPathStr))))
-        ),
-
-        % Handle schema(file(...)) or schema(sql(...))
-        (SchemaSpec = schema(file(SchemaFile)) ->
-            % File-based schema
-            (atom(SchemaFile) -> atom_string(SchemaFile, SchemaFileStr) ; SchemaFileStr = SchemaFile),
-            % Verify schema file exists and is valid
-            exists_file(SchemaFileStr),
-            access_file(SchemaFileStr, read),
-            % Create database
-            sqlite3_init_db(DbPathStr, SchemaFileStr),
-            % Return the schema file path
-            ActualSchemaFile = SchemaFile
-        ; SchemaSpec = schema(sql(SchemaSQL)) ->
-            % SQL string schema
-            string(SchemaSQL),
-            % Validate SQL string contains CREATE statements
-            (sub_string(SchemaSQL, _, _, _, "CREATE") ; sub_string(SchemaSQL, _, _, _, "create")),
-            % Generate schema file
-            file_name_extension(DbBaseName, db, DbPathStr),
-            format(atom(GeneratedSchemaFile), '~w.schema.sql', [DbBaseName]),
-            % Write schema to file
-            open(GeneratedSchemaFile, write, Stream),
-            write(Stream, SchemaSQL),
-            close(Stream),
-            % Verify schema file was written
-            exists_file(GeneratedSchemaFile),
-            access_file(GeneratedSchemaFile, read),
-            % Create database
-            sqlite3_init_db(DbPathStr, GeneratedSchemaFile),
-            % Return the generated schema file path
-            ActualSchemaFile = GeneratedSchemaFile
         ;
-            throw(error(db_error(invalid_schema_spec(SchemaSpec))))
+            true
         ),
 
-        % Verify creation succeeded
+        % Process schema (file or SQL)
+        process_schema_spec(SchemaSpec, DbPathStr, _ActualSchemaFile),
+
+        % Verify DB was created
         (exists_file(DbPathStr) ->
             validate_database(DbPathStr)
         ;
             throw(error(db_error(creation_failed(DbPathStr))))
         ),
 
-        % Return success - hook will persist to state.pl
-        RegisteredDbFact = registered_db(database(DbId), data(file(DbPath)), schema(file(ActualSchemaFile))),
-        Result = ok(database_created(DbId, DbPath, RegisteredDbFact))
+        Result = ok(db(sqlite(file(DbPath))))
     ))
 ).
 
 % Execute SQL statement (mutation)
 register_spell(
     conjure(db(execute)),
-    input(db(execute(database_id('DbId'), sql('SQL')))),
+    input(db(execute(database('DbPath'), sql('SQL')))),
     output(either(
         ok(executed('SQL')),
         error(db_error('Reason'))
     )),
     "Execute a SQL statement that modifies the database (INSERT, UPDATE, DELETE, etc.).",
     [],
-    implementation(conjure(db(execute(database_id(DbId), sql(SQL)))), Result, (
+    implementation(conjure(db(execute(database(DbPath), sql(SQL)))), Result, (
         % Validation
-        atom(DbId),
         string(SQL),
+        (atom(DbPath) -> atom_string(DbPath, DbPathStr) ; DbPathStr = DbPath),
 
-        % Fetch and verify database path using please_verify
-        (registered_db(database(DbId), data(file(DbPath)), schema(file(_))) ->
-            % Verify file exists and is accessible
-            (atom(DbPath) -> atom_string(DbPath, DbPathStr) ; DbPathStr = DbPath),
-            (exists_file(DbPathStr) ->
-                (access_file(DbPathStr, write) ->
-                    (validate_database(DbPathStr) ->
-                        % Execute
-                        sqlite3_exec(DbPathStr, SQL),
-                        Result = ok(executed(SQL))
-                    ;
-                        throw(error(db_error(invalid_database(DbId))))
-                    )
+        % Verify file exists and is accessible
+        (exists_file(DbPathStr) ->
+            (access_file(DbPathStr, write) ->
+                (validate_database(DbPathStr) ->
+                    % Execute
+                    sqlite3_exec(DbPathStr, SQL),
+                    Result = ok(executed(SQL))
                 ;
-                    throw(error(db_error(database_not_writable(DbId))))
+                    Result = error(db_error(invalid_database(DbPath)))
                 )
             ;
-                throw(error(db_error(database_file_not_found(DbId, DbPathStr))))
+                Result = error(db_error(database_not_writable(DbPath)))
             )
         ;
-            Result = error(db_error(database_not_found(DbId)))
+            Result = error(db_error(database_file_not_found(DbPath)))
         )
     ))
 ).
@@ -281,39 +158,33 @@ register_spell(
 % Query database and return results
 register_spell(
     perceive(db(query)),
-    input(db(query(database_id('DbId'), sql('SQL')))),
+    input(db(query(database('DbPath'), sql('SQL')))),
     output(either(
         ok(query_results('Results')),
         error(query_error('Reason'))
     )),
     "Execute a SQL query and return the results. Use for SELECT statements.",
     [],
-    implementation(perceive(db(query(database_id(DbId), sql(SQL)))), Result, (
+    implementation(perceive(db(query(database(DbPath), sql(SQL)))), Result, (
         % Validation
-        atom(DbId),
         string(SQL),
+        (atom(DbPath) -> atom_string(DbPath, DbPathStr) ; DbPathStr = DbPath),
 
-        % Fetch and verify database path
-        (registered_db(database(DbId), data(file(DbPath)), schema(file(_))) ->
-            % Verify file exists and is readable
-            (atom(DbPath) -> atom_string(DbPath, DbPathStr) ; DbPathStr = DbPath),
-            (exists_file(DbPathStr) ->
-                (access_file(DbPathStr, read) ->
-                    (validate_database(DbPathStr) ->
-                        % Query
-                        sqlite3_query(DbPathStr, SQL, QueryResults),
-                        Result = ok(query_results(QueryResults))
-                    ;
-                        throw(error(query_error(invalid_database(DbId))))
-                    )
+        % Verify file exists and is readable
+        (exists_file(DbPathStr) ->
+            (access_file(DbPathStr, read) ->
+                (validate_database(DbPathStr) ->
+                    % Query
+                    sqlite3_query(DbPathStr, SQL, QueryResults),
+                    Result = ok(query_results(QueryResults))
                 ;
-                    throw(error(query_error(database_not_readable(DbId))))
+                    Result = error(query_error(invalid_database(DbPath)))
                 )
             ;
-                throw(error(query_error(database_file_not_found(DbId, DbPathStr))))
+                Result = error(query_error(database_not_readable(DbPath)))
             )
         ;
-            Result = error(query_error(database_not_found(DbId)))
+            Result = error(query_error(database_file_not_found(DbPath)))
         )
     ))
 ).
@@ -321,42 +192,229 @@ register_spell(
 % Get list of tables in database
 register_spell(
     perceive(db(tables)),
-    input(db(tables(database_id('DbId')))),
+    input(db(tables(database('DbPath')))),
     output(either(
         ok(tables('TableList')),
         error(tables_error('Reason'))
     )),
     "Get a list of all tables in the specified database.",
     [],
-    implementation(perceive(db(tables(database_id(DbId)))), Result, (
+    implementation(perceive(db(tables(database(DbPath)))), Result, (
         % Validation
-        atom(DbId),
+        (atom(DbPath) -> atom_string(DbPath, DbPathStr) ; DbPathStr = DbPath),
 
-        % Fetch and verify database path
-        (registered_db(database(DbId), data(file(DbPath)), schema(file(_))) ->
-            % Verify file exists and is readable
-            (atom(DbPath) -> atom_string(DbPath, DbPathStr) ; DbPathStr = DbPath),
-            (exists_file(DbPathStr) ->
-                (access_file(DbPathStr, read) ->
-                    (validate_database(DbPathStr) ->
-                        % Get tables
-                        get_database_tables(DbPathStr, TableList),
-                        Result = ok(tables(TableList))
-                    ;
-                        throw(error(tables_error(invalid_database(DbId))))
-                    )
+        % Verify file exists and is readable
+        (exists_file(DbPathStr) ->
+            (access_file(DbPathStr, read) ->
+                (validate_database(DbPathStr) ->
+                    % Get tables
+                    get_database_tables(DbPathStr, TableList),
+                    Result = ok(tables(TableList))
                 ;
-                    throw(error(tables_error(database_not_readable(DbId))))
+                    Result = error(tables_error(invalid_database(DbPath)))
                 )
             ;
-                throw(error(tables_error(database_file_not_found(DbId, DbPathStr))))
+                Result = error(tables_error(database_not_readable(DbPath)))
             )
         ;
-            Result = error(tables_error(database_not_found(DbId)))
+            Result = error(tables_error(database_file_not_found(DbPath)))
         )
     ))
 ).
 
-% === DOCSTRINGS ===
+% Write table data - rows are Prolog compound terms
+register_spell(
+    conjure(db(write_table)),
+    input(db(write_table(database('DbPath'), table('TableName'), rows('Rows')))),
+    output(either(
+        ok(written(count('Count'))),
+        error(write_error('Reason'))
+    )),
+    "Write rows (as Prolog compound terms) to a database table. Creates table if needed.",
+    [],
+    implementation(conjure(db(write_table(database(DbPath), table(TableName), rows(Rows)))), Result, (
+        catch(
+            (write_rows_to_table(DbPath, TableName, Rows, Count),
+             Result = ok(written(count(Count)))),
+            Error,
+            Result = error(write_error(Error))
+        )
+    ))
+).
 
-docstring(db, "Database entity system with reverse proxy predicating. Register databases with registered_db(database(UniqueId), data(file(DbPath)), schema(file(SchemaPath))) to enable components").
+% Read table data - returns rows as Prolog compound terms
+register_spell(
+    perceive(db(read_table)),
+    input(db(read_table(database('DbPath'), table('TableName')))),
+    output(either(
+        ok(rows('Rows')),
+        error(read_error('Reason'))
+    )),
+    "Read rows from a database table as Prolog compound terms.",
+    [],
+    implementation(perceive(db(read_table(database(DbPath), table(TableName)))), Result, (
+        catch(
+            (read_rows_from_table(DbPath, TableName, Rows),
+             Result = ok(rows(Rows))),
+            Error,
+            Result = error(read_error(Error))
+        )
+    ))
+).
+
+% === HELPER PREDICATES ===
+
+% Process schema specification (file or SQL string)
+process_schema_spec(file(SchemaFile), DbPathStr, SchemaFile) :-
+    !,
+    (atom(SchemaFile) -> atom_string(SchemaFile, SchemaFileStr) ; SchemaFileStr = SchemaFile),
+    exists_file(SchemaFileStr),
+    access_file(SchemaFileStr, read),
+    sqlite3_init_db(DbPathStr, SchemaFileStr).
+
+process_schema_spec(sql(SchemaSQL), DbPathStr, GeneratedSchemaFile) :-
+    !,
+    (atom(SchemaSQL) -> atom_string(SchemaSQL, SchemaSQLStr) ; SchemaSQLStr = SchemaSQL),
+    (sub_string(SchemaSQLStr, _, _, _, "CREATE") ; sub_string(SchemaSQLStr, _, _, _, "create")),
+    % Extract directory and base filename
+    file_directory_name(DbPathStr, DbDir),
+    file_base_name(DbPathStr, DbFile),
+    file_name_extension(DbBaseName, db, DbFile),
+    % Generate schema file path in same directory
+    atomic_list_concat([DbDir, '/', DbBaseName, '.schema.sql'], GeneratedSchemaFile),
+    open(GeneratedSchemaFile, write, Stream),
+    write(Stream, SchemaSQLStr),
+    close(Stream),
+    exists_file(GeneratedSchemaFile),
+    access_file(GeneratedSchemaFile, read),
+    sqlite3_init_db(DbPathStr, GeneratedSchemaFile).
+
+process_schema_spec(SchemaSpec, _, _) :-
+    throw(error(db_error(invalid_schema_spec(SchemaSpec)))).
+
+% Write rows to table (rows are Prolog compound terms)
+write_rows_to_table(DbPath, TableName, Rows, Count) :-
+    % Validate inputs
+    (atom(DbPath) -> atom_string(DbPath, DbPathStr) ; DbPathStr = DbPath),
+    atom(TableName),
+    is_list(Rows),
+
+    % Verify file exists and is writable
+    (exists_file(DbPathStr) -> true ; throw(error(database_file_not_found(DbPath)))),
+    (access_file(DbPathStr, write) -> true ; throw(error(database_not_writable(DbPath)))),
+    (validate_database(DbPathStr) -> true ; throw(error(invalid_database(DbPath)))),
+
+    % Get first row to determine structure
+    (Rows = [FirstRow|_] ->
+        FirstRow =.. [_Functor|Args],
+        length(Args, Arity),
+
+        % Create table if it doesn't exist (generic structure based on arity)
+        % Columns: col1, col2, col3, etc. all TEXT
+        create_generic_table(DbPathStr, TableName, Arity),
+
+        % Clear existing data
+        format(atom(ClearSQL), 'DELETE FROM ~w', [TableName]),
+        sqlite3_exec(DbPathStr, ClearSQL),
+
+        % Insert rows
+        forall(
+            member(Row, Rows),
+            insert_row(DbPathStr, TableName, Row)
+        ),
+
+        length(Rows, Count)
+    ;
+        % No rows to write
+        Count = 0
+    ).
+
+% Create generic table with N TEXT columns
+create_generic_table(DbPath, TableName, Arity) :-
+    % Generate column definitions: col1 TEXT, col2 TEXT, etc.
+    findall(ColDef,
+        (between(1, Arity, I),
+         format(atom(ColDef), 'col~w TEXT', [I])),
+        ColDefs),
+    atomic_list_concat(ColDefs, ', ', ColDefsStr),
+    format(atom(CreateSQL), 'CREATE TABLE IF NOT EXISTS ~w (~w)', [TableName, ColDefsStr]),
+    sqlite3_exec(DbPath, CreateSQL).
+
+% Insert a single row
+insert_row(DbPath, TableName, Row) :-
+    Row =.. [_Functor|Args],
+    % Convert args to escaped SQL values
+    maplist(term_to_sql_value, Args, SQLValues),
+    atomic_list_concat(SQLValues, ', ', ValuesStr),
+    format(atom(InsertSQL), 'INSERT INTO ~w VALUES (~w)', [TableName, ValuesStr]),
+    sqlite3_exec(DbPath, InsertSQL).
+
+% Convert Prolog term to SQL value with type preservation
+% Format: Type(Value) stored as string
+term_to_sql_value(Term, SQLValue) :-
+    (atom(Term) ->
+        TypedTerm = atom(Term)
+    ; string(Term) ->
+        TypedTerm = string(Term)
+    ; number(Term) ->
+        TypedTerm = number(Term)
+    ; is_list(Term) ->
+        TypedTerm = list(Term)
+    ; compound(Term) ->
+        TypedTerm = compound(Term)
+    ;
+        TypedTerm = other(Term)
+    ),
+    % Serialize to string representation
+    term_string(TypedTerm, TypedStr),
+    escape_sql_string_value(TypedStr, Escaped),
+    format(atom(SQLValue), '\'~w\'', [Escaped]).
+
+% Escape SQL string by doubling single quotes
+escape_sql_string_value(Input, Escaped) :-
+    (atom(Input) -> atom_string(Input, InputStr) ; InputStr = Input),
+    split_string(InputStr, "'", "", Parts),
+    atomics_to_string(Parts, "''", Escaped).
+
+% Read rows from table as Prolog compound terms
+read_rows_from_table(DbPath, TableName, Rows) :-
+    % Validate inputs
+    (atom(DbPath) -> atom_string(DbPath, DbPathStr) ; DbPathStr = DbPath),
+    atom(TableName),
+
+    % Verify file exists and is readable
+    (exists_file(DbPathStr) -> true ; throw(error(database_file_not_found(DbPath)))),
+    (access_file(DbPathStr, read) -> true ; throw(error(database_not_readable(DbPath)))),
+    (validate_database(DbPathStr) -> true ; throw(error(invalid_database(DbPath)))),
+
+    % Query all rows
+    format(atom(SelectSQL), 'SELECT * FROM ~w', [TableName]),
+    sqlite3_query(DbPathStr, SelectSQL, DictRows),
+
+    % Convert dict rows to compound terms
+    maplist(dict_row_to_compound(TableName), DictRows, Rows).
+
+% Convert dict row to compound term
+% For a table, we extract values in column order and create row(Val1, Val2, ...)
+dict_row_to_compound(TableName, DictRow, CompoundRow) :-
+    % Get column names in order from the dict
+    dict_pairs(DictRow, _, Pairs),
+    pairs_values(Pairs, TypedValues),
+    % Deserialize typed values back to original terms
+    maplist(sql_value_to_term, TypedValues, Values),
+    % Create compound term with table name as functor
+    CompoundRow =.. [TableName|Values].
+
+% Deserialize SQL value back to original Prolog term with type
+sql_value_to_term(SQLValue, Term) :-
+    % Parse the typed term string
+    term_string(TypedTerm, SQLValue),
+    % Extract value from Type(Value) wrapper
+    (TypedTerm = atom(V) -> Term = V
+    ; TypedTerm = string(V) -> Term = V
+    ; TypedTerm = number(V) -> Term = V
+    ; TypedTerm = list(V) -> Term = V
+    ; TypedTerm = compound(V) -> Term = V
+    ; TypedTerm = other(V) -> Term = V
+    ; Term = SQLValue  % Fallback if not wrapped
+    ).

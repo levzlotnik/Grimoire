@@ -1,0 +1,1 @@
+CREATE TABLE test_dsl (id INTEGER PRIMARY KEY, name TEXT);

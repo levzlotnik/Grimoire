@@ -7,17 +7,6 @@
 
 :- begin_tests(project_tests).
 
-% === VERIFY PREDICATES ===
-
-% Verify project app component and validate type
-verify(component(Entity, has(project(app)), project(app(Options)))) :-
-    user:please_verify(component(Entity, project_type, Type)),
-    member(Type, [web_service, cli_tool, library, package]).
-
-% Verify project type is valid
-verify(component(_Entity, project_type, Type)) :-
-    member(Type, [web_service, cli_tool, library, package]).
-
 % === TESTS ===
 
 % Test DSL expansion rules work

@@ -124,7 +124,7 @@ docstring(fact_schema,
         component(my_app, nix_package, "hello").  % auto-discovered
 
         % Domain's semantics.plt verifies:
-        verify(component(my_app, has(nix(flake)), nix(flake(ref("./"))))).
+        please_verify(component(my_app, has(nix(flake)), nix(flake(ref("./"))))).
     |}
 ).
 
@@ -401,6 +401,82 @@ docstring(please_verify,
     |}
 ).
 
+% Guard: verify can only be called from please_verify (MUST be LAST verify clause!)
+verify(Pattern) :-
+    \+ in_please_verify,
+    !,
+    throw(error(
+        direct_verify_forbidden(Pattern),
+        context(verify/1, 'NEVER call verify/1 directly. Use please_verify/1.')
+    )).
+
+%% ============================================================================
+%% CORE DUMP: COMPLETE SYSTEM STATE INTROSPECTION
+%% ============================================================================
+
+core_dump(CoreDump) :-
+    % Collect all components with their verification status
+    findall(
+        component(A, B, C)-R,
+        (component(A, B, C),
+         catch(
+             (please_verify(component(A, B, C)), R = success),
+             E,
+             R = failure(E)
+         )),
+        Ontology
+    ),
+    % Partition verified components
+    findall(C, member(C-success, Ontology), VerifiedOntology),
+    % Partition broken components with their errors
+    findall(C-E, member(C-failure(E), Ontology), BrokenOntology),
+    % The core dump IS the ontology, partitioned by verification status
+    CoreDump = core_dump(
+        verified(VerifiedOntology),
+        broken(BrokenOntology)
+    ).
+
+docstring(core_dump,
+    {|string(_)||
+    Captures complete system state as verified and broken ontology.
+
+    Format: core_dump(core_dump(verified(Components), broken(ComponentErrors)))
+
+    Behavior:
+    1. Queries all components in the knowledge base
+    2. Attempts verification on each component
+    3. Partitions into verified (success) and broken (failure with error)
+    4. Returns complete system state
+
+    This is the natural "core dump" for knowledge systems - complete introspection
+    of the entire ontology with verification status. Unlike traditional core dumps
+    that capture raw memory, this captures semantic knowledge with correctness proofs.
+
+    Use Cases:
+    - System health diagnostics (what's broken?)
+    - SBOM generation (verified bill of materials)
+    - Debugging verification failures
+    - Temporal analysis (compare dumps over time)
+    - Session persistence (dump verified state to database)
+
+    Examples:
+        % Get complete system state
+        core_dump(Dump).
+        Dump = core_dump(
+            verified([component(git, self, ...), ...]),
+            broken([component(bad_entity, ..., ...)-error(...), ...])
+        ).
+
+        % Query only verified components
+        core_dump(core_dump(verified(V), broken(_))),
+        length(V, VerifiedCount).
+
+        % Find all verification failures
+        core_dump(core_dump(verified(_), broken(B))),
+        forall(member(C-E, B), format('BROKEN: ~w~n  ERROR: ~w~n', [C, E])).
+    |}
+).
+
 % Base docstrings for ECS
 docstring(entity,
     {|string(_)||
@@ -450,15 +526,6 @@ component(Entity, docstring, Doc) :-
 % entity/1 becomes queryable as component
 component(Entity, defined, true) :-
     entity(Entity).
-
-% Guard: verify can only be called from please_verify (MUST be LAST verify clause!)
-verify(Pattern) :-
-    \+ in_please_verify,
-    !,
-    throw(error(
-        direct_verify_forbidden(Pattern),
-        context(verify/1, 'NEVER call verify/1 directly. Use please_verify/1.')
-    )).
 
 % Semantic mounting system
 :- dynamic mounted_semantic/2.  % mounted_semantic(Path, Module)

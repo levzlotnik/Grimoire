@@ -58,13 +58,26 @@ term_expansion(
     % These are the SAME variables used in Impl body
     CastImpl = (cast_impl(SpellPattern, Result) :- Impl),
 
+    % Capture source location where register_spell was called
+    prolog_load_context(file, File),
+    prolog_load_context(term_position, TermPos),
+    (   TermPos = '$stream_position'(_, Line, _, _, _)
+    ->  true
+    ;   Line = 0
+    ),
+
+    % Convert implementation to atom for easier introspection
+    term_string(implementation(SpellPattern, Result, Impl), ImplAtom),
+
     % Generate metadata components using SpellSig (constructor)
     Components = [
         component(SpellType, ctor, SpellGroundTerm),
         component(SpellSig, docstring, Doc),
         component(SpellSig, format_input, Input),
         component(SpellSig, format_output, Output),
-        component(SpellSig, spell_options, Options)
+        component(SpellSig, spell_options, Options),
+        component(SpellSig, source_location, source_location(File, Line)),
+        component(SpellSig, implementation, ImplAtom)
     ],
 
     Generated = [CastImpl | Components].
@@ -374,7 +387,6 @@ docstring(project,
 
 % Core subsystem entities - loaded immediately on boot
 % Spell system - fantasy-themed query/mutation separation
-% MUST be defined BEFORE loading subsystems that use register_spell/4
 entity(spell).
 component(spell, ctor, conjure).
 component(spell, ctor, perceive).
@@ -446,7 +458,7 @@ register_spell(
     output(either(ok(search_results('MatchedLines')), error(grimoire_error('Reason')))),
     "Search content using regular expressions. Searches through content with line numbers to find pattern matches.",
     [],
-    implementation(perceive(search_regex(ContentWithLineNumbers, Pattern)), Result, (
+    implementation(perceive(search_regex(content(ContentWithLineNumbers), pattern(Pattern))), Result, (
         catch(
             (findall(line(Num, Line),
                 (member(line(Num, Line), ContentWithLineNumbers),
@@ -468,7 +480,7 @@ register_spell(
     )),
     "Execute a program with arguments. Returns stdout and stderr on success or error details on failure.",
     [],
-    implementation(conjure(executable_program(Program, Args)), RetVal, (
+    implementation(conjure(executable_program(program(Program), args(Args))), RetVal, (
         setup_call_cleanup(
             process_create(
                 path(Program),
@@ -481,9 +493,9 @@ register_spell(
             (close(Out), close(Err))
         ),
         (ExitCode = 0 ->
-            RetVal = ok(result(Stdout, Stderr))
+            RetVal = ok(result(stdout(Stdout), stderr(Stderr)))
         ;
-            RetVal = error(process_error(Program, exit(ExitCode), Stdout, Stderr))
+            RetVal = error(process_error(program(Program), exit(ExitCode), stdout(Stdout), stderr(Stderr)))
         )
     ))
 ).
@@ -494,7 +506,7 @@ register_spell(
     output(ok(completion_message('Message'))),
     "Execute a program interactively with stdin/stdout/stderr passed through. Returns completion message.",
     [],
-    implementation(conjure(executable_program(Program, Args, interactive)), RetVal, (
+    implementation(conjure(executable_program(program(Program), args(Args), interactive)), RetVal, (
         setup_call_cleanup(
             process_create(
                 path(Program),
@@ -504,7 +516,7 @@ register_spell(
             true,
             true
         ),
-        RetVal = ok("Interactive program completed")
+        RetVal = ok(completion_message("Interactive program completed"))
     ))
 ).
 
@@ -517,10 +529,10 @@ register_spell(
     )),
     "Execute shell command with arguments. Returns stdout and stderr on success or error details on failure.",
     [],
-    implementation(conjure(shell(Args)), RetVal, (
+    implementation(conjure(shell(args(Args))), RetVal, (
         join_args(Args, JoinedArgs),
         magic_cast(
-            conjure(executable_program(sh, ["-c", JoinedArgs])),
+            conjure(executable_program(program(sh), args(["-c", JoinedArgs]))),
             RetVal
         )
     ))
@@ -532,10 +544,10 @@ register_spell(
     output(ok(completion_message('Message'))),
     "Execute shell command interactively with stdin/stdout/stderr passed through. Returns completion message.",
     [],
-    implementation(conjure(shell(Args, interactive)), RetVal, (
+    implementation(conjure(shell(args(Args), interactive)), RetVal, (
         join_args(Args, JoinedArgs),
         magic_cast(
-            conjure(executable_program(sh, ["-c", JoinedArgs], interactive)),
+            conjure(executable_program(program(sh), args(["-c", JoinedArgs]), interactive)),
             RetVal
         )
     ))
@@ -571,9 +583,9 @@ register_spell(
     output(ok(results(list('Results')))),
     "Cast multiple spells as an atomic ritual (transaction). All spells must succeed or all fail together.",
     [],
-    implementation(ritual(Operations), RetVal, (
+    implementation(conjure(ritual(operations(list(Operations)))), RetVal, (
         maplist(magic_cast, Operations, Results),
-        RetVal = ok(Results)
+        RetVal = ok(results(list(Results)))
     ))
 ).
 

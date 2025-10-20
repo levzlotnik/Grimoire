@@ -1,6 +1,9 @@
 :- use_module(library(plunit)).
 :- use_module(library(filesex)).
 
+% Load domain semantics first
+:- grimoire_ensure_loaded('@/src/fs.pl').
+
 % Load test entity from file-based knowledge
 :- load_entity(semantic(file('@/src/tests/fs_test_entity.pl'))).
 
@@ -51,7 +54,7 @@ test(fs_read_file_spell, [
     setup(create_read_test_file),
     cleanup(cleanup_read_test_file)
 ]) :-
-    user:magic_cast(perceive(fs(read_file('read_test.txt', 1, 2))), Result), !,
+    user:magic_cast(perceive(fs(read_file(path('read_test.txt'), start(1), end(2)))), Result),
     assertion(Result = ok(file_content(Content))),
     length(Content, 2),
     Content = [line(1, "line 1"), line(2, "line 2")].
@@ -61,9 +64,9 @@ test(fs_edit_file_insert_spell, [
     setup(create_edit_test_file),
     cleanup(cleanup_edit_test_file)
 ]) :-
-    user:magic_cast(conjure(fs(edit_file(file('edit_test.txt'), [insert(2, "inserted line")]))), Result), !,
+    user:magic_cast(conjure(fs(edit_file(file('edit_test.txt'), edits([insert(2, "inserted line")])))), Result),
     assertion(Result == ok(file_modified('edit_test.txt'))),
-    read_file_to_lines('edit_test.txt', Lines),
+    user:read_file_to_lines('edit_test.txt', Lines),
     assertion(Lines == ["original line 1", "inserted line", "original line 2", "original line 3"]).
 
 % Test edit_file spell - append operation
@@ -71,9 +74,9 @@ test(fs_edit_file_append_spell, [
     setup(create_edit_test_file),
     cleanup(cleanup_edit_test_file)
 ]) :-
-    user:magic_cast(conjure(fs(edit_file(file('edit_test.txt'), [append("appended line")]))), Result), !,
+    user:magic_cast(conjure(fs(edit_file(file('edit_test.txt'), edits([append("appended line")])))), Result),
     assertion(Result == ok(file_modified('edit_test.txt'))),
-    read_file_to_lines('edit_test.txt', Lines),
+    user:read_file_to_lines('edit_test.txt', Lines),
     assertion(nth1(4, Lines, "appended line")).
 
 % Test edit_file spell - delete operation
@@ -81,9 +84,9 @@ test(fs_edit_file_delete_spell, [
     setup(create_edit_test_file),
     cleanup(cleanup_edit_test_file)
 ]) :-
-    user:magic_cast(conjure(fs(edit_file(file('edit_test.txt'), [delete(2, 2)]))), Result), !,
+    user:magic_cast(conjure(fs(edit_file(file('edit_test.txt'), edits([delete(2, 2)])))), Result),
     assertion(Result == ok(file_modified('edit_test.txt'))),
-    read_file_to_lines('edit_test.txt', Lines),
+    user:read_file_to_lines('edit_test.txt', Lines),
     assertion(Lines == ["original line 1", "original line 3"]).
 
 % Test edit_file spell - replace operation
@@ -91,20 +94,20 @@ test(fs_edit_file_replace_spell, [
     setup(create_edit_test_file),
     cleanup(cleanup_edit_test_file)
 ]) :-
-    user:magic_cast(conjure(fs(edit_file(file('edit_test.txt'), [replace(2, 2, "replaced line")]))), Result), !,
+    user:magic_cast(conjure(fs(edit_file(file('edit_test.txt'), edits([replace(2, 2, "replaced line")])))), Result),
     assertion(Result == ok(file_modified('edit_test.txt'))),
-    read_file_to_lines('edit_test.txt', Lines),
+    user:read_file_to_lines('edit_test.txt', Lines),
     assertion(Lines == ["original line 1", "replaced line", "original line 3"]).
 
 % Test mkdir spell (with git disabled to avoid git dependency)
 test(fs_mkdir_spell, [cleanup(cleanup_mkdir_test)]) :-
-    user:magic_cast(conjure(fs(mkdir('test_mkdir_dir', [git(false)]))), Result), !,
+    user:magic_cast(conjure(fs(mkdir(path('test_mkdir_dir'), options([git(false)])))), Result),
     assertion(Result == ok(directory_created('test_mkdir_dir'))),
     assertion(exists_directory('test_mkdir_dir')).
 
 % Test mkfile spell (with git disabled to avoid git dependency)
 test(fs_mkfile_spell, [cleanup(cleanup_mkfile_test)]) :-
-    user:magic_cast(conjure(fs(mkfile('test_mkfile.txt', [git(false)]))), Result), !,
+    user:magic_cast(conjure(fs(mkfile(path('test_mkfile.txt'), options([git(false)])))), Result),
     assertion(Result == ok(file_created('test_mkfile.txt'))),
     assertion(exists_file('test_mkfile.txt')).
 
@@ -137,7 +140,7 @@ test(verify_content_mismatch_throws, [
 
 % Debug test - check if fs entity exists (basic sanity check)
 test(debug_entity_integrity) :-
-    entity(fs), !.
+    user:entity(fs).
 
 :- end_tests(fs).
 
@@ -233,7 +236,7 @@ cleanup_read_test_file :-
 
 % Setup file for edit tests
 create_edit_test_file :-
-    write_lines_to_file('edit_test.txt', [
+    user:write_lines_to_file('edit_test.txt', [
         "original line 1",
         "original line 2",
         "original line 3"

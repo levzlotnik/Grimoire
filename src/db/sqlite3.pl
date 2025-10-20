@@ -13,13 +13,13 @@ sqlite3_exec(DbPath, SQL) :-
         true
     ;
         (ErrorString = "" ->
-            throw(sqlite_error(Status))
+            throw(error(sqlite_error(Status), context(sqlite3_exec/2, DbPath)))
         ;
-            throw(sqlite_error(ErrorString))
+            throw(error(sqlite_error(ErrorString), context(sqlite3_exec/2, DbPath)))
         )
     ).
 
-% Execute SQL and parse JSON results  
+% Execute SQL and parse JSON results
 sqlite3_query(DbPath, SQL, Results) :-
     process_create(path(sqlite3), [DbPath, '-json', SQL], [stdout(pipe(OutputStream)), stderr(pipe(ErrorStream)), process(PID)]),
     read_string(OutputStream, _, JsonString),
@@ -32,16 +32,25 @@ sqlite3_query(DbPath, SQL, Results) :-
             Results = []
         ;
             open_string(JsonString, Stream),
-            json_read_dict(Stream, Results),
-            close(Stream)
+            json_read_dict(Stream, RawResults, []),
+            close(Stream),
+            % Re-tag all dicts with 'row' tag to make them grounded
+            retag_dicts(RawResults, row, Results)
         )
     ;
         (ErrorString = "" ->
-            throw(sqlite_error(Status))
+            throw(error(sqlite_error(Status), context(sqlite3_query/3, DbPath)))
         ;
-            throw(sqlite_error(ErrorString))
+            throw(error(sqlite_error(ErrorString), context(sqlite3_query/3, DbPath)))
         )
     ).
+
+% Get schema SQL from database
+get_database_schema(DbPath, sql(SchemaSQL)) :-
+    exists_file(DbPath),
+    sqlite3_query(DbPath, "SELECT sql FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name", Results),
+    findall(SQL, (member(Row, Results), get_dict(sql, Row, SQL), SQL \= null), SQLStatements),
+    atomic_list_concat(SQLStatements, ';\n', SchemaSQL).
 
 % Initialize database with schema file
 sqlite3_init_db(DbPath, SchemaFile) :-
@@ -51,8 +60,25 @@ sqlite3_init_db(DbPath, SchemaFile) :-
         close(SchemaStream),
         sqlite3_exec(DbPath, SchemaSQL)
     ;
-        throw(schema_file_not_found(SchemaFile))
+        throw(error(schema_file_not_found(SchemaFile), context(sqlite3_init_db/2, DbPath)))
     ).
+
+% Re-tag dicts to make them grounded
+% retag_dicts(+Input, +Tag, -Output)
+retag_dicts([], _, []).
+retag_dicts([H|T], Tag, [RH|RT]) :-
+    retag_dict_item(H, Tag, RH),
+    retag_dicts(T, Tag, RT).
+retag_dicts(Input, Tag, Output) :-
+    \+ is_list(Input),
+    retag_dict_item(Input, Tag, Output).
+
+retag_dict_item(Dict, Tag, RetaggedDict) :-
+    is_dict(Dict),
+    !,
+    dict_pairs(Dict, _, Pairs),
+    dict_pairs(RetaggedDict, Tag, Pairs).
+retag_dict_item(Other, _, Other).
 
 % Escape SQL strings properly
 escape_sql_string(Input, Escaped) :-

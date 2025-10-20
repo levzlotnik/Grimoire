@@ -4,6 +4,9 @@
 % Load domain semantics first
 :- grimoire_ensure_loaded('@/src/utils.pl').
 
+% Load db domain for core dump tests
+:- load_entity(semantic(folder('@/src/db'))).
+
 % Load test entities from file-based knowledge
 :- load_entity(semantic(file('@/src/tests/utils_test_entities.pl'))).
 
@@ -44,7 +47,7 @@ test(utils_collection_verification, [setup(setup_collection), cleanup(cleanup_co
 % Test entity hierarchy building
 test(simple_hierarchy, [setup(setup_hierarchy), cleanup(cleanup_hierarchy)]) :-
     % Build hierarchy
-    user:magic_cast(perceive(utils(entity_hierarchy(test_root))), Result),
+    user:magic_cast(perceive(utils(entity_hierarchy(entity(test_root)))), Result),
     assertion(Result = ok(hierarchy(Tree))),
 
     % Verify structure (deterministic checks)
@@ -61,18 +64,67 @@ test(simple_hierarchy, [setup(setup_hierarchy), cleanup(cleanup_hierarchy)]) :-
 % Test validation spell
 test(validate_spell_success, [setup(setup_validate_entity), cleanup(cleanup_validate_entity)]) :-
     % Entity exists and should validate
-    user:magic_cast(conjure(utils(validate(validate_test_entity, [check_existence, check_format]))), Result),
+    user:magic_cast(conjure(utils(validate(entity(validate_test_entity), rules([check_existence, check_format])))), Result),
     assertion(Result == ok(validation_passed)).
 
 test(validate_spell_failure) :-
     % Nonexistent entity should fail validation
-    user:magic_cast(conjure(utils(validate(nonexistent_entity, [check_existence]))), Result),
+    user:magic_cast(conjure(utils(validate(entity(nonexistent_entity), rules([check_existence])))), Result),
     assertion(Result = error(validation_error(_))).
 
 % Test transform spell
 test(transform_spell_map) :-
-    user:magic_cast(conjure(utils(transform([1, 2, 3], map(succ)))), Result),
+    user:magic_cast(conjure(utils(transform(data([1, 2, 3]), operation(map(succ))))), Result),
     assertion(Result == ok(transformed([2, 3, 4]))).
+
+% === CORE DUMP SPELL TESTS ===
+
+% Test perceive(core_dump) spell
+test(spell_perceive_core_dump) :-
+    user:magic_cast(perceive(core_dump), Result),
+    Result = ok(core_dump(verified(Verified), broken(Broken))),
+    assertion(is_list(Verified)),
+    assertion(is_list(Broken)).
+
+% Test round-trip: perceive(core_dump) == perceive(read_core_dump_db) . conjure(core_dump_db)
+test(spell_core_dump_db_roundtrip, [cleanup(cleanup_core_dump_db)]) :-
+    TestDbPath = '/tmp/test_core_dump.db',
+
+    % Step 1: Get core dump
+    user:magic_cast(perceive(core_dump), Result1),
+    Result1 = ok(Dump1),
+    Dump1 = core_dump(verified(_), broken(_)),
+
+    % Step 2: Write to database
+    user:magic_cast(conjure(core_dump_db(db_path(TestDbPath))), WriteResult),
+    assertion(WriteResult = ok(dumped)),
+
+    % Step 3: Read from database
+    user:magic_cast(perceive(read_core_dump_db(db_path(TestDbPath))), ReadResult),
+    ReadResult = ok(Dump2),
+
+    % Step 4: Verify round-trip
+    assertion(Dump1 == Dump2).
+
+% Test round-trip: perceive(core_dump) == perceive(read_core_dump_csv) . conjure(core_dump_csv)
+test(spell_core_dump_csv_roundtrip, [cleanup(cleanup_core_dump_csv)]) :-
+    TestCsvPath = '/tmp/test_core_dump.csv',
+
+    % Step 1: Get core dump
+    user:magic_cast(perceive(core_dump), Result1),
+    Result1 = ok(Dump1),
+    Dump1 = core_dump(verified(_), broken(_)),
+
+    % Step 2: Write to CSV
+    user:magic_cast(conjure(core_dump_csv(csv_path(TestCsvPath))), WriteResult),
+    assertion(WriteResult = ok(dumped)),
+
+    % Step 3: Read from CSV
+    user:magic_cast(perceive(read_core_dump_csv(csv_path(TestCsvPath))), ReadResult),
+    ReadResult = ok(Dump2),
+
+    % Step 4: Verify round-trip
+    assertion(Dump1 == Dump2).
 
 % === SETUP/CLEANUP HELPERS ===
 
@@ -115,5 +167,81 @@ setup_hierarchy :-
 cleanup_hierarchy :-
     % No cleanup needed
     true.
+
+cleanup_core_dump_db :-
+    (exists_file('/tmp/test_core_dump.db') -> delete_file('/tmp/test_core_dump.db') ; true),
+    (exists_file('/tmp/test_core_dump.schema.sql') -> delete_file('/tmp/test_core_dump.schema.sql') ; true).
+
+cleanup_core_dump_csv :-
+    (exists_file('/tmp/test_core_dump.csv') -> delete_file('/tmp/test_core_dump.csv') ; true).
+
+% === META-INTROSPECTION SPELL TESTS ===
+
+% Test prove_it spell - trace component provenance
+test(spell_prove_it_derived_component_simple) :-
+    % Test with utils_tree_root - derived from ==> expansion
+    user:magic_cast(perceive(prove_it(component(test_entity(utils_tree_builder), utils_tree_root, test_root))), Result),
+    assertion(Result = ok(proof(
+        component(_, utils_tree_root, test_root),
+        generated_by(Generation),
+        _Verification
+    ))),
+    % Should be derived from has(utils(tree_builder))
+    assertion(Generation = derived_from(_, _)).
+
+test(spell_prove_it_derived_component_conditional) :-
+    % Test with a conditional derived component (from ==> expansion) - must be fully grounded
+    user:magic_cast(perceive(prove_it(component(test_entity(utils_tree_builder), utils_tree_max_depth, 10))), Result),
+    assertion(Result = ok(proof(
+        component(_, utils_tree_max_depth, 10),
+        generated_by(Generation),
+        _Verification
+    ))),
+    % Should be derived from the has(utils(tree_builder)) component
+    assertion(Generation = derived_from(_, _)).
+
+% Test sauce spell - extract complete spell metadata
+test(spell_sauce_perceive) :-
+    % Test with a perceive spell
+    user:magic_cast(perceive(sauce(spell(perceive(core_dump)))), Result),
+    Result = ok(sauce(
+        spell(perceive(core_dump)),
+        registered_at(source_location(File, _Line)),
+        implementation(ImplText),
+        input_format(_Input),
+        output_format(_Output),
+        docstring(Doc),
+        options(_Options)
+    )),
+    % Verify we got the source file
+    assertion(atom(File)),
+    assertion(atom_concat(_, 'utils.pl', File)),
+    % Verify we got documentation (stored as string)
+    assertion(string(Doc)),
+    assertion(Doc \= ''),
+    % Verify we got implementation (stored as string)
+    assertion(string(ImplText)).
+
+test(spell_sauce_conjure) :-
+    % Test with a conjure spell
+    user:magic_cast(perceive(sauce(spell(conjure(core_dump_db)))), Result),
+    Result = ok(sauce(
+        spell(conjure(core_dump_db)),
+        registered_at(source_location(File, _Line)),
+        implementation(ImplText),
+        input_format(input(core_dump_db(db_path(_)))),
+        output_format(_Output),
+        docstring(Doc),
+        options(_Options)
+    )),
+    % Verify source location
+    assertion(atom(File)),
+    assertion(atom_concat(_, 'utils.pl', File)),
+    % Verify docstring (stored as string)
+    assertion(string(Doc)),
+    assertion(sub_string(Doc, _, _, _, 'SQLite')),
+    % Verify implementation (stored as string)
+    assertion(string(ImplText)),
+    assertion(sub_string(ImplText, _, _, _, 'implementation')).
 
 :- end_tests(utils).

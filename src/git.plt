@@ -114,7 +114,7 @@ test(spell_git_init, [
     TestPath = '/tmp/test_git_init',
     (exists_directory(TestPath) -> delete_directory_and_contents(TestPath) ; true),
     make_directory_path(TestPath),
-    user:magic_cast(conjure(git(init(TestPath))), Result),
+    user:magic_cast(conjure(git(init(path(TestPath)))), Result),
     assertion(Result = ok(initialized(path(TestPath)))),
     assertion(exists_directory(TestPath)),
     atomic_list_concat([TestPath, '/.git'], GitDir),
@@ -125,7 +125,7 @@ test(spell_git_add, [
     setup(setup_git_add_test),
     cleanup(cleanup_git_add_test)
 ]) :-
-    user:magic_cast(conjure(git(add(git_root('/tmp/test_git_add'), ['test.txt']))), Result),
+    user:magic_cast(conjure(git(add(git_root('/tmp/test_git_add'), paths(['test.txt'])))), Result),
     assertion(Result = ok(staged(files(['test.txt'])))).
 
 % Test git commit spell
@@ -133,7 +133,7 @@ test(spell_git_commit, [
     setup(setup_git_commit_test),
     cleanup(cleanup_git_commit_test)
 ]) :-
-    user:magic_cast(conjure(git(commit(git_root('/tmp/test_git_commit'), "test message"))), Result),
+    user:magic_cast(conjure(git(commit(git_root('/tmp/test_git_commit'), message("test message")))), Result),
     assertion(Result = ok(committed(hash(_Hash)))).
 
 % Test git status spell
@@ -149,7 +149,7 @@ test(spell_git_branch_list, [
     setup(setup_git_branch_test),
     cleanup(cleanup_git_branch_test)
 ]) :-
-    user:magic_cast(perceive(git(branch(git_root('/tmp/test_git_branch'), list))), Result),
+    user:magic_cast(perceive(git(branch(git_root('/tmp/test_git_branch'), operation(list)))), Result),
     Result = ok(branches(Branches)),
     assertion(is_list(Branches)).
 
@@ -166,7 +166,7 @@ test(spell_git_config, [
     setup(setup_git_config_test),
     cleanup(cleanup_git_config_test)
 ]) :-
-    user:magic_cast(conjure(git(config(git_root('/tmp/test_git_config'), ['user.email']))), Result),
+    user:magic_cast(conjure(git(config(git_root('/tmp/test_git_config'), args(['user.email'])))), Result),
     assertion(Result = ok(config_output(_Output))).
 
 % Test git diff spell
@@ -212,11 +212,11 @@ setup_git_test_repo :-
     TestPath = '/tmp/test_project',
     (exists_directory(TestPath) -> delete_directory_and_contents(TestPath) ; true),
     make_directory_path(TestPath),
-    user:magic_cast(conjure(git(init(TestPath))), InitResult),
+    user:magic_cast(conjure(git(init(path(TestPath)))), InitResult),
     assertion(InitResult = ok(_)),
-    user:magic_cast(conjure(git(config(git_root(TestPath), ['user.email', 'test@example.com']))), EmailResult),
+    user:magic_cast(conjure(git(config(git_root(TestPath), args(['user.email', 'test@example.com'])))), EmailResult),
     assertion(EmailResult = ok(_)),
-    user:magic_cast(conjure(git(config(git_root(TestPath), ['user.name', 'Test User']))), NameResult),
+    user:magic_cast(conjure(git(config(git_root(TestPath), args(['user.name', 'Test User'])))), NameResult),
     assertion(NameResult = ok(_)).
 
 cleanup_git_test_repo :-
@@ -243,11 +243,11 @@ setup_git_add_test :-
     TestPath = '/tmp/test_git_add',
     (exists_directory(TestPath) -> delete_directory_and_contents(TestPath) ; true),
     make_directory_path(TestPath),
-    user:magic_cast(conjure(git(init(TestPath))), InitResult),
+    user:magic_cast(conjure(git(init(path(TestPath)))), InitResult),
     assertion(InitResult = ok(_)),
-    user:magic_cast(conjure(git(config(git_root(TestPath), ['user.email', 'test@example.com']))), EmailResult),
+    user:magic_cast(conjure(git(config(git_root(TestPath), args(['user.email', 'test@example.com'])))), EmailResult),
     assertion(EmailResult = ok(_)),
-    user:magic_cast(conjure(git(config(git_root(TestPath), ['user.name', 'Test User']))), NameResult),
+    user:magic_cast(conjure(git(config(git_root(TestPath), args(['user.name', 'Test User'])))), NameResult),
     assertion(NameResult = ok(_)),
     % Create a test file
     atomic_list_concat([TestPath, '/test.txt'], TestFile),
@@ -264,18 +264,18 @@ setup_git_commit_test :-
     TestPath = '/tmp/test_git_commit',
     (exists_directory(TestPath) -> delete_directory_and_contents(TestPath) ; true),
     make_directory_path(TestPath),
-    user:magic_cast(conjure(git(init(TestPath))), InitResult),
+    user:magic_cast(conjure(git(init(path(TestPath)))), InitResult),
     assertion(InitResult = ok(_)),
-    user:magic_cast(conjure(git(config(git_root(TestPath), ['user.email', 'test@example.com']))), EmailResult),
+    user:magic_cast(conjure(git(config(git_root(TestPath), args(['user.email', 'test@example.com'])))), EmailResult),
     assertion(EmailResult = ok(_)),
-    user:magic_cast(conjure(git(config(git_root(TestPath), ['user.name', 'Test User']))), NameResult),
+    user:magic_cast(conjure(git(config(git_root(TestPath), args(['user.name', 'Test User'])))), NameResult),
     assertion(NameResult = ok(_)),
     % Create and stage a file
     atomic_list_concat([TestPath, '/test.txt'], TestFile),
     open(TestFile, write, Stream),
     write(Stream, 'test content'),
     close(Stream),
-    user:magic_cast(conjure(git(add(git_root(TestPath), ['test.txt']))), AddResult),
+    user:magic_cast(conjure(git(add(git_root(TestPath), paths(['test.txt'])))), AddResult),
     assertion(AddResult = ok(_)).
 
 cleanup_git_commit_test :-
@@ -287,11 +287,11 @@ setup_git_status_test :-
     TestPath = '/tmp/test_git_status',
     (exists_directory(TestPath) -> delete_directory_and_contents(TestPath) ; true),
     make_directory_path(TestPath),
-    user:magic_cast(conjure(git(init(TestPath))), InitResult),
+    user:magic_cast(conjure(git(init(path(TestPath)))), InitResult),
     assertion(InitResult = ok(_)),
-    user:magic_cast(conjure(git(config(git_root(TestPath), ['user.email', 'test@example.com']))), EmailResult),
+    user:magic_cast(conjure(git(config(git_root(TestPath), args(['user.email', 'test@example.com'])))), EmailResult),
     assertion(EmailResult = ok(_)),
-    user:magic_cast(conjure(git(config(git_root(TestPath), ['user.name', 'Test User']))), NameResult),
+    user:magic_cast(conjure(git(config(git_root(TestPath), args(['user.name', 'Test User'])))), NameResult),
     assertion(NameResult = ok(_)).
 
 cleanup_git_status_test :-
@@ -303,11 +303,11 @@ setup_git_branch_test :-
     TestPath = '/tmp/test_git_branch',
     (exists_directory(TestPath) -> delete_directory_and_contents(TestPath) ; true),
     make_directory_path(TestPath),
-    user:magic_cast(conjure(git(init(TestPath))), InitResult),
+    user:magic_cast(conjure(git(init(path(TestPath)))), InitResult),
     assertion(InitResult = ok(_)),
-    user:magic_cast(conjure(git(config(git_root(TestPath), ['user.email', 'test@example.com']))), EmailResult),
+    user:magic_cast(conjure(git(config(git_root(TestPath), args(['user.email', 'test@example.com'])))), EmailResult),
     assertion(EmailResult = ok(_)),
-    user:magic_cast(conjure(git(config(git_root(TestPath), ['user.name', 'Test User']))), NameResult),
+    user:magic_cast(conjure(git(config(git_root(TestPath), args(['user.name', 'Test User'])))), NameResult),
     assertion(NameResult = ok(_)).
 
 cleanup_git_branch_test :-
@@ -319,11 +319,11 @@ setup_git_current_branch_test :-
     TestPath = '/tmp/test_git_current_branch',
     (exists_directory(TestPath) -> delete_directory_and_contents(TestPath) ; true),
     make_directory_path(TestPath),
-    user:magic_cast(conjure(git(init(TestPath))), InitResult),
+    user:magic_cast(conjure(git(init(path(TestPath)))), InitResult),
     assertion(InitResult = ok(_)),
-    user:magic_cast(conjure(git(config(git_root(TestPath), ['user.email', 'test@example.com']))), EmailResult),
+    user:magic_cast(conjure(git(config(git_root(TestPath), args(['user.email', 'test@example.com'])))), EmailResult),
     assertion(EmailResult = ok(_)),
-    user:magic_cast(conjure(git(config(git_root(TestPath), ['user.name', 'Test User']))), NameResult),
+    user:magic_cast(conjure(git(config(git_root(TestPath), args(['user.name', 'Test User'])))), NameResult),
     assertion(NameResult = ok(_)).
 
 cleanup_git_current_branch_test :-
@@ -335,11 +335,11 @@ setup_git_config_test :-
     TestPath = '/tmp/test_git_config',
     (exists_directory(TestPath) -> delete_directory_and_contents(TestPath) ; true),
     make_directory_path(TestPath),
-    user:magic_cast(conjure(git(init(TestPath))), InitResult),
+    user:magic_cast(conjure(git(init(path(TestPath)))), InitResult),
     assertion(InitResult = ok(_)),
-    user:magic_cast(conjure(git(config(git_root(TestPath), ['user.email', 'test@example.com']))), EmailResult),
+    user:magic_cast(conjure(git(config(git_root(TestPath), args(['user.email', 'test@example.com'])))), EmailResult),
     assertion(EmailResult = ok(_)),
-    user:magic_cast(conjure(git(config(git_root(TestPath), ['user.name', 'Test User']))), NameResult),
+    user:magic_cast(conjure(git(config(git_root(TestPath), args(['user.name', 'Test User'])))), NameResult),
     assertion(NameResult = ok(_)).
 
 cleanup_git_config_test :-
@@ -351,11 +351,11 @@ setup_git_diff_test :-
     TestPath = '/tmp/test_git_diff',
     (exists_directory(TestPath) -> delete_directory_and_contents(TestPath) ; true),
     make_directory_path(TestPath),
-    user:magic_cast(conjure(git(init(TestPath))), InitResult),
+    user:magic_cast(conjure(git(init(path(TestPath)))), InitResult),
     assertion(InitResult = ok(_)),
-    user:magic_cast(conjure(git(config(git_root(TestPath), ['user.email', 'test@example.com']))), EmailResult),
+    user:magic_cast(conjure(git(config(git_root(TestPath), args(['user.email', 'test@example.com'])))), EmailResult),
     assertion(EmailResult = ok(_)),
-    user:magic_cast(conjure(git(config(git_root(TestPath), ['user.name', 'Test User']))), NameResult),
+    user:magic_cast(conjure(git(config(git_root(TestPath), args(['user.name', 'Test User'])))), NameResult),
     assertion(NameResult = ok(_)).
 
 cleanup_git_diff_test :-
@@ -367,20 +367,20 @@ setup_git_log_test :-
     TestPath = '/tmp/test_git_log',
     (exists_directory(TestPath) -> delete_directory_and_contents(TestPath) ; true),
     make_directory_path(TestPath),
-    user:magic_cast(conjure(git(init(TestPath))), InitResult),
+    user:magic_cast(conjure(git(init(path(TestPath)))), InitResult),
     assertion(InitResult = ok(_)),
-    user:magic_cast(conjure(git(config(git_root(TestPath), ['user.email', 'test@example.com']))), EmailResult),
+    user:magic_cast(conjure(git(config(git_root(TestPath), args(['user.email', 'test@example.com'])))), EmailResult),
     assertion(EmailResult = ok(_)),
-    user:magic_cast(conjure(git(config(git_root(TestPath), ['user.name', 'Test User']))), NameResult),
+    user:magic_cast(conjure(git(config(git_root(TestPath), args(['user.name', 'Test User'])))), NameResult),
     assertion(NameResult = ok(_)),
     % Create initial commit
     atomic_list_concat([TestPath, '/test.txt'], TestFile),
     open(TestFile, write, Stream),
     write(Stream, 'test'),
     close(Stream),
-    user:magic_cast(conjure(git(add(git_root(TestPath), ['test.txt']))), AddResult),
+    user:magic_cast(conjure(git(add(git_root(TestPath), paths(['test.txt'])))), AddResult),
     assertion(AddResult = ok(_)),
-    user:magic_cast(conjure(git(commit(git_root(TestPath), 'initial'))), CommitResult),
+    user:magic_cast(conjure(git(commit(git_root(TestPath), message('initial')))), CommitResult),
     assertion(CommitResult = ok(_)).
 
 cleanup_git_log_test :-
@@ -392,11 +392,11 @@ setup_git_auto_detect_test :-
     TestPath = '/tmp/test_git_complete',
     (exists_directory(TestPath) -> delete_directory_and_contents(TestPath) ; true),
     make_directory_path(TestPath),
-    user:magic_cast(conjure(git(init(TestPath))), InitResult),
+    user:magic_cast(conjure(git(init(path(TestPath)))), InitResult),
     assertion(InitResult = ok(_)),
-    user:magic_cast(conjure(git(config(git_root(TestPath), ['user.email', 'test@example.com']))), EmailResult),
+    user:magic_cast(conjure(git(config(git_root(TestPath), args(['user.email', 'test@example.com'])))), EmailResult),
     assertion(EmailResult = ok(_)),
-    user:magic_cast(conjure(git(config(git_root(TestPath), ['user.name', 'Test User']))), NameResult),
+    user:magic_cast(conjure(git(config(git_root(TestPath), args(['user.name', 'Test User'])))), NameResult),
     assertion(NameResult = ok(_)).
 
 cleanup_git_auto_detect_test :-

@@ -124,22 +124,22 @@ test(complex_spell_handles_not_found) :-
 %% Test Case 7: Grimoire spells - executable_program with echo
 
 test(executable_program_echo) :-
-    user:magic_cast(conjure(executable_program(echo, ["hello", "world"])), Result),
-    Result = ok(result(Stdout, _Stderr)),
+    user:magic_cast(conjure(executable_program(program(echo), args(["hello", "world"]))), Result),
+    Result = ok(result(stdout(Stdout), stderr(_Stderr))),
     assertion(sub_string(Stdout, _, _, _, "hello world")).
 
 %% Test Case 8: Grimoire spells - executable_program with cat
 
 test(executable_program_cat, [setup(setup_test_file), cleanup(cleanup_test_file)]) :-
-    user:magic_cast(conjure(executable_program(cat, ["/tmp/grimoire_test_file.txt"])), Result),
-    Result = ok(result(Stdout, _Stderr)),
+    user:magic_cast(conjure(executable_program(program(cat), args(["/tmp/grimoire_test_file.txt"]))), Result),
+    Result = ok(result(stdout(Stdout), stderr(_Stderr))),
     assertion(sub_string(Stdout, _, _, _, "test content")).
 
 %% Test Case 9: Grimoire spells - shell command
 
 test(shell_echo) :-
-    user:magic_cast(conjure(shell(["echo", "shell test"])), Result),
-    Result = ok(result(Stdout, _Stderr)),
+    user:magic_cast(conjure(shell(args(["echo", "shell test"]))), Result),
+    Result = ok(result(stdout(Stdout), stderr(_Stderr))),
     assertion(sub_string(Stdout, _, _, _, "shell test")).
 
 %% Test Case 10: Grimoire spells - perceive entities

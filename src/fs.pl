@@ -76,55 +76,76 @@ docstring(fs(permissions),
         ))).
     |}).
 
-% === DSL COMPONENT EXPANSION USING ==> OPERATOR ===
+% === DSL SCHEMA REGISTRATIONS ===
 
 % Schema 1: fs(structure) - Declarative filesystem structure
-% The ==> operator generates BOTH component expansion rules AND verify clause
-component(Entity, has(fs(structure)), fs(structure(Items)))
-    ==> (component(Entity, fs_structure_file, file_spec(Path, Opts)) :-
-            extract_file_specs(Items, FileSpecs),
-            member(file_spec(Path, Opts), FileSpecs)),
-        (component(Entity, fs_structure_folder, folder_spec(Path, Contents)) :-
-            extract_folder_specs(Items, FolderSpecs),
-            member(folder_spec(Path, Contents), FolderSpecs))
-    ::  is_list(Items).
+register_dsl_schema(
+    fs,
+    has(fs(structure)),
+    signature(fs(structure(items('Items')))),
+    "Declarative filesystem structure specification with files and folders",
+    (
+        component(Entity, has(fs(structure)), fs(structure(Items)))
+            ==> (component(Entity, fs_structure_file, file_spec(Path, Opts)) :-
+                    extract_file_specs(Items, FileSpecs),
+                    member(file_spec(Path, Opts), FileSpecs)),
+                (component(Entity, fs_structure_folder, folder_spec(Path, Contents)) :-
+                    extract_folder_specs(Items, FolderSpecs),
+                    member(folder_spec(Path, Contents), FolderSpecs))
+            ::  is_list(Items)
+    )
+).
 
 % Schema 2: fs(file_content) - Content requirements
-% Expands has(fs(file_content)) into fs_content_requirement component
-component(Entity, has(fs(file_content)), fs(file_content(Path, Requirements)))
-    ==> component(Entity, fs_content_requirement, content_spec(Path, Requirements))
-    ::  (atom(Path) ; string(Path)),
-        valid_content_requirements(Requirements).
+register_dsl_schema(
+    fs,
+    has(fs(file_content)),
+    signature(fs(file_content(path('Path'), requirements('Requirements')))),
+    "Declarative file content requirements - verify file contains specific strings",
+    (
+        component(Entity, has(fs(file_content)), fs(file_content(Path, Requirements)))
+            ==> component(Entity, fs_content_requirement, content_spec(Path, Requirements))
+            ::  (atom(Path) ; string(Path)),
+                valid_content_requirements(Requirements)
+    )
+).
 
 % Schema 3: fs(permissions) - Permission requirements
-% Expands has(fs(permissions)) into fs_permission_requirement component
-component(Entity, has(fs(permissions)), fs(permissions(Path, PermType)))
-    ==> component(Entity, fs_permission_requirement, permission_spec(Path, PermType))
-    ::  (atom(Path) ; string(Path)),
-        member(PermType, [executable, readable, writable]).
+register_dsl_schema(
+    fs,
+    has(fs(permissions)),
+    signature(fs(permissions(path('Path'), perm_type('PermType')))),
+    "Declarative file permission requirements - verify executable, readable, or writable",
+    (
+        component(Entity, has(fs(permissions)), fs(permissions(Path, PermType)))
+            ==> component(Entity, fs_permission_requirement, permission_spec(Path, PermType))
+            ::  (atom(Path) ; string(Path)),
+                member(PermType, [executable, readable, writable])
+    )
+).
 
 % === LEAF COMPONENT VERIFICATIONS ===
 
 % Leaf verification: fs_structure_file
-component(_E, fs_structure_file, file_spec(Path, Opts))
+component(_, fs_structure_file, file_spec(Path, Opts))
     :: (atom(Path) ; string(Path)),
        is_list(Opts),
        file_exists_and_valid(Path, Opts).
 
 % Leaf verification: fs_structure_folder
-component(_E, fs_structure_folder, folder_spec(Path, Contents))
+component(_, fs_structure_folder, folder_spec(Path, Contents))
     :: (atom(Path) ; string(Path)),
        is_list(Contents),
        folder_exists_and_valid(Path).
 
 % Leaf verification: fs_content_requirement
-component(_E, fs_content_requirement, content_spec(Path, Reqs))
+component(_, fs_content_requirement, content_spec(Path, Reqs))
     :: (atom(Path) ; string(Path)),
        valid_content_requirements(Reqs),
        file_exists_with_content(Path, Reqs).
 
 % Leaf verification: fs_permission_requirement
-component(_E, fs_permission_requirement, permission_spec(Path, Type))
+component(_, fs_permission_requirement, permission_spec(Path, Type))
     :: (atom(Path) ; string(Path)),
        member(Type, [executable, readable, writable]),
        file_exists_with_permission(Path, Type).
@@ -220,16 +241,16 @@ valid_content_requirements(contains(Strs)) :-
 
 register_spell(
     perceive(fs(read_file)),
-    input(fs(read_file(file_path('FilePath'), start('Start'), end('End')))),
+    input(fs(read_file(path('Path'), start('Start'), end('End')))),
     output(either(
         ok(file_content(lines_with_numbers('ContentWithLineNumbers'))),
         error(fs_error('Reason'))
     )),
     "Read file with line numbers using 1-based indexing. Supports negative line numbers (-1 = last line).",
     [],
-    implementation(perceive(fs(read_file(FilePath, Start, End))), Result, (
+    implementation(perceive(fs(read_file(path(Path), start(Start), end(End)))), Result, (
         catch(
-            (read_file_to_lines(FilePath, AllLines),
+            (read_file_to_lines(Path, AllLines),
              length(AllLines, TotalLines),
              % Resolve negative line numbers
              resolve_line_number(Start, TotalLines, StartNum),
@@ -260,7 +281,7 @@ register_spell(
     output(either(ok(files('FileList')), error(fs_error('Reason')))),
     "List all files in a directory (non-recursive)",
     [],
-    implementation(perceive(fs(list_files(Dir))), Result, (
+    implementation(perceive(fs(list_files(directory(Dir)))), Result, (
         catch(
             (directory_files(Dir, AllFiles),
              exclude(=('.'), AllFiles, FilteredFiles),
@@ -278,7 +299,7 @@ register_spell(
     output(either(ok(matched_files('FileList')), error(fs_error('Reason')))),
     "Match files using glob patterns (e.g., '**/*.pl')",
     [],
-    implementation(perceive(fs(glob_match(Pattern, BaseDir))), Result, (
+    implementation(perceive(fs(glob_match(pattern(Pattern), base(BaseDir)))), Result, (
         catch(
             (expand_file_name(Pattern, Matches),
              (atom(BaseDir), BaseDir \= '' ->
@@ -299,7 +320,7 @@ register_spell(
     output(either(ok(stats(size('Size'), modified('Time'), mode('Mode'))), error(fs_error('Reason')))),
     "Get file statistics (size, modified time, permissions)",
     [],
-    implementation(perceive(fs(file_stats(Path))), Result, (
+    implementation(perceive(fs(file_stats(path(Path)))), Result, (
         catch(
             (size_file(Path, Size),
              time_file(Path, Time),
@@ -323,7 +344,7 @@ register_spell(
     )),
     "Edit file with specified operations. Supports insert, delete, replace, and append operations.",
     [],
-    implementation(conjure(fs(edit_file(file(Path), Edits))), Result, (
+    implementation(conjure(fs(edit_file(file(Path), edits(Edits)))), Result, (
         % Handle both existing and non-existing files
         (exists_file(Path) ->
             read_file_to_lines(Path, Lines)
@@ -346,7 +367,7 @@ register_spell(
     )),
     "Create directory and initialize with semantics.pl file. Options: [git(auto)] (default) or [git(false)] to disable auto git-add.",
     [],
-    implementation(conjure(fs(mkdir(Path, Options))), Result, (
+    implementation(conjure(fs(mkdir(path(Path), options(Options)))), Result, (
         % Create directory using Prolog's make_directory_path
         make_directory_path(Path),
         % Initialize semantics.pl with proper module
@@ -393,7 +414,7 @@ register_spell(
     )),
     "Create empty file. Updates parent semantics if exists. Options: [git(auto)] (default) or [git(false)] to disable auto git-add.",
     [],
-    implementation(conjure(fs(mkfile(Path, Options))), Result, (
+    implementation(conjure(fs(mkfile(path(Path), options(Options)))), Result, (
         % Create empty file
         write_file(Path, ""),
         % Update parent semantics if exists
@@ -424,7 +445,7 @@ register_spell(
     output(either(ok(file_copied('Source', 'Dest')), error(fs_error('Reason')))),
     "Copy file from source to destination path",
     [],
-    implementation(conjure(fs(copy_file(Source, Dest))), Result, (
+    implementation(conjure(fs(copy_file(source(Source), dest(Dest)))), Result, (
         catch(
             (copy_file(Source, Dest), Result = ok(file_copied(Source, Dest))),
             Error,
@@ -439,7 +460,7 @@ register_spell(
     output(either(ok(file_moved('Source', 'Dest')), error(fs_error('Reason')))),
     "Move/rename file from source to destination path",
     [],
-    implementation(conjure(fs(move_file(Source, Dest))), Result, (
+    implementation(conjure(fs(move_file(source(Source), dest(Dest)))), Result, (
         catch(
             (rename_file(Source, Dest), Result = ok(file_moved(Source, Dest))),
             Error,
@@ -454,7 +475,7 @@ register_spell(
     output(either(ok(file_deleted('Path')), error(fs_error('Reason')))),
     "Delete file at specified path",
     [],
-    implementation(conjure(fs(delete_file(Path))), Result, (
+    implementation(conjure(fs(delete_file(path(Path)))), Result, (
         catch(
             (delete_file(Path), Result = ok(file_deleted(Path))),
             Error,
