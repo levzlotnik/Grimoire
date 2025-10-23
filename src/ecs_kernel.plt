@@ -75,6 +75,7 @@ entity(test_entity_dsl_2).
 % Test entities for leaf verification
 component(test_entity_1, test_leaf_atom, hello).
 component(test_entity_2, test_leaf_atom, '').
+component(test_entity_2, intentionally_broken_please_ignore, [test_leaf_atom]).
 
 % Test entities for composite expansion
 component(test_entity_3, has(test_composite), test_composite(foo, bar)).
@@ -90,6 +91,7 @@ component(test_entity_8, test_leaf_atom, fetched_value).
 
 % Test entity for verification failure (compound is not atom)
 component(test_entity_9, test_domain_field, compound(term)).
+component(test_entity_9, intentionally_broken_please_ignore, [test_domain_field]).
 
 % Test entities for DSL schema
 component(test_entity_dsl, has(test_domain(schema)), test_domain(schema(field(test_value)))).
@@ -212,6 +214,13 @@ test(dsl_schema_verification_works) :-
 
 test(system_healthy) :-
     core_dump(core_dump(verified(_), broken(BrokenOntology))),
-    BrokenOntology = [].
+    % Filter out intentionally broken test components
+    exclude(is_intentionally_broken, BrokenOntology, RealBroken),
+    RealBroken = [].
+
+% Check if a broken component is marked as intentionally broken
+is_intentionally_broken(component(Entity, ComponentType, _)-_) :-
+    component(Entity, intentionally_broken_please_ignore, BrokenTypes),
+    member(ComponentType, BrokenTypes).
 
 :- end_tests(ecs_kernel).

@@ -156,6 +156,39 @@ docstring(option,
 %% PHASE 3: TERM EXPANSION - COMPONENT DSL
 %% ============================================================================
 
+%! expand_component_dsl(+MetaPattern, -ComponentRules, -VerifyClause, -Pattern) is det.
+%  Unified expansion logic for all component DSL patterns.
+%  Handles: Pattern ==> Expansions :: Verifications
+%           Pattern ==> Expansions
+%           Pattern :: Verifications
+expand_component_dsl(MetaPattern, ComponentRules, VerifyClause, Pattern) :-
+    % Case 1: Both expansion and verification
+    (MetaPattern = '::'('==>'(Pattern, ExpansionsComma), VerificationComma)
+    -> (Pattern = component(_Entity, _ComponentType, _DomainSpec),
+        comma_to_list(ExpansionsComma, Expansions),
+        comma_to_list(VerificationComma, Verifications),
+        maplist(generate_component_rule(Pattern), Expansions, ComponentRules),
+        generate_verify_clause(Pattern, Expansions, Verifications, VerifyClause))
+
+    % Case 2: Expansion only (no ::)
+    ; MetaPattern = '==>'(Pattern, ExpansionsComma)
+    -> (Pattern = component(_Entity, _ComponentType, _DomainSpec),
+        comma_to_list(ExpansionsComma, Expansions),
+        maplist(generate_component_rule(Pattern), Expansions, ComponentRules),
+        generate_verify_clause(Pattern, Expansions, [], VerifyClause))
+
+    % Case 3: Verification only (no ==>)
+    ; MetaPattern = '::'(Pattern, VerificationComma)
+    -> (Pattern = component(_Entity, _ComponentType, _Value),
+        ComponentRules = [],
+        comma_to_list(VerificationComma, Verifications),
+        list_to_conjunction(Verifications, VerifyBody),
+        wrap_verify_body_with_error_handling(Pattern, VerifyBody, WrappedBody),
+        VerifyClause = (verify(Pattern) :- WrappedBody))
+
+    % Invalid pattern
+    ; throw(error(invalid_component_dsl(MetaPattern), context(expand_component_dsl/4, 'Expected Pattern ==> Expansions, Pattern :: Verifications, or both')))).
+
 % Case 1: Pattern ==> Expansions :: Verification
 term_expansion(
     '::'('==>'(Pattern, ExpansionsComma), VerificationComma),
@@ -163,15 +196,7 @@ term_expansion(
 ) :-
     Pattern = component(_Entity, _ComponentType, _DomainSpec),
     !,
-    comma_to_list(ExpansionsComma, Expansions),
-    comma_to_list(VerificationComma, Verifications),
-
-    % GENERATIVE: Generate component rules
-    maplist(generate_component_rule(Pattern), Expansions, ComponentRules),
-
-    % DISCRIMINATIVE: Generate verify clause
-    generate_verify_clause(Pattern, Expansions, Verifications, VerifyClause),
-
+    expand_component_dsl('::'('==>'(Pattern, ExpansionsComma), VerificationComma), ComponentRules, VerifyClause, _),
     flatten(ComponentRules, FlatRules),
     Generated = [FlatRules, VerifyClause].
 
@@ -182,10 +207,7 @@ term_expansion(
 ) :-
     Pattern = component(_Entity, _ComponentType, _DomainSpec),
     !,
-    comma_to_list(ExpansionsComma, Expansions),
-    maplist(generate_component_rule(Pattern), Expansions, ComponentRules),
-    generate_verify_clause(Pattern, Expansions, [], VerifyClause),
-
+    expand_component_dsl('==>'(Pattern, ExpansionsComma), ComponentRules, VerifyClause, _),
     flatten(ComponentRules, FlatRules),
     Generated = [FlatRules, VerifyClause].
 
@@ -196,10 +218,7 @@ term_expansion(
 ) :-
     Pattern = component(_Entity, _ComponentType, _Value),
     !,
-    comma_to_list(VerificationComma, Verifications),
-    list_to_conjunction(Verifications, VerifyBody),
-    wrap_verify_body_with_error_handling(Pattern, VerifyBody, WrappedBody),
-    VerifyClause = (verify(Pattern) :- WrappedBody).
+    expand_component_dsl('::'(Pattern, VerificationComma), _, VerifyClause, _).
 
 %% ============================================================================
 %% PHASE 3: COMPONENT RULE GENERATION
@@ -277,19 +296,11 @@ term_expansion(
 ) :-
     (atom(Doc) ; string(Doc)),  % Doc can be atom or string
     !,
-    % ExpansionBody is (Pattern ==> Expansions :: Verifications)
-    % Process it using the same machinery as component DSL
-    ExpansionBody = '::'('==>'(Pattern, ExpansionsComma), VerificationComma),
-    Pattern = component(_Entity, _ComponentType, _DomainSpec),
-
-    comma_to_list(ExpansionsComma, Expansions),
-    comma_to_list(VerificationComma, Verifications),
-
-    % Generate component rules using existing helper
-    maplist(generate_component_rule(Pattern), Expansions, ComponentRules),
-
-    % Generate verify clause using existing helper
-    generate_verify_clause(Pattern, Expansions, Verifications, VerifyClause),
+    % Use unified expansion logic - accepts all three patterns:
+    % Pattern ==> Expansions :: Verifications
+    % Pattern ==> Expansions
+    % Pattern :: Verifications
+    expand_component_dsl(ExpansionBody, ComponentRules, VerifyClause, _Pattern),
 
     flatten(ComponentRules, FlatRules),
 
@@ -398,6 +409,43 @@ docstring(please_verify,
 
         % Verify composite schema (auto-verifies all expanded components)
         please_verify(component(my_app, has(project(app)), _)).
+    |}
+).
+
+%% ============================================================================
+%% GET ALL COMPONENTS - BACKTRACKING-AWARE VERIFICATION
+%% ============================================================================
+
+get_all_components(component(E, C, _), Vs) :-
+    findall(V, (component(E, C, V), please_verify(component(E, C, V))), Vs).
+
+docstring(get_all_components,
+    {|string(_)||
+    Collects all verified component values for a given entity and component type.
+
+    Unlike please_verify/1 which commits to the first solution, this predicate
+    backtracks through all component/3 solutions and verifies each one.
+
+    Format: get_all_components(component(Entity, ComponentType, _), Values)
+
+    Behavior:
+    1. Finds all values V where component(Entity, ComponentType, V) succeeds
+    2. For each V, calls please_verify(component(Entity, ComponentType, V))
+    3. Only includes verified values in the result list
+
+    Use Cases:
+    - Collecting all verified components when multiple values exist
+    - Interface operations that need to return sets of components
+    - Filtering components to only verified ones
+
+    Examples:
+        % Get all verified subsystems
+        ?- get_all_components(component(system, subsystem, _), Subsystems).
+        Subsystems = [git, nix, fs, project, golems].
+
+        % Empty list if no components exist
+        ?- get_all_components(component(nonexistent, foo, _), Vs).
+        Vs = [].
     |}
 ).
 

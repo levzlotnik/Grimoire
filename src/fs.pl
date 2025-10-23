@@ -372,7 +372,7 @@ register_spell(
         make_directory_path(Path),
         % Initialize semantics.pl with proper module
         directory_file_path(Path, "semantics.pl", SemanticsFile),
-        InitContent = {|string(Path)||
+        InitContent = {|string(Path, Parent)||
 :- module(semantic_{Path}, [entity/1, component/3]).
 
 % Dynamic declarations for this module
@@ -388,7 +388,7 @@ entity(folder('{Path}')).
         directory_file_path(Parent, "semantics.pl", ParentSemantic),
         (exists_file(ParentSemantic) ->
             magic_cast(conjure(fs(edit_file(file(ParentSemantic), [
-                append({|string(Path)||
+                append({|string(Path, Parent)||
 entity(folder('{Parent}')).
 component(folder('{Parent}'), subfolder, folder('{Path}')).
 |})

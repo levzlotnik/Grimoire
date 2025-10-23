@@ -12,26 +12,25 @@ import argparse
 from typing import List, Optional
 import subprocess
 
-from grimoire_client import (
-    GrimoireClient, GrimoireError,
-    ComponentTypesResponse, ComponentsResponse, DocumentationResponse,
-    EntitiesResponse, StatusResponse, TestResponse,
-    SessionCommandResponse, LoadResponse,
-    ReadFileResponse, EditFileResponse
+from grimoire.client import (
+    Grimoire, GrimoireError,
+    ComponentTypesResponse, ComponentsResponse, DocstringResponse,
+    EntitiesResponse, TestResponse,
+    GenericResponse, ConjureResponse, PerceiveResponse
 )
 
 
 class GrimoireCLI:
-    """Grimoire command-line interface using GrimoireClient"""
+    """Grimoire command-line interface using Grimoire Python client"""
 
     def __init__(self):
-        self.grimoire = GrimoireClient()
+        self.grimoire = Grimoire()
         self.session_id = os.getenv('GRIMOIRE_SESSION_ID')
 
     def create_parser(self) -> argparse.ArgumentParser:
         """Create argument parser with all subcommands"""
         parser = argparse.ArgumentParser(
-            prog='grimoire-py',
+            prog='grimoire-cli',
             description='🔮 Grimoire - Knowledge-Based Operating System',
             formatter_class=argparse.RawDescriptionHelpFormatter
         )
@@ -64,17 +63,40 @@ class GrimoireCLI:
         test_parser.add_argument('test_names', nargs='*',
                                help='Specific tests to run (default: all)')
 
-        # session command
+        # session command with subcommands
         session_parser = subparsers.add_parser('session', help='Session management')
-        session_parser.add_argument('args', nargs='+', help='Session command arguments')
+        session_subparsers = session_parser.add_subparsers(dest='session_subcommand', help='Session subcommands')
+
+        # session create
+        session_create_parser = session_subparsers.add_parser('create', help='Create a new session')
+        session_create_parser.add_argument('session_id', help='Session ID to create')
+
+        # session switch
+        session_switch_parser = session_subparsers.add_parser('switch', help='Switch to a different session')
+        session_switch_parser.add_argument('session_id', help='Session ID to switch to')
+
+        # session delete
+        session_delete_parser = session_subparsers.add_parser('delete', help='Delete a session')
+        session_delete_parser.add_argument('session_id', help='Session ID to delete')
+
+        # session export
+        session_export_parser = session_subparsers.add_parser('export', help='Export session to archive')
+        session_export_parser.add_argument('session_id', help='Session ID to export')
+        session_export_parser.add_argument('destination', help='Destination directory')
+
+        # session import
+        session_import_parser = session_subparsers.add_parser('import', help='Import session from archive')
+        session_import_parser.add_argument('archive', help='Archive path to import')
 
         # conjure command
         conjure_parser = subparsers.add_parser('conjure', help='Cast conjuration spells')
-        conjure_parser.add_argument('spell', help='Spell to cast (or --list to show available)')
+        conjure_parser.add_argument('spell', nargs='?', help='Spell to cast')
+        conjure_parser.add_argument('--list', action='store_true', help='List available conjure spells')
 
         # perceive command
         perceive_parser = subparsers.add_parser('perceive', help='Execute perception queries')
-        perceive_parser.add_argument('query', help='Query to execute (or --list to show available)')
+        perceive_parser.add_argument('query', nargs='?', help='Query to execute')
+        perceive_parser.add_argument('--list', action='store_true', help='List available perceive queries')
 
         # load command
         load_parser = subparsers.add_parser('load', help='Load entity into current session')
@@ -110,10 +132,11 @@ class GrimoireCLI:
     def handle_compt(self, args: argparse.Namespace) -> int:
         """Handle compt command - list component types"""
         try:
-            result = self.grimoire.compt(args.entity)
+            entity = args.entity or 'system'
+            result = self.grimoire.component_types(entity)
 
-            print(f"{result.entity} component types:")
-            for comp_type in result.component_types:
+            print(f"{entity} component types:")
+            for comp_type in result.types:
                 print(f"  {comp_type}")
             return 0
         except GrimoireError as e:
@@ -123,15 +146,15 @@ class GrimoireCLI:
     def handle_comp(self, args: argparse.Namespace) -> int:
         """Handle comp command - list components"""
         try:
-            result = self.grimoire.comp(args.entity, args.comp_type)
+            result = self.grimoire.components(args.entity, args.comp_type)
 
-            print(f"{result.entity} components of type {result.component_type}:")
-            print(f"{'Component':<40} | {'v/e'}")
-            print("-" * 50)
+            print(f"{args.entity} components of type {args.comp_type}:")
 
-            for comp in result.components:
-                flag = 'e' if comp.flag == 'entity' else 'v'
-                print(f"{str(comp.component):<40} | {flag}")
+            if result.is_unique:
+                print(f"  {result.value}")
+            else:
+                for comp in result.values:
+                    print(f"  {comp}")
 
             return 0
         except GrimoireError as e:
@@ -141,10 +164,11 @@ class GrimoireCLI:
     def handle_doc(self, args: argparse.Namespace) -> int:
         """Handle doc command - show documentation"""
         try:
-            result = self.grimoire.doc(args.entity)
+            entity = args.entity or 'system'
+            result = self.grimoire.docstring(entity)
 
-            print(f"Documentation for '{result.entity}':")
-            print(result.documentation)
+            print(f"Documentation for '{entity}':")
+            print(result.docstring)
             return 0
         except GrimoireError as e:
             print(f"Error: {e}", file=sys.stderr)
@@ -165,29 +189,23 @@ class GrimoireCLI:
 
     def handle_status(self, args: argparse.Namespace) -> int:
         """Handle status command - show session status"""
-        try:
-            result = self.grimoire.status()
-
-            # Format status with emoji
-            status_emoji = "✓" if result.status.working_status == "clean" else "⚠"
-            print(f"📍 Branch: {result.status.current_branch}")
-            print(f"{status_emoji} Working directory: {result.status.working_status}")
-
-            if result.status.sessions:
-                print(f"🔄 Sessions: {', '.join(str(s) for s in result.status.sessions)}")
-
-            return 0
-        except GrimoireError as e:
-            print(f"Error: {e}", file=sys.stderr)
-            return 1
+        print("Error: status command not yet implemented in interface domain", file=sys.stderr)
+        print("Use the Prolog CLI: ./grimoire status", file=sys.stderr)
+        return 1
 
     def handle_test(self, args: argparse.Namespace) -> int:
         """Handle test command - run tests"""
         try:
             result = self.grimoire.test(args.test_names if args.test_names else None)
-            print(result.result)
-            # Return 0 for success - GrimoireClient will raise exception on failure
-            return 0
+            if result.status == "passed":
+                print("Tests passed!")
+                return 0
+            elif result.status == "listed":
+                print("Tests listed")
+                return 0
+            else:
+                print(f"Tests failed: {result.details}", file=sys.stderr)
+                return 1
         except GrimoireError as e:
             print(f"Error: {e}", file=sys.stderr)
             return 1
@@ -195,8 +213,29 @@ class GrimoireCLI:
     def handle_session(self, args: argparse.Namespace) -> int:
         """Handle session command - session management"""
         try:
-            result = self.grimoire.session(args.args)
-            print(result.result)
+            if not args.session_subcommand:
+                print("Error: session command requires subcommand (create/switch/delete/export/import)", file=sys.stderr)
+                return 1
+
+            if args.session_subcommand == "create":
+                result = self.grimoire.session_create(args.session_id)
+                print(result.result)
+            elif args.session_subcommand == "switch":
+                result = self.grimoire.session_switch(args.session_id)
+                print(result.result)
+            elif args.session_subcommand == "delete":
+                result = self.grimoire.session_delete(args.session_id)
+                print(result.result)
+            elif args.session_subcommand == "export":
+                result = self.grimoire.session_export(args.session_id, args.destination)
+                print(result.result)
+            elif args.session_subcommand == "import":
+                result = self.grimoire.session_import(args.archive)
+                print(result.result)
+            else:
+                print(f"Error: Unknown session subcommand: {args.session_subcommand}", file=sys.stderr)
+                return 1
+
             return 0
         except GrimoireError as e:
             print(f"Error: {e}", file=sys.stderr)
@@ -205,20 +244,26 @@ class GrimoireCLI:
     def handle_conjure(self, args: argparse.Namespace) -> int:
         """Handle conjure command - cast spells"""
         # Handle --list flag
-        if args.spell == "--list":
+        if hasattr(args, 'list') and args.list:
             try:
                 # Query conjure constructors
-                comp_result = self.grimoire.comp("conjure", "ctor")
+                comp_result = self.grimoire.components("conjure", "ctor")
                 print("Available conjure spells:")
-                for comp in comp_result.components:
-                    print(f"  {comp.component}")
+                values = comp_result.values if not comp_result.is_unique else [comp_result.value]
+                for comp in values:
+                    print(f"  {comp}")
                 return 0
             except GrimoireError as e:
                 print(f"Error: {e}", file=sys.stderr)
                 return 1
 
+        if not args.spell:
+            print("Error: spell argument required (or use --list to show available spells)", file=sys.stderr)
+            return 1
+
         try:
-            result = self.grimoire.call_conjure_spell(args.spell)
+            # Parse spell signature - assume no args for now (can be extended later)
+            result = self.grimoire.conjure(args.spell, {})
             print(result.result)
             return 0
         except GrimoireError as e:
@@ -228,27 +273,27 @@ class GrimoireCLI:
     def handle_perceive(self, args: argparse.Namespace) -> int:
         """Handle perceive command - execute queries"""
         # Handle --list flag
-        if args.query == "--list":
+        if hasattr(args, 'list') and args.list:
             try:
                 # Query perceive constructors
-                comp_result = self.grimoire.comp("perceive", "ctor")
+                comp_result = self.grimoire.components("perceive", "ctor")
                 print("Available perceive queries:")
-                for comp in comp_result.components:
-                    print(f"  {comp.component}")
+                values = comp_result.values if not comp_result.is_unique else [comp_result.value]
+                for comp in values:
+                    print(f"  {comp}")
                 return 0
             except GrimoireError as e:
                 print(f"Error: {e}", file=sys.stderr)
                 return 1
 
+        if not args.query:
+            print("Error: query argument required (or use --list to show available queries)", file=sys.stderr)
+            return 1
+
         try:
-            result = self.grimoire.call_perceive_query(args.query)
-            # Format output similar to Prolog CLI
-            if result.solutions:
-                for solution in result.solutions:
-                    for key, value in solution.items():
-                        print(f"{key} = {value}")
-            else:
-                print("No solutions found")
+            # Parse query signature - assume no args for now (can be extended later)
+            result = self.grimoire.perceive(args.query, {})
+            print(result.result)
             return 0
         except GrimoireError as e:
             print(f"Error: {e}", file=sys.stderr)
@@ -256,13 +301,9 @@ class GrimoireCLI:
 
     def handle_load(self, args: argparse.Namespace) -> int:
         """Handle load command - load entity"""
-        try:
-            result = self.grimoire.load(args.entity_spec)
-            print(f"Loaded entity: {result.entity}")
-            return 0
-        except GrimoireError as e:
-            print(f"Error: {e}", file=sys.stderr)
-            return 1
+        print("Error: load command not yet implemented in interface domain", file=sys.stderr)
+        print("Use the Prolog CLI: ./grimoire load", file=sys.stderr)
+        return 1
 
     def handle_serve(self, args: argparse.Namespace) -> int:
         """Handle serve command - start REST API server"""
@@ -307,10 +348,10 @@ class GrimoireCLI:
     def handle_exec(self, args: argparse.Namespace) -> int:
         """Handle exec command - execute arbitrary Prolog query"""
         try:
-            result = self.grimoire.exec(args.query)
+            solutions = self.grimoire.exec(args.query)
             # Format output similar to Prolog CLI - emit variable bindings
-            if result.solutions:
-                for solution in result.solutions:
+            if solutions:
+                for solution in solutions:
                     if solution:
                         # Solution has variable bindings
                         for key, value in solution.items():
@@ -328,15 +369,9 @@ class GrimoireCLI:
 
     def handle_read_file(self, args: argparse.Namespace) -> int:
         """Handle read_file command - read lines from a file"""
-        try:
-            result = self.grimoire.read_file(args.file_path, args.start, args.end)
-
-            for line in result.lines:
-                print(f"{line.line_number}\t{line.content}")
-            return 0
-        except GrimoireError as e:
-            print(f"Error: {e}", file=sys.stderr)
-            return 1
+        print("Error: read_file command not yet implemented in interface domain", file=sys.stderr)
+        print("Use the Prolog CLI or fs domain directly", file=sys.stderr)
+        return 1
 
     def handle_edit_file(self, args: argparse.Namespace) -> int:
         """Handle edit_file command - edit file with operations"""
@@ -385,10 +420,20 @@ class GrimoireCLI:
             return 1
 
 
-def main():
-    """Main entry point for grimoire-py CLI"""
+def main(argv: Optional[List[str]] = None) -> int:
+    """Main entry point for grimoire-py CLI
+
+    Args:
+        argv: Command line arguments. If None, uses sys.argv[1:]
+
+    Returns:
+        Exit code (0 for success, non-zero for error)
+    """
+    if argv is None:
+        argv = sys.argv[1:]
+
     cli = GrimoireCLI()
-    sys.exit(cli.run())
+    return cli.run(argv)
 
 
 if __name__ == "__main__":

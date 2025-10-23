@@ -1,5 +1,5 @@
 {
-  description = "Grimoire API Server Python Package";
+  description = "Grimoire Python Package";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -13,7 +13,7 @@
       overlay = final: prev: {
         pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
           (python-final: python-prev: {
-            grimoire-api = python-final.callPackage ({
+            grimoire-py = python-final.callPackage ({
               buildPythonPackage,
               setuptools,
               wheel,
@@ -24,7 +24,7 @@
               mcp,
               janus-swi
             }: buildPythonPackage {
-              pname = "grimoire-api";
+              pname = "grimoire-py";
               version = "0.1.0";
               src = ./.;
               format = "pyproject";
@@ -64,8 +64,8 @@
         python = grimoireEnv.python;
 
         # Build the Python package using the grimoire Python environment
-        grimoireApiPackage = python.pkgs.buildPythonPackage {
-          pname = "grimoire-api";
+        grimoirePyPackage = python.pkgs.buildPythonPackage {
+          pname = "grimoire-py";
           version = "0.1.0";
           src = ./.;
           format = "pyproject";
@@ -94,12 +94,12 @@
       in
       {
         packages = {
-          default = grimoireApiPackage;
-          python-package = grimoireApiPackage;
+          default = grimoirePyPackage;
+          python-package = grimoirePyPackage;
         };
 
         checks = {
-          tests = pkgs.runCommand "grimoire-api-tests" (grimoireEnv.env // {
+          tests = pkgs.runCommand "grimoire-py-tests" (grimoireEnv.env // {
             buildInputs = grimoireEnv.buildInputs;
           }) ''
             cd ${./.}

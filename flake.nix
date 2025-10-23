@@ -10,7 +10,7 @@
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.grimoire.follows = "";
     };
-    grimoire-api = {
+    grimoire-py = {
       url = "path:./src/interface/api";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.flake-utils.follows = "flake-utils";
@@ -18,7 +18,7 @@
     };
   };
 
-  outputs = { self, nixpkgs, flake-utils, golems, grimoire-api, grimoire-templates, ... }@inputs:
+  outputs = { self, nixpkgs, flake-utils, golems, grimoire-py, grimoire-templates, ... }@inputs:
   let
     systems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
     forAllSystems = nixpkgs.lib.genAttrs systems;
@@ -35,19 +35,19 @@
       # First get base pkgs without overlay
       basePkgs = nixpkgs.legacyPackages.${system};
 
-      # Then apply overlays to get pkgs with grimoire-golems and grimoire-api available
+      # Then apply overlays to get pkgs with grimoire-golems and grimoire-py available
       pkgs = import nixpkgs {
         inherit system;
         overlays = [
           golems.overlays.default
-          grimoire-api.overlays.default
+          grimoire-py.overlays.default
         ];
       };
 
       # Create base grimoire environment with overlay-enabled pkgs
       baseGrimoireEnv = import ./deps/grimoire.nix { inherit pkgs; };
 
-      # Extend the Python environment to include grimoire-golems and grimoire-api while preserving all base packages
+      # Extend the Python environment to include grimoire-golems and grimoire-py while preserving all base packages
       # We need to extract the packages from the base environment and add our new ones
       extendedPython = pkgs.python313.withPackages (ps: with ps; [
         # Core Python packages (from deps/grimoire.nix)
@@ -78,7 +78,7 @@
         huggingface-hub
         # Additional grimoire packages
         grimoire-golems
-        grimoire-api
+        grimoire-py
       ]);
 
       # Create extended grimoire environment
@@ -88,8 +88,8 @@
       };
     in
     {
-      # Expose the extended environment for child flakes
-      grimoireEnv = grimoireEnv;
+      # Export the grimoireEnv for use by devShells and dependent flakes
+      inherit grimoireEnv;
 
       # Grimoire templates wrapper scripts
       grimoire-templates-tools = pkgs.stdenv.mkDerivation {

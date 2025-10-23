@@ -3,9 +3,9 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "grimoire-api"
+name = "grimoire-py"
 version = "0.1.0"
-description = "Grimoire API - Python package with MCP server and REST API for Grimoire knowledge-based OS"
+description = "Grimoire Python Package - Python interface with CLI, MCP server, and REST API for Grimoire knowledge-based OS"
 authors = [
     {name = "Grimoire", email = "grimoire@example.com"},
 ]
@@ -26,13 +26,12 @@ dev = [
 ]
 
 [project.scripts]
-grimoire-py = "cli_python:main"
-grimoire-mcp-server = "mcp_server:main"
-grimoire-rest-api = "rest_api:main"
+grimoire-cli = "grimoire.cli:main"
+grimoire-mcp = "grimoire.mcp:main"
+grimoire-http = "grimoire.http:main"
 
 [tool.setuptools]
-py-modules = ["grimoire_client", "cli_python", "mcp_server", "rest_api"]
-packages = []
+packages = ["grimoire"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

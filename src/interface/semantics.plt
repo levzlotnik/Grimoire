@@ -1,163 +1,208 @@
 :- use_module(library(plunit)).
-:- load_entity(semantic(file('@/src/tests/interface_test_entities.pl'))).
 
-% === VERIFY PREDICATES ===
+%% ============================================================================
+%% DELEGATION TESTING HOOKS
+%% ============================================================================
 
-% Verify client capability expansion (DSL pattern)
-verify(component(Entity, has(interface(client)), interface(client(Spec)))) :-
-    user:please_verify(component(Entity, interface_client_type, Type)),
-    member(type(Type), Spec),
-    member(Type, [cli, mcp, http, golem]).
+:- dynamic hit/2.
 
-% Verify all subcommands have proper entities and docstrings
-verify(component(interface, subcommand, Cmd)) :-
-    entity(interface(Cmd)),
-    docstring(interface(Cmd), _).
+% Hook for session import delegation
+cast_post_hook(conjure(session(import(A))), Result, assertz(hit(conjure(session(import(A))), Result))).
 
-:- begin_tests(interface).
+% Hook for session create delegation
+cast_post_hook(conjure(session(create(id(SessionId)))), Result, assertz(hit(conjure(session(create(id(SessionId)))), Result))).
 
-% Test that the entity is properly declared
-test(entity_exists) :-
-    entity(interface).
+% Hook for session export delegation
+cast_post_hook(conjure(session(export(id(SessionId), destination(Dest)))), Result, assertz(hit(conjure(session(export(id(SessionId), destination(Dest)))), Result))).
 
-% Test interface subcommands exist
-test(subcommands_exist) :-
-    user:please_verify(component(interface, subcommand, compt)),
-    user:please_verify(component(interface, subcommand, comp)),
-    user:please_verify(component(interface, subcommand, doc)),
-    user:please_verify(component(interface, subcommand, entities)),
-    user:please_verify(component(interface, subcommand, repl)),
-    user:please_verify(component(interface, subcommand, test)),
-    user:please_verify(component(interface, subcommand, conjure)),
-    user:please_verify(component(interface, subcommand, perceive)),
-    user:please_verify(component(interface, subcommand, read_file)),
-    user:please_verify(component(interface, subcommand, edit_file)),
-    user:please_verify(component(interface, subcommand, exec)), !.
+% Hook for prove_it delegation
+cast_post_hook(perceive(prove_it(component(E, T, V))), Result, assertz(hit(perceive(prove_it(component(E, T, V))), Result))).
 
-% Test entities subcommand specifically
-test(entities_subcommand) :-
-    user:please_verify(component(interface, subcommand, entities)), !.
+% Hook for sauce_me delegation
+cast_post_hook(perceive(sauce_me(spell(Ctor))), Result, assertz(hit(perceive(sauce_me(spell(Ctor))), Result))).
 
-% Test entities interface entity exists
-test(entities_interface_entity) :-
-    entity(interface(entities)).
+:- begin_tests(interface_spells).
 
-% Test entities interface has docstring
-test(entities_docstring) :-
-    docstring(interface(entities), Doc),
-    sub_string(Doc, _, _, _, "entities"), !.
+% === PERCEIVE SPELLS ===
 
-% Test entities interface works
-test(entities_interface_works) :-
-    user:magic_cast(conjure(interface(entities)), Result),
-    Result = ok(entities(List)),
-    is_list(List), !.
+test(component_types_spell) :-
+    user:magic_cast(perceive(interface(component_types(entity(system)))), Result),
+    Result = ok(types(Types)),
+    is_list(Types), !.
 
-% Test interface_entities predicate
-test(interface_entities_includes_system) :-
-    interface_entities(Entities),
+test(components_spell_unique) :-
+    % Test with a component that should have exactly one value
+    user:magic_cast(perceive(interface(components(entity(system), type(self)))), Result),
+    Result = ok(unique(semantic(_))), !.
+
+test(components_spell_set) :-
+    % Test with a component that has multiple values
+    user:magic_cast(perceive(interface(components(entity(system), type(subsystem)))), Result),
+    Result = ok(set(Values)),
+    is_list(Values),
+    length(Values, Len),
+    Len > 1, !.
+
+test(components_spell_empty) :-
+    % Test with a component that doesn't exist - should error
+    catch(
+        user:magic_cast(perceive(interface(components(entity(nonexistent_entity_xyz), type(foo)))), _),
+        error(existence_error(component, _), _),
+        true
+    ), !.
+
+test(docstring_spell) :-
+    user:magic_cast(perceive(interface(docstring(entity(system)))), Result),
+    Result = ok(doc(Doc)),
+    (atom(Doc) ; string(Doc)), !.
+
+test(entities_spell) :-
+    user:magic_cast(perceive(interface(entities)), Result),
+    Result = ok(entities(Entities)),
     is_list(Entities),
     member(system, Entities), !.
 
-% Test that interface ctors match subcommands
-test(interface_ctors_match_subcommands) :-
-    findall(C, component(interface, subcommand, C), Subcommands),
-    findall(C, component(interface, ctor, C), Ctors),
-    sort(Subcommands, SortedSubs),
-    sort(Ctors, SortedCtors),
-    SortedSubs = SortedCtors.
+test(prove_it_spell, [cleanup(retractall(hit(perceive(prove_it(component(_, _, _))), _)))]) :-
+    % Test prove_it delegation with subsystem (self is asserted, not provable)
+    user:magic_cast(perceive(interface(prove_it(entity(system), type(subsystem), value(git)))), ExternalResult),
+    % Verify internal spell called with correct transformed args
+    hit(perceive(prove_it(component(Entity, Type, HitValue))), InternalResult),
+    assertion(Entity == system),
+    assertion(Type == subsystem),
+    assertion(HitValue == git),
+    % Verify result passed through
+    assertion(ExternalResult == InternalResult), !.
 
-% Test that all subcommands have corresponding entities
-test(all_subcommands_have_entities) :-
-    forall(
-        component(interface, subcommand, Cmd),
-        entity(interface(Cmd))
-    ).
+test(sauce_me_spell, [cleanup(retractall(hit(perceive(sauce_me(spell(_))), _)))]) :-
+    % Test sauce_me delegation with a known spell
+    user:magic_cast(perceive(interface(sauce_me(spell_ctor(interface(component_types))))), ExternalResult),
+    % Verify internal spell called with correct transformed args
+    hit(perceive(sauce_me(spell(SpellCtor))), InternalResult),
+    assertion(SpellCtor == interface(component_types)),
+    % Verify result passed through
+    assertion(ExternalResult == InternalResult), !.
 
-% Test that all subcommands have docstrings
-test(all_subcommands_have_docstrings) :-
-    forall(
-        component(interface, subcommand, Cmd),
-        docstring(interface(Cmd), _)
-    ).
+test(system_instructions_spell) :-
+    user:magic_cast(perceive(interface(system_instructions)), Result),
+    Result = ok(instructions(Instructions)),
+    (atom(Instructions) ; string(Instructions)), !.
 
-% Test component types command
-test(compt_command) :-
-    user:magic_cast(conjure(interface(compt)), Result),
-    Result = ok(component_types(Entity, Types)),
-    atom(Entity),
-    is_list(Types), !.
+% === CONJURE SPELLS ===
 
-% Test documentation command
-test(doc_command) :-
-    user:magic_cast(conjure(interface(doc)), Result),
-    Result = ok(documentation(Entity, Doc)),
-    atom(Entity),
-    (atom(Doc) ; string(Doc) ; Doc = no_docstring_available), !.
-
-% Test client capability expansion (DSL pattern)
-test(client_capability_expansion) :-
-    user:please_verify(component(test_cli_client, interface_client_type, cli)),
-    user:please_verify(component(test_cli_client, interface_client_capability, _)).
-
-% Test all subcommands complete verification
-test(all_subcommands_complete) :-
-    forall(component(interface, subcommand, Cmd),
-           user:please_verify(component(interface, subcommand, Cmd))).
-
-% === SPELL TESTS ===
-
-% Test comp command with entity and type arguments
-test(comp_command) :-
-    user:magic_cast(conjure(interface(comp(interface, subcommand))), Result),
-    Result = ok(components(interface, subcommand, Components)),
-    is_list(Components),
-    % Should have at least one component (compt, comp, doc, etc.)
-    length(Components, Len),
-    Len > 0, !.
-
-% Test conjure delegation to git domain
-test(conjure_delegation_git_status) :-
-    user:magic_cast(conjure(interface(conjure(git(status)))), Result),
-    % Should delegate to git domain
-    (Result = ok(_) ; Result = error(_)), !.
-
-% Test perceive delegation
-test(perceive_delegation) :-
-    % Use a real perceive query that exists (git status)
-    user:magic_cast(conjure(interface(perceive(git(status)))), Result),
-    % Should succeed as perceive query
-    Result = ok(query_succeeded), !.
-
-% Test session command delegation - DISABLED (session being reworked)
-% test(session_command_delegation) :-
-%     % Use a valid session command (start) - it may fail if session exists, but tests delegation
-%     magic_cast(conjure(interface(session(start))), Result),
-%     % Should delegate to session domain and return ok or error
-%     (Result = ok(_) ; Result = error(_)), !.
-
-% Test read_file command (delegation to fs domain)
-test(read_file_command, [
-    setup(setup_test_file('/tmp/grimoire_test_read.txt', "Line 1\nLine 2\nLine 3\n")),
-    cleanup(delete_file('/tmp/grimoire_test_read.txt'))
+% Session tests - these delegate to session domain
+test(session_create_spell, [
+    setup((
+        get_time(T),
+        format(atom(SessionId), 'test_session_~w', [T]),
+        nb_setval(test_session_id, SessionId)
+    )),
+    cleanup((
+        nb_getval(test_session_id, SessionId),
+        retractall(hit(conjure(session(create(id(_)))), _)),
+        expand_file_name('~/.grimoire', [HomeGrimoire]),
+        format(atom(SessionPath), '~w/session-~w', [HomeGrimoire, SessionId]),
+        (exists_directory(SessionPath) -> delete_directory_and_contents(SessionPath) ; true)
+    ))
 ]) :-
-    user:magic_cast(conjure(interface(read_file('/tmp/grimoire_test_read.txt', 1, 3))), Result),
-    % Should delegate to fs domain and return ok or error
-    (Result = ok(_) ; Result = error(_)), !.
+    nb_getval(test_session_id, SessionId),
+    user:magic_cast(conjure(interface(session_create(session_id(SessionId)))), ExternalResult),
+    % Verify internal spell called with correct transformed args
+    hit(conjure(session(create(id(HitSessionId)))), InternalResult),
+    assertion(HitSessionId == SessionId),
+    % Verify result passed through
+    assertion(ExternalResult == InternalResult), !.
 
-% Test edit_file command (delegation to fs domain)
-test(edit_file_command, [
-    setup(setup_test_file('/tmp/grimoire_test_edit.txt', "Original content\n")),
-    cleanup(delete_file('/tmp/grimoire_test_edit.txt'))
+test(session_export_import_delegation, [
+    setup((
+        get_time(T),
+        % Use integer timestamp to avoid dots in session ID
+        TInt is floor(T * 1000000),
+        format(atom(SessionId), 'test_exp_imp_~w', [TInt]),
+        nb_setval(test_session_id, SessionId),
+        % Export creates the archive name automatically as /tmp/session-{ID}.tar.gz
+        format(atom(ArchivePath), '/tmp/session-~w.tar.gz', [SessionId]),
+        nb_setval(test_archive_path, ArchivePath)
+    )),
+    cleanup((
+        nb_getval(test_session_id, SessionId),
+        nb_getval(test_archive_path, ArchivePath),
+        retractall(hit(conjure(session(export(_, _))), _)),
+        retractall(hit(conjure(session(import(_))), _)),
+        expand_file_name('~/.grimoire', [HomeGrimoire]),
+        format(atom(SessionPath), '~w/session-~w', [HomeGrimoire, SessionId]),
+        (exists_directory(SessionPath) -> delete_directory_and_contents(SessionPath) ; true),
+        (exists_file(ArchivePath) -> delete_file(ArchivePath) ; true)
+    ))
 ]) :-
-    user:magic_cast(conjure(interface(edit_file('/tmp/grimoire_test_edit.txt', [append("New line\n")]))), Result),
-    % Should delegate to fs domain
-    (Result = ok(_) ; Result = error(_)), !.
+    nb_getval(test_session_id, SessionId),
+    nb_getval(test_archive_path, ArchivePath),
 
-% Helper to create test files
-setup_test_file(Path, Content) :-
-    open(Path, write, Stream),
-    write(Stream, Content),
-    close(Stream).
+    % Create a real session
+    user:magic_cast(conjure(interface(session_create(session_id(SessionId)))), _),
 
-:- end_tests(interface).
+    % Export it and verify delegation (destination is directory, not full path)
+    user:magic_cast(conjure(interface(session_export(session_id(SessionId), destination('/tmp')))), ExportExternalResult),
+    hit(conjure(session(export(id(ExportSessionId), destination(ExportDest)))), ExportInternalResult),
+    assertion(ExportSessionId == SessionId),
+    assertion(ExportDest == '/tmp'),
+    assertion(ExportExternalResult == ExportInternalResult),
+
+    % Import the created archive and verify delegation
+    user:magic_cast(conjure(interface(session_import(archive(ArchivePath)))), ImportExternalResult),
+    hit(conjure(session(import(archive(ImportPath)))), ImportInternalResult),
+    assertion(ImportPath == ArchivePath),
+    assertion(ImportExternalResult == ImportInternalResult), !.
+
+% === PYTHON_MAGIC_CAST TESTS ===
+
+test(python_magic_cast_component_types) :-
+    user:python_magic_cast('perceive(interface(component_types))', _{'Entity': system}, PyResult),
+    PyResult.type = "term_struct",
+    PyResult.functor = ok,
+    PyResult.args = [TypesResult],
+    TypesResult.functor = types, !.
+
+test(python_magic_cast_entities) :-
+    user:python_magic_cast('perceive(interface(entities))', _{}, PyResult),
+    PyResult.type = "term_struct",
+    PyResult.functor = ok,
+    PyResult.args = [EntitiesResult],
+    EntitiesResult.functor = entities,
+    EntitiesResult.args = [ListResult],
+    ListResult.type = "list", !.
+
+test(python_magic_cast_components_empty) :-
+    % Should return error when component doesn't exist
+    user:python_magic_cast('perceive(interface(components))', _{'Entity': nonexistent_xyz, 'Type': foo}, PyResult),
+    PyResult.functor = error, !.
+
+test(python_magic_cast_docstring) :-
+    user:python_magic_cast('perceive(interface(docstring))', _{'Entity': system}, PyResult),
+    PyResult.functor = ok,
+    PyResult.args = [DocResult],
+    DocResult.functor = doc, !.
+
+test(python_magic_cast_error_missing_arg) :-
+    % Test error handling when template arg is missing
+    user:python_magic_cast('perceive(interface(component_types))', _{}, PyResult),
+    PyResult.functor = error, !.
+
+test(python_magic_cast_term_conversion_atom) :-
+    % Test that atoms are properly converted
+    user:python_magic_cast('perceive(interface(entities))', _{}, PyResult),
+    PyResult.args = [EntitiesResult],
+    EntitiesResult.args = [ListResult],
+    ListResult.elements = [FirstEntity|_],
+    FirstEntity.type = "atom", !.
+
+test(python_magic_cast_term_conversion_empty_list) :-
+    % Test that empty lists are properly converted - use component_types which can return []
+    user:python_magic_cast('perceive(interface(component_types))', _{'Entity': xyz}, PyResult),
+    PyResult.functor = ok,
+    PyResult.args = [TypesResult],
+    TypesResult.functor = types,
+    TypesResult.args = [EmptyList],
+    EmptyList.type = "list",
+    EmptyList.elements = [], !.
+
+:- end_tests(interface_spells).

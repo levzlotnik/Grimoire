@@ -181,14 +181,34 @@ apply_template_or_basic(ProjectPath, ProjectName, Options, Result) :-
 
 init_git_if_requested(ProjectPath, Options, RetVal, ProjectName) :-
     (member(git(false), Options) ->
-        RetVal = ok(project_created(ProjectPath, ProjectName))
+        load_into_session_if_requested(ProjectPath, Options, RetVal, ProjectName)
     ;
         magic_cast(conjure(git(init(path(ProjectPath)))), GitResult),
         (GitResult = ok(_) ->
-            RetVal = ok(project_created(ProjectPath, ProjectName))
+            load_into_session_if_requested(ProjectPath, Options, RetVal, ProjectName)
         ;
             RetVal = GitResult
         )
+    ).
+
+load_into_session_if_requested(ProjectPath, Options, RetVal, ProjectName) :-
+    (member(load_into_session(true), Options) ->
+        % Load project semantics into session
+        directory_file_path(ProjectPath, 'semantics.pl', SemanticsFile),
+        (exists_file(SemanticsFile) ->
+            magic_cast(conjure(session(load_entity(semantic(file(SemanticsFile))))), LoadResult),
+            (LoadResult = ok(_) ->
+                RetVal = ok(project_created(ProjectPath, ProjectName))
+            ;
+                RetVal = error(failed_to_load_into_session(LoadResult))
+            )
+        ;
+            % No semantics file to load
+            RetVal = ok(project_created(ProjectPath, ProjectName))
+        )
+    ;
+        % Not requested, just return success
+        RetVal = ok(project_created(ProjectPath, ProjectName))
     ).
 
 % === HELPER PREDICATES ===

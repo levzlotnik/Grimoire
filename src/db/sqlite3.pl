@@ -86,6 +86,108 @@ escape_sql_string(Input, Escaped) :-
     re_replace("'"/g, "''", InputStr, EscapedStr),
     atom_string(Escaped, EscapedStr).
 
+% Execute parameterized SQL using SQLite's .param mechanism
+sqlite3_exec_params(DbPath, SQL, Params) :-
+    is_list(Params),
+    build_param_script(SQL, Params, Script),
+    process_create(path(sqlite3), [DbPath], [
+        stdin(pipe(InStream)),
+        stdout(null),
+        stderr(pipe(ErrorStream)),
+        process(PID)
+    ]),
+    write(InStream, Script),
+    close(InStream),
+    read_string(ErrorStream, _, ErrorString),
+    close(ErrorStream),
+    process_wait(PID, Status),
+    (Status = exit(0) ->
+        true
+    ;
+        (ErrorString = "" ->
+            throw(error(sqlite_error(Status), context(sqlite3_exec_params/3, DbPath)))
+        ;
+            throw(error(sqlite_error(ErrorString), context(sqlite3_exec_params/3, DbPath)))
+        )
+    ).
+
+% Query with parameterized SQL using SQLite's .param mechanism
+sqlite3_query_params(DbPath, SQL, Params, Results) :-
+    is_list(Params),
+    build_param_script(SQL, Params, Script),
+    process_create(path(sqlite3), [DbPath, '-json'], [
+        stdin(pipe(InStream)),
+        stdout(pipe(OutputStream)),
+        stderr(pipe(ErrorStream)),
+        process(PID)
+    ]),
+    write(InStream, Script),
+    close(InStream),
+    read_string(OutputStream, _, JsonString),
+    read_string(ErrorStream, _, ErrorString),
+    close(OutputStream),
+    close(ErrorStream),
+    process_wait(PID, Status),
+    (Status = exit(0) ->
+        (JsonString = "" ->
+            Results = []
+        ;
+            open_string(JsonString, Stream),
+            json_read_dict(Stream, RawResults, []),
+            close(Stream),
+            retag_dicts(RawResults, row, Results)
+        )
+    ;
+        (ErrorString = "" ->
+            throw(error(sqlite_error(Status), context(sqlite3_query_params/4, DbPath)))
+        ;
+            throw(error(sqlite_error(ErrorString), context(sqlite3_query_params/4, DbPath)))
+        )
+    ).
+
+% Build SQLite script with .param set commands
+% Converts ? placeholders to :p1, :p2, etc.
+build_param_script(SQL, Params, Script) :-
+    replace_placeholders(SQL, 1, Params, ParamSQL, ParamBindings),
+    findall(ParamLine,
+        member(binding(ParamLine, _), ParamBindings),
+        ParamLines
+    ),
+    atomic_list_concat(ParamLines, '\n', ParamSection),
+    format(string(Script), "~w\n~w;\n", [ParamSection, ParamSQL]).
+
+% Replace ? with :p1, :p2, etc. and generate .param set commands
+replace_placeholders(SQL, _, [], SQL, []) :- !.
+replace_placeholders(SQL, N, [Param|RestParams], Result, [binding(ParamLine, Param)|RestBindings]) :-
+    format(atom(ParamName), ':p~w', [N]),
+    % Replace first ?
+    (atom(SQL) -> atom_string(SQL, SQLStr) ; SQLStr = SQL),
+    (sub_string(SQLStr, Before, 1, After, "?")
+    -> (sub_string(SQLStr, 0, Before, _, Prefix),
+        AfterPos is Before + 1,
+        sub_string(SQLStr, AfterPos, After, 0, Suffix),
+        atomic_list_concat([Prefix, ParamName, Suffix], NewSQL),
+        % Generate .param set command
+        param_to_dot_param(ParamName, Param, ParamLine),
+        N1 is N + 1,
+        replace_placeholders(NewSQL, N1, RestParams, Result, RestBindings))
+    ; throw(error(param_count_mismatch,
+                 context(build_param_script/3, 'More parameters than ? placeholders')))).
+
+% Generate .param set command for a value
+param_to_dot_param(ParamName, Param, ParamLine) :-
+    (number(Param)
+    -> format(string(ParamLine), ".param set ~w ~w", [ParamName, Param])
+    ; Param = null
+    -> format(string(ParamLine), ".param set ~w NULL", [ParamName])
+    ; (% String/atom value - use double quotes and escape internal double quotes and newlines
+       (atom(Param) -> atom_string(Param, ParamStr) ; ParamStr = Param),
+       % Replace newlines with spaces (or could use \n escape)
+       re_replace('\n'/g, ' ', ParamStr, NoNewlines),
+       % Escape double quotes by doubling them
+       re_replace('"'/g, '""', NoNewlines, EscapedStr),
+       format(string(ParamLine), '.param set ~w "~s"', [ParamName, EscapedStr]))).
+
 % Check if database file exists and is valid SQLite
 validate_database(DbPath) :-
     exists_file(DbPath),

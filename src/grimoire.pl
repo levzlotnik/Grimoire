@@ -21,11 +21,6 @@ it_is_what_it_is :- !.
 
 % Core ECS predicates - must match ecs_kernel.pl
 
-% Multifile declarations - must come before any clauses
-:- multifile docstring/2.
-:- multifile entity/1.
-:- multifile component/3.
-
 %% ============================================================================
 %% DYNAMIC DECLARATIONS
 %% ============================================================================
@@ -39,8 +34,8 @@ it_is_what_it_is :- !.
 ]).
 
 :- dynamic([
-    cast_pre_hook/2,      % Hook infrastructure for extensible spell casting behavior
-    cast_post_hook/2
+    cast_pre_hook/2,      % cast_pre_hook(SpellTermPattern, Goal)
+    cast_post_hook/3      % cast_post_hook(SpellTermPattern, ResultPattern, Goal)
 ], [
     discontiguous(true),
     multifile(true)
@@ -155,9 +150,9 @@ magic_cast(SpellTerm, Result) :-
     setup_call_cleanup(
         assertz(in_magic_cast),
         (
-            pre_magic_cast_hook(SpellTerm),
+            cast_pre_hooks(SpellTerm),
             cast_impl(SpellTerm, Result),
-            post_magic_cast_hook(SpellTerm, Result)
+            cast_post_hooks(SpellTerm, Result)
         ),
         retract(in_magic_cast)
     ),
@@ -219,61 +214,20 @@ docstring(magic_cast,
 ).
 
 %% ============================================================================
-%% SPELL HOOKS
-%% ============================================================================
-
-% Default hooks (can be overridden by domains)
-pre_magic_cast_hook(_SpellTerm).
-
-post_magic_cast_hook(SpellTerm, _Result) :-
-    % Check if spell has session_persistent flag
-    (find_matching_spell_sig(SpellTerm, SpellSig)
-    -> (component(SpellSig, spell_options, Options)
-       -> (option(session_persistent(true), Options, false)
-          -> % TODO: Session domain will implement actual persistence
-             true
-          ; true)
-       ; true)
-    ; true),
-    !.  % Cut to make deterministic
-
-docstring(pre_magic_cast_hook,
-    {|string(_)||
-    Hook executed BEFORE spell implementation.
-
-    Default: no-op
-    Override: Domains can define custom pre-hooks for logging, validation, etc.
-
-    Example override:
-        pre_magic_cast_hook(conjure(db(create(DbId, _, _)))) :-
-            format('Creating database: ~w~n', [DbId]).
-    |}
-).
-
-docstring(post_magic_cast_hook,
-    {|string(_)||
-    Hook executed AFTER spell implementation.
-
-    Default behavior:
-    - Checks if spell has session_persistent(true) flag
-    - Session domain implements actual persistence logic
-
-    Example override:
-        post_magic_cast_hook(SpellTerm, ok(Result)) :-
-            log_successful_cast(SpellTerm, Result).
-    |}
-).
-
-%% ============================================================================
 %% HOOK SYSTEM
 %% ============================================================================
+
+% Domains extend hooks via multifile cast_pre_hook/2 and cast_post_hook/3
+% Example:
+%   cast_pre_hook(conjure(db(create(_, _, _))), (format('Creating DB~n', []))).
+%   cast_post_hook(conjure(_), ok(_), (format('Success~n', []))).
 
 % Hook execution helpers
 cast_pre_hooks(Term) :-
     forall(cast_pre_hook(Term, Goal), call(Goal)).
 
-cast_post_hooks(Term) :-
-    forall(cast_post_hook(Term, Goal), call(Goal)).
+cast_post_hooks(Term, Result) :-
+    forall(cast_post_hook(Term, Result, Goal), call(Goal)).
 
 % The most fundamental entity
 :- self_entity(system).
@@ -882,15 +836,21 @@ register_spell(
 
 
 % Load core system components - loaded AFTER spell system is defined
-% Temporarily disabled - will re-enable one by one after fixing each domain
-% :- load_entity(semantic(file("@/src/git.pl"))).
-% :- load_entity(semantic(file("@/src/utils.pl"))).
-% :- load_entity(semantic(folder("@/src/nix"))).
-% :- load_entity(semantic(file("@/src/fs.pl"))).
-% :- load_entity(semantic(folder("@/src/db"))).
-% :- load_entity(semantic(folder("@/src/project"))).
-% :- load_entity(semantic(file("@/src/session.pl"))).
-% :- load_entity(semantic(folder("@/src/interface"))).
+% Phase 2 domains (working)
+:- load_entity(semantic(file("@/src/git.pl"))).
+:- load_entity(semantic(file("@/src/utils.pl"))).
+:- load_entity(semantic(folder("@/src/nix"))).
+:- load_entity(semantic(file("@/src/fs.pl"))).
+:- load_entity(semantic(folder("@/src/db"))).
+:- load_entity(semantic(folder("@/src/project"))).
+
+% Phase 3: Session domain (requires db, fs, utils)
+:- load_entity(semantic(file("@/src/session.pl"))).
+
+% Interface domain - Python-Prolog bridge
+:- load_entity(semantic(folder("@/src/interface"))).
+
+% Temporarily disabled - will re-enable after fixing
 % :- load_entity(semantic(folder("@/src/golems"))).
 % :- load_entity(semantic(folder("@/src/protocol_clients"))).
 

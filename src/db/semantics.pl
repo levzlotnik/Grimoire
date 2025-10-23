@@ -7,7 +7,9 @@
 % Database command entities
 entity(db(create)).
 entity(db(execute)).
+entity(db(execute_params)).
 entity(db(query)).
+entity(db(query_params)).
 entity(db(tables)).
 entity(db(write_table)).
 entity(db(read_table)).
@@ -86,7 +88,7 @@ register_spell(
         error(db_error('Reason'))
     )),
     "Create a new SQLite database from a schema file or SQL string. Returns a database object.",
-    [session_persistence(has(db(sqlite)))],
+    [session_persistent(has(db(sqlite)))],
     implementation(conjure(db(create(file(DbPath), schema(SchemaSpec)))), Result, (
         % Validate path
         ((atom(DbPath) ; string(DbPath)) -> true ; throw(error(db_error(invalid_db_path(DbPath))))),
@@ -155,6 +157,41 @@ register_spell(
     ))
 ).
 
+% Execute parameterized SQL statement (mutation, SQL injection safe)
+register_spell(
+    conjure(db(execute_params)),
+    input(db(execute_params(database('DbPath'), sql('SQL'), params('Params')))),
+    output(either(
+        ok(executed('SQL')),
+        error(db_error('Reason'))
+    )),
+    "Execute a parameterized SQL statement. Use ? placeholders for parameters (SQL injection safe).",
+    [],
+    implementation(conjure(db(execute_params(database(DbPath), sql(SQL), params(Params)))), Result, (
+        % Validation
+        string(SQL),
+        is_list(Params),
+        (atom(DbPath) -> atom_string(DbPath, DbPathStr) ; DbPathStr = DbPath),
+
+        % Verify file exists and is accessible
+        (exists_file(DbPathStr) ->
+            (access_file(DbPathStr, write) ->
+                (validate_database(DbPathStr) ->
+                    % Execute with parameters
+                    sqlite3_exec_params(DbPathStr, SQL, Params),
+                    Result = ok(executed(SQL))
+                ;
+                    Result = error(db_error(invalid_database(DbPath)))
+                )
+            ;
+                Result = error(db_error(database_not_writable(DbPath)))
+            )
+        ;
+            Result = error(db_error(database_file_not_found(DbPath)))
+        )
+    ))
+).
+
 % Query database and return results
 register_spell(
     perceive(db(query)),
@@ -176,6 +213,41 @@ register_spell(
                 (validate_database(DbPathStr) ->
                     % Query
                     sqlite3_query(DbPathStr, SQL, QueryResults),
+                    Result = ok(query_results(QueryResults))
+                ;
+                    Result = error(query_error(invalid_database(DbPath)))
+                )
+            ;
+                Result = error(query_error(database_not_readable(DbPath)))
+            )
+        ;
+            Result = error(query_error(database_file_not_found(DbPath)))
+        )
+    ))
+).
+
+% Query database with parameters (SQL injection safe)
+register_spell(
+    perceive(db(query_params)),
+    input(db(query_params(database('DbPath'), sql('SQL'), params('Params')))),
+    output(either(
+        ok(query_results('Results')),
+        error(query_error('Reason'))
+    )),
+    "Execute a parameterized SQL query. Use ? placeholders for parameters (SQL injection safe).",
+    [],
+    implementation(perceive(db(query_params(database(DbPath), sql(SQL), params(Params)))), Result, (
+        % Validation
+        string(SQL),
+        is_list(Params),
+        (atom(DbPath) -> atom_string(DbPath, DbPathStr) ; DbPathStr = DbPath),
+
+        % Verify file exists and is readable
+        (exists_file(DbPathStr) ->
+            (access_file(DbPathStr, read) ->
+                (validate_database(DbPathStr) ->
+                    % Query with parameters
+                    sqlite3_query_params(DbPathStr, SQL, Params, QueryResults),
                     Result = ok(query_results(QueryResults))
                 ;
                     Result = error(query_error(invalid_database(DbPath)))

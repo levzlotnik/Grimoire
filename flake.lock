@@ -27,7 +27,7 @@
       },
       "locked": {
         "lastModified": 1,
-        "narHash": "sha256-Wv75NZFi9YJl2tqGqyxbro9rodTo2ryZ+6ectaU/Gu0=",
+        "narHash": "sha256-V9KuoRhzS3WH4U13dVICj+iuKOH7kqGUNkqZRfYFMDI=",
         "path": "./src/golems",
         "type": "path"
       },
@@ -36,7 +36,7 @@
         "type": "path"
       }
     },
-    "grimoire-api": {
+    "grimoire-py": {
       "inputs": {
         "flake-utils": [
           "flake-utils"
@@ -48,7 +48,7 @@
       },
       "locked": {
         "lastModified": 1,
-        "narHash": "sha256-e+NIt8/gMlJFe/k8faQlm581mLgz/1YOrYABSFILAR0=",
+        "narHash": "sha256-9giWwVwPYBdLMXH55vYO6TmCvKV27U3wwCKobn5oS8A=",
         "path": "./src/interface/api",
         "type": "path"
       },
@@ -92,7 +92,7 @@
       "inputs": {
         "flake-utils": "flake-utils",
         "golems": "golems",
-        "grimoire-api": "grimoire-api",
+        "grimoire-py": "grimoire-py",
         "grimoire-templates": "grimoire-templates",
         "nixpkgs": "nixpkgs"
       }

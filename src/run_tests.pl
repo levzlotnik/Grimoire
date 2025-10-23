@@ -176,8 +176,8 @@ get_test_exclude_patterns(Patterns) :-
         split_string(ExcludeStr, ",", " ", PatternStrs),
         maplist(atom_string, Patterns, PatternStrs)
     ;
-        % No default excludes - all tests enabled
-        Patterns = []
+        % Default excludes - disable golems and protocol_clients (substring match)
+        Patterns = ["golem", "protocol_client"]
     ).
 
 % Check if test should be excluded

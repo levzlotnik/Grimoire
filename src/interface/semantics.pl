@@ -1,381 +1,325 @@
-% Interface layer for ECS exploration and system interaction
-% Returns structured data - frontends (CLI/API/MCP) handle formatting
+% Interface domain - clean Python-Prolog bridge for system introspection
+% All operations exposed as spells with template-based parameter filling
 
-% Interface entity - now a folder entity
 :- self_entity(interface).
 
-% Load interface API submodule
-:- load_entity(semantic(folder("./api"))).
+%% ============================================================================
+%% TEMPLATE FILLING SYSTEM
+%% ============================================================================
 
-% Interface subcommands (following git pattern)
-component(interface, subcommand, compt).
-component(interface, subcommand, comp).
-component(interface, subcommand, doc).
-component(interface, subcommand, entities).
-component(interface, subcommand, repl).
-component(interface, subcommand, test).
-component(interface, subcommand, conjure).
-component(interface, subcommand, perceive).
-component(interface, subcommand, read_file).
-component(interface, subcommand, edit_file).
-component(interface, subcommand, exec).
+% fill_input_template(+Template, +UserDict, -FilledTerm)
+% Recursively fill template placeholders from user dictionary
+% Template variables are atoms starting with uppercase (Entity, Type, Value, etc.)
+% Dict keys MUST be quoted atoms like 'Entity', 'Type', etc.
 
-% Removed legacy command constructor - interface functions called directly by CLI
-
-% Also make them available as interface constructors
-component(interface, ctor, C) :- component(interface, subcommand, C).
-
-% Namespaced entities for each interface command
-entity(interface(compt)).
-entity(interface(comp)).
-entity(interface(doc)).
-entity(interface(entities)).
-entity(interface(repl)).
-entity(interface(test)).
-entity(interface(test_files)).
-entity(interface(conjure)).
-entity(interface(perceive)).
-entity(interface(read_file)).
-entity(interface(edit_file)).
-entity(interface(exec)).
-
-% Docstrings follow namespacing pattern with detailed format information
-docstring(interface(compt), "List all component types of current entity. Format: interface(compt) or interface(compt(Entity)). Returns component_types(Entity, [Type1, Type2, ...]).").
-docstring(interface(comp), "List components of specific type for current entity. Format: interface(comp(Entity, ComponentType)). Returns components(Entity, ComponentType, [Component1, Component2, ...]).").
-docstring(interface(doc), "Show docstring of current entity. Format: interface(doc) or interface(doc(Entity)). Returns documentation(Entity, DocString).").
-docstring(interface(entities), "List all entities in the system. Format: interface(entities). Returns entities([Entity1, Entity2, ...]).").
-docstring(interface(repl), "Start interactive REPL with context awareness. Format: interface(repl). Interactive command that starts a Prolog REPL.").
-docstring(interface(test), "Run the test suite. Format: interface(test) or interface(test([TestName1, TestName2, ...]). Returns test results.").
-docstring(interface(test_files), "Run tests from specific files. Format: interface(test_files(TestNames, FilePaths)). Returns test results.").
-docstring(interface(conjure), "Execute conjuration spells (mutable operations). Format: interface(conjure(SpellTerm)) - use 'grimoire comp conjure ctor' to see available spells.").
-docstring(interface(perceive), "Execute perception spells (query operations). Format: interface(perceive(QueryTerm)) - use 'grimoire comp perceive ctor' to see available queries.").
-docstring(interface(read_file), "Read lines from a file using 1-based indexing. Format: interface(read_file(FilePath, Start, End)). Returns file content with line numbers.").
-docstring(interface(edit_file), "Edit file with specified operations. Format: interface(edit_file(FilePath, Edits)). Edits is a list of edit operations.").
-docstring(interface(exec), "Execute arbitrary Prolog query with variable bindings. Format: interface(exec(QueryStr)). Returns solutions with variable bindings.").
-
-% Main interface docstring
-docstring(interface, S) :-
-    make_ctors_docstring(interface, CtorsDoc),
-    S = {|string(CtorsDoc)||\n    Interface commands for ECS exploration and system interaction.\n    Format: interface(subcommand(...))\n\n    Available subcommands:\n    {CtorsDoc}\n    |}.
-
-% === DSL PATTERNS: CLIENT CAPABILITIES ===
-
-% Expand client capabilities to queryable components
-component(Entity, interface_client_type, Type) :-
-    component(Entity, has(interface(client)), interface(client(Spec))),
-    member(type(Type), Spec).
-
-component(Entity, interface_client_capability, Cap) :-
-    component(Entity, has(interface(client)), interface(client(Spec))),
-    member(capabilities(Caps), Spec),
-    member(Cap, Caps).
-
-% Expand spell access permissions
-component(Entity, interface_can_access_domain, Domain) :-
-    component(Entity, has(interface(spell_access)), interface(spell_access(Spec))),
-    member(domain(Domain), Spec).
-
-component(Entity, interface_can_cast_spell, Spell) :-
-    component(Entity, has(interface(spell_access)), interface(spell_access(Spec))),
-    member(spells(Spells), Spec),
-    member(Spell, Spells).
-
-% Subcommand availability
-component(interface, available_subcommands, Subcommands) :-
-    findall(Cmd, component(interface, subcommand, Cmd), Subcommands).
-
-% === CONTEXT MANAGEMENT ===
-
-% Auto-detect current working context
-current_entity(Entity) :-
-    (exists_file('./semantics.pl') ->
-        % Get entity name from working directory
-        working_directory(Cwd, Cwd),
-        file_base_name(Cwd, DirName),
-        atom_string(Entity, DirName),
-        % Ensure local project is loaded
-        ensure_local_project_loaded(Entity)
-    ;
-        % Default to system entity
-        Entity = system
+fill_input_template(Atom, UserDict, Value) :-
+    atom(Atom),
+    is_placeholder_var(Atom),
+    !,
+    % Look up placeholder in dict - keys are quoted atoms
+    (   get_dict(Atom, UserDict, Value)
+    ->  true
+    ;   throw(error(missing_template_arg(Atom),
+                    context(fill_input_template/3, 'Template variable not provided in args')))
     ).
 
-% Resolve entity paths with shortcuts
-resolve_entity_path(PathStr, Entity) :-
-    (PathStr = "/" ->
-        Entity = system
-    ;
-        % Try loading as semantic folder (works for both "." and "path/to/something")
-        catch(
-            (load_entity(semantic(folder(PathStr))),
-             file_base_name(PathStr, DirName),
-             atom_string(Entity, DirName)),
-            _,
-            % If loading fails, treat as entity name directly
-            atom_string(Entity, PathStr)
+fill_input_template(Atom, _UserDict, Atom) :-
+    atom(Atom), !.
+
+fill_input_template(String, _UserDict, String) :-
+    string(String), !.
+
+fill_input_template(Number, _UserDict, Number) :-
+    number(Number), !.
+
+fill_input_template(List, UserDict, FilledList) :-
+    is_list(List), !,
+    maplist({UserDict}/[Item, Filled]>>fill_input_template(Item, UserDict, Filled), List, FilledList).
+
+fill_input_template(Compound, UserDict, Filled) :-
+    compound(Compound), !,
+    Compound =.. [Functor|Args],
+    maplist({UserDict}/[Arg, FilledArg]>>fill_input_template(Arg, UserDict, FilledArg), Args, FilledArgs),
+    Filled =.. [Functor|FilledArgs].
+
+% Detect placeholder variables - atoms starting with uppercase letter
+is_placeholder_var(Atom) :-
+    atom(Atom),
+    atom_chars(Atom, [FirstChar|_]),
+    char_type(FirstChar, upper).
+
+%% ============================================================================
+%% UNIVERSAL SPELL CASTING WITH TEMPLATE FILLING
+%% ============================================================================
+
+% python_magic_cast(+SpellSig, +UserDict, -PyResult)
+% Universal spell casting for Python clients:
+% 1. Get input template from spell metadata
+% 2. Fill template with user dictionary
+% 3. Cast filled spell
+% 4. Convert result to Python-friendly dict
+
+python_magic_cast(SpellSigStr, UserDict, PyResult) :-
+    catch(
+        (   % Step 0: Parse spell signature string to term
+            (   atom(SpellSigStr)
+            ->  atom_to_term(SpellSigStr, SpellSig, [])
+            ;   SpellSig = SpellSigStr
+            ),
+            % Step 1: Extract verb (perceive/conjure) from signature
+            SpellSig =.. [Verb|_],
+            % Step 2: Get input format template
+            please_verify(component(SpellSig, format_input, input(InputFormat))),
+            % Step 3: Fill template with user dictionary
+            fill_input_template(InputFormat, UserDict, FilledArgs),
+            % Step 4: Reconstruct full spell term with verb
+            FullSpellTerm =.. [Verb, FilledArgs],
+            % Step 5: Cast the spell
+            magic_cast(FullSpellTerm, Result),
+            % Step 6: Convert to Python dict
+            term_struct_to_python_dict(Result, PyResult), !
+        ),
+        Error,
+        (   % Extract just the error type, ignore context
+            (   Error = error(ErrorType, _)
+            ->  SimplifiedError = error(ErrorType)
+            ;   SimplifiedError = Error
+            ),
+            % Convert simplified error
+            term_struct_to_python_dict(SimplifiedError, PyResult)
         )
     ).
 
-% Load local semantics.pl if not already loaded
-ensure_local_project_loaded(ProjectEntity) :-
-    (entity(ProjectEntity) ->
-        true  % Already loaded
-    ;
-        load_entity(semantic(file('./semantics.pl')))
-    ).
+%% ============================================================================
+%% INTERFACE OPERATIONS - ECS INTROSPECTION
+%% ============================================================================
 
+% Helper: format component results with smart singleton/set detection
+format_component_result([], set([])).
+format_component_result([V], unique(V)) :- !.
+format_component_result(Vs, set(Vs)).
 
-% === INTERFACE COMMAND IMPLEMENTATIONS ===
-
-% Component types listing
+% Component types - list all component types for entity
 register_spell(
-    conjure(interface(compt)),
-    input(interface(compt)),
-    output(ok(component_types('Entity', 'TypeList'))),
-    "Query component types for current entity",
+    perceive(interface(component_types)),
+    input(interface(component_types(entity('Entity')))),
+    output(ok(types('Types'))),
+    "List all component types for an entity",
     [],
-    implementation(conjure(interface(compt)), RetVal, (
-        current_entity(Entity),
-        interface_compt(Entity, Types),
-        RetVal = ok(component_types(Entity, Types))
+    implementation(perceive(interface(component_types(entity(EntityValue)))), Result, (
+        findall(Type, component(EntityValue, Type, _), AllTypes),
+        sort(AllTypes, Types),
+        Result = ok(types(Types))
     ))
 ).
 
+% Components - get verified components with singleton/set detection
 register_spell(
-    conjure(interface(compt('E'))),
-    input(interface(compt(entity_path('EntityPath')))),
-    output(ok(component_types('Entity', 'TypeList'))),
-    "Query component types for specified entity",
+    perceive(interface(components)),
+    input(interface(components(entity('Entity'), type('Type')))),
+    output(either(ok(unique('Value')), ok(set('Values')), error(component_not_found))),
+    "Get verified components with smart singleton/set detection",
     [],
-    implementation(conjure(interface(compt(EntityPath))), RetVal, (
-        resolve_entity_path(EntityPath, Entity),
-        interface_compt(Entity, Types),
-        RetVal = ok(component_types(Entity, Types))
+    implementation(perceive(interface(components(entity(EntityValue), type(TypeValue)))), Result, (
+        get_all_components(component(EntityValue, TypeValue, _), Values),
+        (   Values = []
+        ->  throw(error(existence_error(component, component(EntityValue, TypeValue, _)),
+                       context(perceive(interface(components)), 'Component does not exist')))
+        ;   format_component_result(Values, FormattedResult),
+            Result = ok(FormattedResult)
+        )
     ))
 ).
 
-% Component listing with new argument order: entity first, then type
+% Docstring - get entity documentation
 register_spell(
-    conjure(interface(comp('E','T'))),
-    input(interface(comp(entity_path('EntityPath'), type('Type')))),
-    output(ok(components('Entity','Type','ComponentList'))),
-    "Query components of specific type for entity",
+    perceive(interface(docstring)),
+    input(interface(docstring(entity('Entity')))),
+    output(ok(doc('Doc'))),
+    "Get entity docstring",
     [],
-    implementation(conjure(interface(comp(EntityPath, Type))), RetVal, (
-        resolve_entity_path(EntityPath, Entity),
-        interface_comp(Entity, Type, Components),
-        RetVal = ok(components(Entity, Type, Components))
+    implementation(perceive(interface(docstring(entity(EntityValue)))), Result, (
+        docstring(EntityValue, Doc),
+        Result = ok(doc(Doc))
     ))
 ).
 
-% Documentation retrieval
+% Entities - list all entities in system
 register_spell(
-    conjure(interface(doc)),
-    input(interface(doc)),
-    output(ok(documentation('Entity', 'Doc'))),
-    "Get documentation for current entity",
-    [],
-    implementation(conjure(interface(doc)), RetVal, (
-        current_entity(Entity),
-        interface_doc(Entity, Doc),
-        RetVal = ok(documentation(Entity, Doc))
-    ))
-).
-
-register_spell(
-    conjure(interface(doc('E'))),
-    input(interface(doc(entity('Entity')))),
-    output(ok(documentation('Entity', 'Doc'))),
-    "Get documentation for specified entity",
-    [],
-    implementation(conjure(interface(doc(Entity))), RetVal, (
-        interface_doc(Entity, Doc),
-        RetVal = ok(documentation(Entity, Doc))
-    ))
-).
-
-% Entities listing
-register_spell(
-    conjure(interface(entities)),
+    perceive(interface(entities)),
     input(interface(entities)),
-    output(ok(entities('EntityList'))),
+    output(ok(entities('Entities'))),
     "List all entities in the system",
     [],
-    implementation(conjure(interface(entities)), RetVal, (
-        interface_entities(Entities),
-        RetVal = ok(entities(Entities))
+    implementation(perceive(interface(entities)), Result, (
+        findall(E, entity(E), Entities),
+        Result = ok(entities(Entities))
     ))
 ).
 
-% REPL command - delegate to existing implementation
-register_spell(
-    conjure(interface(repl)),
-    input(interface(repl)),
-    output(either(ok(repl_completed), error(repl_failed('Error')))),
-    "Start interactive REPL with context awareness",
-    [],
-    implementation(conjure(interface(repl)), RetVal, (
-        catch(
-            (grimoire_ensure_loaded('@/src/repl.pl'), grimoire_repl_command, RetVal = ok(repl_completed)),
-            Error,
-            RetVal = error(repl_failed(Error))
-        )
-    ))
-).
+%% ============================================================================
+%% INTERFACE OPERATIONS - TESTING
+%% ============================================================================
 
-% Test command - delegate to existing implementation
 register_spell(
     conjure(interface(test)),
-    input(interface(test)),
+    input(interface(test(args('Args')))),
     output(either(ok(tests_passed), error(tests_failed('Reason')))),
-    "Run all tests",
+    "Run test suite with optional args",
     [],
-    implementation(conjure(interface(test)), RetVal, (
+    implementation(conjure(interface(test(args(ArgsValue)))), Result, (
         catch(
-            (grimoire_ensure_loaded('@/src/run_tests.pl'), run_all_tests, RetVal = ok(tests_passed)),
+            (   grimoire_ensure_loaded('@/src/run_tests.pl'),
+                (   member('--list', ArgsValue)
+                ->  (list_available_tests, Result = ok(tests_listed))
+                ;   ArgsValue = []
+                ->  (run_all_tests, Result = ok(tests_passed))
+                ;   (run_specific_tests(ArgsValue), Result = ok(tests_passed))
+                )
+            ),
             Error,
-            RetVal = error(tests_failed(Error))
+            Result = error(tests_failed(Error))
         )
     ))
 ).
 
-% Test command with specific test arguments
+% Exec - execute arbitrary Prolog query and return string results
 register_spell(
-    conjure(interface(test('Args'))),
-    input(interface(test(test_args('TestArgs')))),
-    output(either(ok(tests_passed), error(tests_failed('Reason')))),
-    "Run tests with optional filtering arguments",
+    conjure(interface(exec)),
+    input(interface(exec(query('QueryString')))),
+    output(ok(solutions('Solutions'))),
+    "Execute arbitrary Prolog query and return string-formatted solutions",
     [],
-    implementation(conjure(interface(test(TestArgs))), RetVal, (
-        catch(
-            (grimoire_ensure_loaded('@/src/run_tests.pl'),
-             (member('--list', TestArgs) ->
-                 (list_available_tests,
-                  RetVal = ok(tests_listed))
-             ;
-                 (run_specific_tests(TestArgs),
-                  RetVal = ok(tests_passed))
-             )),
-            Error,
-            RetVal = error(tests_failed(Error))
-        )
+    implementation(conjure(interface(exec(query(QueryString)))), Result, (
+        term_string(Goal, QueryString, [variable_names(VarNames)]),
+        findall(VarNames, call(Goal), AllSolutions),
+        % Convert to Python-tagged dicts for serialization
+        maplist(solution_to_py_dict, AllSolutions, PySolutions),
+        Result = ok(solutions(PySolutions))
     ))
 ).
 
-% Test files command - run tests from specific .plt files
+% Helper to convert variable bindings to Python dict tagged with py
+% Creates py{VarName: Value, ...} from variable bindings
+solution_to_py_dict(VarNames, PyDict) :-
+    maplist(binding_to_pair, VarNames, Pairs),
+    dict_create(PyDict, py, Pairs).
+
+binding_to_pair(Var=Val, VarAtom-ValStr) :-
+    % Var is already an atom like 'X', use it directly as dict key
+    % Convert Val to string for value
+    (atom(Var) -> VarAtom = Var ; atom_string(VarAtom, Var)),
+    term_string(Val, ValStr).
+
+%% ============================================================================
+%% INTERFACE OPERATIONS - SESSION MANAGEMENT
+%% ============================================================================
+
 register_spell(
-    conjure(interface(test_files('TestNames', 'FilePaths'))),
-    input(interface(test_files(test_names('TestNames'), file_paths('FilePaths')))),
-    output(either(ok(tests_passed), error(tests_failed('Reason')))),
-    "Run tests from specific .plt files",
+    conjure(interface(session_create)),
+    input(interface(session_create(session_id('SessionId')))),
+    output('SessionResult'),
+    "Create a new session (delegates to session domain)",
     [],
-    implementation(conjure(interface(test_files(TestNames, FilePaths))), RetVal, (
-        catch(
-            (grimoire_ensure_loaded('@/src/run_tests.pl'),
-             run_test_files(TestNames, FilePaths),
-             RetVal = ok(tests_passed)),
-            Error,
-            RetVal = error(tests_failed(Error))
-        )
+    implementation(conjure(interface(session_create(session_id(SessionIdValue)))), Result, (
+        magic_cast(conjure(session(create(id(SessionIdValue)))), Result)
     ))
 ).
 
-% Conjure command - execute conjuration spells
 register_spell(
-    conjure(interface(conjure('SpellTerm'))),
-    input(interface(conjure(spell_term('SpellTerm')))),
-    output('DomainDependentResult'),
-    "Delegate conjure spell to appropriate domain",
+    conjure(interface(session_switch)),
+    input(interface(session_switch(session_id('SessionId')))),
+    output('SessionResult'),
+    "Switch to different session (delegates to session domain)",
     [],
-    implementation(conjure(interface(conjure(SpellTerm))), RetVal, (
-        magic_cast(conjure(SpellTerm), RetVal)
+    implementation(conjure(interface(session_switch(session_id(SessionIdValue)))), Result, (
+        magic_cast(conjure(session(switch(id(SessionIdValue)))), Result)
     ))
 ).
 
-% Perceive command - execute perception spells directly
 register_spell(
-    perceive(interface(perceive('QueryTerm'))),
-    input(interface(perceive(query_term('QueryTerm')))),
-    output(either(ok(query_succeeded), error(query_failed))),
-    "Delegate perceive query to appropriate domain",
+    conjure(interface(session_delete)),
+    input(interface(session_delete(session_id('SessionId')))),
+    output('SessionResult'),
+    "Delete a session (delegates to session domain)",
     [],
-    implementation(conjure(interface(perceive(QueryTerm))), RetVal, (
-        magic_cast(perceive(QueryTerm), Result),
-        (Result = ok(_) ->
-            RetVal = ok(query_succeeded)
-        ;
-            RetVal = error(query_failed)
-        )
+    implementation(conjure(interface(session_delete(session_id(SessionIdValue)))), Result, (
+        magic_cast(conjure(session(delete(id(SessionIdValue)))), Result)
     ))
 ).
 
-% Read file command - delegate to fs domain
 register_spell(
-    conjure(interface(read_file('FilePath', 'Start', 'End'))),
-    input(interface(read_file(file_path('FilePath'), start('Start'), end('End')))),
-    output(either(ok(lines('ContentWithLineNumbers')), error(read_file_failed))),
-    "Read lines from a file with 1-based indexing (delegated to fs domain)",
+    conjure(interface(session_export)),
+    input(interface(session_export(session_id('SessionId'), destination('Dest')))),
+    output('SessionResult'),
+    "Export session to archive (delegates to session domain)",
     [],
-    implementation(conjure(interface(read_file(FilePath, Start, End))), RetVal, (
-        magic_cast(perceive(fs(read_file(FilePath, Start, End))), RetVal)
+    implementation(conjure(interface(session_export(session_id(SessionIdValue), destination(DestValue)))), Result, (
+        magic_cast(conjure(session(export(id(SessionIdValue), destination(DestValue)))), Result)
     ))
 ).
 
-% Edit file command - delegate to fs domain
 register_spell(
-    conjure(interface(edit_file('FilePath', 'Edits'))),
-    input(interface(edit_file(file_path('FilePath'), edits('Edits')))),
-    output('FsDomainResult'),
-    "Edit file with specified operations (delegated to fs domain)",
+    conjure(interface(session_import)),
+    input(interface(session_import(archive('Archive')))),
+    output('SessionResult'),
+    "Import session from archive (delegates to session domain)",
     [],
-    implementation(conjure(interface(edit_file(FilePath, Edits))), RetVal, (
-        magic_cast(conjure(fs(edit_file(file(FilePath), Edits))), RetVal)
+    implementation(conjure(interface(session_import(archive(ArchiveValue)))), Result, (
+        magic_cast(conjure(session(import(archive(ArchiveValue)))), Result)
     ))
 ).
 
-% === CORE INTERFACE FUNCTIONS ===
-% These return structured data, no printing
+%% ============================================================================
+%% INTERFACE OPERATIONS - META-INTROSPECTION
+%% ============================================================================
 
-% List component types for entity
-interface_compt(Entity, Types) :-
-    findall(Type, component(Entity, Type, _), AllTypes),
-    sort(AllTypes, Types).
+register_spell(
+    perceive(interface(prove_it)),
+    input(interface(prove_it(entity('Entity'), type('Type'), value('Value')))),
+    output('ProofResult'),
+    "Component provenance - where generated and how verified (delegates to prove_it spell)",
+    [],
+    implementation(perceive(interface(prove_it(entity(EntityValue), type(TypeValue), value(ValueTerm)))), Result, (
+        magic_cast(perceive(prove_it(component(EntityValue, TypeValue, ValueTerm))), Result)
+    ))
+).
 
-% List components of specific type with entity flags
-interface_comp(Entity, Type, ComponentsWithFlags) :-
-    findall(comp_entry(Comp, Flag), (
-        component(Entity, Type, Comp),
-        (entity(Comp) -> Flag = entity ; Flag = value)
-    ), ComponentsWithFlags).
+register_spell(
+    perceive(interface(sauce_me)),
+    input(interface(sauce_me(spell_ctor('SpellCtor')))),
+    output('SauceResult'),
+    "Spell metadata - source location, implementation, formats (delegates to sauce_me spell)",
+    [],
+    implementation(perceive(interface(sauce_me(spell_ctor(SpellCtorValue)))), Result, (
+        magic_cast(perceive(sauce_me(spell(SpellCtorValue))), Result)
+    ))
+).
 
-% Get entity documentation
-interface_doc(Entity, Doc) :-
-    docstring(Entity, Doc).
+register_spell(
+    perceive(interface(system_instructions)),
+    input(interface(system_instructions)),
+    output(ok(instructions('Instructions'))),
+    "Get system instructions/prompt for AI agents",
+    [],
+    implementation(perceive(interface(system_instructions)), Result, (
+        docstring(system, Instructions),
+        Result = ok(instructions(Instructions))
+    ))
+).
 
-% List all entities
-interface_entities(Entities) :-
-    findall(E, entity(E), Entities).
-
-
-% === PYTHON INTERFACE SUPPORT ===
-
-% Python-specific cast that converts Prolog terms to Python-friendly dictionaries
-python_cast(conjure(ConjureStruct), PyResult) :-
-    % If it's an atom, try to convert it to a term
-    % This will preserve quoted atoms as atoms (e.g., 'interface(doc)' stays as atom)
-    % and convert unquoted compound terms (e.g., interface(doc)) to terms
-    (   atom(ConjureStruct) ->
-        atom_to_term(ConjureStruct, Term, [])
-    ;
-        Term = ConjureStruct  % Already a term
-    ),
-    magic_cast(conjure(Term), Result),
-    term_struct_to_python_dict(Result, PyResult).
+%% ============================================================================
+%% PYTHON INTERFACE SUPPORT - TERM CONVERSION
+%% ============================================================================
 
 % Convert Prolog term structures to Python dictionaries recursively
+% Used by python_magic_cast/3 to make results Python-friendly
 term_struct_to_python_dict(Term, Dict) :-
-    % Handle primitive types that pass through directly
-    (   atomic(Term) ->
+    % Handle empty list first
+    (   Term == [] ->
+        Dict = _{type: "list", elements: []}
+    % Handle primitive types
+    ;   atomic(Term) ->
         (   atom(Term) ->
             Dict = _{type: "atom", value: Term}
         ;   string(Term) ->
@@ -386,34 +330,19 @@ term_struct_to_python_dict(Term, Dict) :-
             ;   Dict = _{type: "float", value: Term}
             )
         )
+    % Handle non-empty lists
     ;   is_list(Term) ->
-        % Convert list elements recursively
         maplist(term_struct_to_python_dict, Term, Elements),
         Dict = _{type: "list", elements: Elements}
+    % Handle py-tagged dicts - pass through directly to Python via janus
+    ;   is_dict(Term, py) ->
+        Dict = Term
+    % Handle compound terms
     ;   compound(Term) ->
-        % Handle compound terms by decomposing with functor and args
         compound_name_arity(Term, Functor, Arity),
         Term =.. [Functor|Args],
         maplist(term_struct_to_python_dict, Args, ConvertedArgs),
         Dict = _{type: "term_struct", functor: Functor, arity: Arity, args: ConvertedArgs}
-    ;   % Fallback for any other types
-        Dict = _{type: "unknown", value: Term}
+    % Fallback for any other types
+    ;   Dict = _{type: "unknown", value: Term}
     ).
-
-% Execute arbitrary Prolog query from Python and collect solutions
-% Returns list of variable binding dictionaries
-python_exec_query(QueryStr, PyDictSolutions) :-
-    read_term_from_atom(QueryStr, QueryTerm, [variable_names(VarNames)]),
-    findall(VarNames, QueryTerm, Solutions),
-    maplist(varnames_to_pydict, Solutions, PyDictSolutions).
-
-% Convert a list of Name=Value pairs to a Python dictionary
-varnames_to_pydict(VarNames, PyDict) :-
-    varnames_to_dict_list(VarNames, DictList),
-    dict_create(PyDict, _, DictList).
-
-% Convert Name=Value pairs to Key-Value list for dict_create
-varnames_to_dict_list([], []).
-varnames_to_dict_list([Name=Value|Rest], [Name-ConvertedValue|RestDict]) :-
-    term_struct_to_python_dict(Value, ConvertedValue),
-    varnames_to_dict_list(Rest, RestDict).
