@@ -82,9 +82,11 @@ test(transform_spell_map) :-
 % Test perceive(core_dump) spell
 test(spell_perceive_core_dump) :-
     user:magic_cast(perceive(core_dump), Result),
-    Result = ok(core_dump(verified(Verified), broken(Broken))),
+    Result = ok(core_dump(verified(Verified), broken(Broken), ignored(Ignored))),
     assertion(is_list(Verified)),
-    assertion(is_list(Broken)).
+    assertion(is_list(Broken)),
+    assertion(is_list(Ignored)),
+    assertion(Broken = []).
 
 % Test round-trip: perceive(core_dump) == perceive(read_core_dump_db) . conjure(core_dump_db)
 test(spell_core_dump_db_roundtrip, [cleanup(cleanup_core_dump_db)]) :-
@@ -93,7 +95,7 @@ test(spell_core_dump_db_roundtrip, [cleanup(cleanup_core_dump_db)]) :-
     % Step 1: Get core dump
     user:magic_cast(perceive(core_dump), Result1),
     Result1 = ok(Dump1),
-    Dump1 = core_dump(verified(_), broken(_)),
+    Dump1 = core_dump(verified(_), broken(_), ignored(_)),
 
     % Step 2: Write to database
     user:magic_cast(conjure(core_dump_db(db_path(TestDbPath))), WriteResult),
@@ -106,21 +108,22 @@ test(spell_core_dump_db_roundtrip, [cleanup(cleanup_core_dump_db)]) :-
     % Step 4: Verify round-trip
     assertion(Dump1 == Dump2).
 
-% Test round-trip: perceive(core_dump) == perceive(read_core_dump_csv) . conjure(core_dump_csv)
-test(spell_core_dump_csv_roundtrip, [cleanup(cleanup_core_dump_csv)]) :-
-    TestCsvPath = '/tmp/test_core_dump.csv',
+% Test round-trip: perceive(core_dump) == perceive(read_core_dump_tsv) . conjure(core_dump_tsv)
+% test(spell_core_dump_tsv_roundtrip, [cleanup(cleanup_core_dump_tsv)]) :-
+test(spell_core_dump_tsv_roundtrip) :-
+    TestTsvPath = '/tmp/test_core_dump.tsv',
 
     % Step 1: Get core dump
     user:magic_cast(perceive(core_dump), Result1),
     Result1 = ok(Dump1),
-    Dump1 = core_dump(verified(_), broken(_)),
+    Dump1 = core_dump(verified(_), broken(_), ignored(_)),
 
-    % Step 2: Write to CSV
-    user:magic_cast(conjure(core_dump_csv(csv_path(TestCsvPath))), WriteResult),
+    % Step 2: Write to TSV
+    user:magic_cast(conjure(core_dump_tsv(tsv_path(TestTsvPath))), WriteResult),
     assertion(WriteResult = ok(dumped)),
 
-    % Step 3: Read from CSV
-    user:magic_cast(perceive(read_core_dump_csv(csv_path(TestCsvPath))), ReadResult),
+    % Step 3: Read from TSV
+    user:magic_cast(perceive(read_core_dump_tsv(tsv_path(TestTsvPath))), ReadResult),
     ReadResult = ok(Dump2),
 
     % Step 4: Verify round-trip
@@ -172,8 +175,8 @@ cleanup_core_dump_db :-
     (exists_file('/tmp/test_core_dump.db') -> delete_file('/tmp/test_core_dump.db') ; true),
     (exists_file('/tmp/test_core_dump.schema.sql') -> delete_file('/tmp/test_core_dump.schema.sql') ; true).
 
-cleanup_core_dump_csv :-
-    (exists_file('/tmp/test_core_dump.csv') -> delete_file('/tmp/test_core_dump.csv') ; true).
+cleanup_core_dump_tsv :-
+    (exists_file('/tmp/test_core_dump.tsv') -> delete_file('/tmp/test_core_dump.tsv') ; true).
 
 
 :- end_tests(utils).

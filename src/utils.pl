@@ -246,8 +246,8 @@ apply_transformation(Data, reduce(Predicate, Initial), Result) :-
 register_spell(
     perceive(core_dump),
     input(core_dump),
-    output(ok(core_dump(verified('VerifiedOntology'), broken('BrokenOntology')))),
-    "Capture complete system state as verified and broken ontology",
+    output(ok(core_dump(verified('VerifiedOntology'), broken('BrokenOntology'), ignored('IgnoredOntology')))),
+    "Capture complete system state as verified, broken, and ignored ontology",
     [],
     implementation(perceive(core_dump), Result, (
         core_dump(Dump),
@@ -277,7 +277,7 @@ register_spell(
 register_spell(
     perceive(read_core_dump_db),
     input(read_core_dump_db(db_path('DbPath'))),
-    output(either(ok(core_dump(verified('VerifiedOntology'), broken('BrokenOntology'))), error('SomeDbError'))),
+    output(either(ok(core_dump(verified('VerifiedOntology'), broken('BrokenOntology'), ignored('IgnoredOntology'))), error('SomeDbError'))),
     "Read core dump from SQLite database",
     [],
     implementation(perceive(read_core_dump_db(db_path(DbPath))), Result, (
@@ -290,17 +290,17 @@ register_spell(
     ))
 ).
 
-% Dump core dump to CSV file
+% Dump core dump to TSV file
 register_spell(
-    conjure(core_dump_csv),
-    input(core_dump_csv(csv_path('CsvPath'))),
-    output(either(ok(dumped), error('SomeCsvError'))),
-    "Write current core dump to CSV file (single file with status column)",
+    conjure(core_dump_tsv),
+    input(core_dump_tsv(tsv_path('TsvPath'))),
+    output(either(ok(dumped), error('SomeTsvError'))),
+    "Write current core dump to TSV file (single file with status column)",
     [],
-    implementation(conjure(core_dump_csv(csv_path(CsvPath))), Result, (
+    implementation(conjure(core_dump_tsv(tsv_path(TsvPath))), Result, (
         catch(
             (core_dump(Dump),
-             write_core_dump_to_csv(Dump, CsvPath),
+             write_core_dump_to_tsv(Dump, TsvPath),
              Result = ok(dumped)),
             Error,
             Result = error(Error)
@@ -308,16 +308,16 @@ register_spell(
     ))
 ).
 
-% Read core dump from CSV file
+% Read core dump from TSV file
 register_spell(
-    perceive(read_core_dump_csv),
-    input(read_core_dump_csv(csv_path('CsvPath'))),
-    output(either(ok(core_dump(verified('VerifiedOntology'), broken('BrokenOntology'))), error('SomeCsvError'))),
-    "Read core dump from CSV file",
+    perceive(read_core_dump_tsv),
+    input(read_core_dump_tsv(tsv_path('TsvPath'))),
+    output(either(ok(core_dump(verified('VerifiedOntology'), broken('BrokenOntology'), ignored('IgnoredOntology'))), error('SomeTsvError'))),
+    "Read core dump from TSV file",
     [],
-    implementation(perceive(read_core_dump_csv(csv_path(CsvPath))), Result, (
+    implementation(perceive(read_core_dump_tsv(tsv_path(TsvPath))), Result, (
         catch(
-            (read_core_dump_from_csv(CsvPath, Dump),
+            (read_core_dump_from_tsv(TsvPath, Dump),
              Result = ok(Dump)),
             Error,
             Result = error(Error)
@@ -328,88 +328,113 @@ register_spell(
 % === CORE DUMP HELPER IMPLEMENTATIONS ===
 
 % Write core dump to database using db spells
-write_core_dump_to_db(core_dump(verified(Verified), broken(Broken)), DbPath) :-
+write_core_dump_to_db(core_dump(verified(Verified), broken(Broken), ignored(Ignored)), DbPath) :-
     % Create database
     magic_cast(conjure(db(create(file(DbPath), schema(sql("CREATE TABLE dummy (id INTEGER);"))))), CreateResult),
     (CreateResult = ok(_) -> true ; throw(CreateResult)),
 
-    % Convert to rows: components(E, P, V, Status)
-    % Verified: status = ""
-    % Broken: status = error text
+    % Convert to rows: components(E, P, V, ErrorStr, IsIgnored)
+    % Verified: ErrorStr = "", IsIgnored = not_ignored
+    % Broken: ErrorStr = <error>, IsIgnored = not_ignored
+    % Ignored: ErrorStr = <error>, IsIgnored = ignored
     findall(
-        components(E, P, V, ""),
+        components(E, P, V, "", not_ignored),
         member(component(E, P, V), Verified),
         VerifiedRows
     ),
     findall(
-        components(E, P, V, ErrorStr),
+        components(E, P, V, ErrorStr, not_ignored),
         (member(component(E, P, V)-Error, Broken),
          term_string(Error, ErrorStr)),
         BrokenRows
     ),
-    append(VerifiedRows, BrokenRows, AllRows),
+    findall(
+        components(E, P, V, ErrorStr, ignored),
+        (member(component(E, P, V)-Error, Ignored),
+         term_string(Error, ErrorStr)),
+        IgnoredRows
+    ),
+    append([VerifiedRows, BrokenRows, IgnoredRows], AllRows),
 
     % Write all rows to single table
     magic_cast(conjure(db(write_table(database(DbPath), table(components), rows(AllRows)))), WriteResult),
     (WriteResult = ok(_) -> true ; throw(WriteResult)).
 
 % Read core dump from database using db spells
-read_core_dump_from_db(DbPath, core_dump(verified(Verified), broken(Broken))) :-
+read_core_dump_from_db(DbPath, core_dump(verified(Verified), broken(Broken), ignored(Ignored))) :-
     % Read all rows
     magic_cast(perceive(db(read_table(database(DbPath), table(components)))), ReadResult),
     (ReadResult = ok(rows(Rows)) -> true ; throw(ReadResult)),
 
-    % Partition by status column
+    % Partition by ErrorStr and IsIgnored columns
     findall(
         component(E, P, V),
-        member(components(E, P, V, ""), Rows),
+        member(components(E, P, V, "", not_ignored), Rows),
         Verified
     ),
     findall(
         component(E, P, V)-Error,
-        (member(components(E, P, V, ErrorStr), Rows),
+        (member(components(E, P, V, ErrorStr, not_ignored), Rows),
          ErrorStr \= "",
          term_string(Error, ErrorStr)),
         Broken
+    ),
+    findall(
+        component(E, P, V)-Error,
+        (member(components(E, P, V, ErrorStr, ignored), Rows),
+         term_string(Error, ErrorStr)),
+        Ignored
     ).
 
-% Write core dump to CSV using library(csv)
-write_core_dump_to_csv(core_dump(verified(Verified), broken(Broken)), CsvPath) :-
-    % Convert to rows with status column - all fields as strings
+% Write core dump to TSV using library(csv) with tab separator
+write_core_dump_to_tsv(core_dump(verified(Verified), broken(Broken), ignored(Ignored)), TsvPath) :-
+    % Convert to rows: row(E, P, V, ErrorStr, Status) - all fields as atoms/strings
     findall(
-        row(EStr, PStr, VStr, StatusStr),
+        row(EStr, PStr, VStr, '', not_ignored),
         (member(component(E, P, V), Verified),
          term_string(E, EStr),
          term_string(P, PStr),
-         term_string(V, VStr),
-         StatusStr = ""),
+         term_string(V, VStr)),
         VerifiedRows
     ),
     findall(
-        row(EStr, PStr, VStr, StatusStr),
+        row(EStr, PStr, VStr, ErrorStr, not_ignored),
         (member(component(E, P, V)-Error, Broken),
          term_string(E, EStr),
          term_string(P, PStr),
          term_string(V, VStr),
-         term_string(Error, StatusStr)),
+         term_string(Error, ErrorStr)),
         BrokenRows
     ),
-    append(VerifiedRows, BrokenRows, AllRows),
+    findall(
+        row(EStr, PStr, VStr, ErrorStr, ignored),
+        (member(component(E, P, V)-Error, Ignored),
+         term_string(E, EStr),
+         term_string(P, PStr),
+         term_string(V, VStr),
+         term_string(Error, ErrorStr)),
+        IgnoredRows
+    ),
+    append([VerifiedRows, BrokenRows, IgnoredRows], DataRows),
 
-    % Write CSV with explicit options - no conversion
-    csv_write_file(CsvPath, AllRows, [functor(row), convert(false)]).
+    % Write TSV with tab separator - header is first row
+    AllRows = [row(entity, type, value, error, status) | DataRows],
+    csv_write_file(TsvPath, AllRows, [
+        functor(row),
+        separator(0'\t),
+        convert(false)
+    ]).
 
-% Read core dump from CSV using library(csv)
-read_core_dump_from_csv(CsvPath, core_dump(verified(Verified), broken(Broken))) :-
-    % Read CSV with explicit options - no conversion, preserve strings
-    csv_read_file(CsvPath, Rows, [functor(row), convert(false)]),
+% Read core dump from TSV using library(csv) with tab separator
+read_core_dump_from_tsv(TsvPath, core_dump(verified(Verified), broken(Broken), ignored(Ignored))) :-
+    % Read TSV with tab separator - no conversion, preserve as atoms
+    csv_read_file(TsvPath, Rows, [functor(row), separator(0'\t), convert(false)]),
 
-    % Partition by status column and parse strings back to terms
-    % Note: CSV reads empty fields as empty atom '', not empty string ""
+    % Partition by ErrorStr and Status columns, parse strings back to terms
+    % Note: CSV reads all fields as atoms - empty fields as '', strings as atoms
     findall(
         component(E, P, V),
-        (member(row(EStr, PStr, VStr, StatusField), Rows),
-         StatusField = '',  % Empty atom
+        (member(row(EStr, PStr, VStr, '', not_ignored), Rows),
          term_string(E, EStr),
          term_string(P, PStr),
          term_string(V, VStr)),
@@ -417,13 +442,22 @@ read_core_dump_from_csv(CsvPath, core_dump(verified(Verified), broken(Broken))) 
     ),
     findall(
         component(E, P, V)-Error,
-        (member(row(EStr, PStr, VStr, StatusField), Rows),
-         StatusField \= '',  % Non-empty
+        (member(row(EStr, PStr, VStr, ErrorStr, not_ignored), Rows),
+         ErrorStr \= '',
          term_string(E, EStr),
          term_string(P, PStr),
          term_string(V, VStr),
-         term_string(Error, StatusField)),
+         term_string(Error, ErrorStr)),
         Broken
+    ),
+    findall(
+        component(E, P, V)-Error,
+        (member(row(EStr, PStr, VStr, ErrorStr, ignored), Rows),
+         term_string(E, EStr),
+         term_string(P, PStr),
+         term_string(V, VStr),
+         term_string(Error, ErrorStr)),
+        Ignored
     ).
 
 % === ENTITY-SPECIFIC DOCSTRINGS ===

@@ -152,8 +152,12 @@ run_test(TestUnit, Result) :-
 
 % Run all tests for a specific entity
 run_tests_for_entity(Entity, Results) :-
-    % ALWAYS load ALL test files to ensure consistent environment
-    discover_test_files(TestFiles),
+    % Get exclusion patterns and filter files before loading
+    get_test_exclude_patterns(ExcludePatterns),
+    discover_test_files(AllTestFiles),
+    findall(File,
+        (member(File, AllTestFiles), \+ test_file_excluded(File, ExcludePatterns)),
+        TestFiles),
     maplist(grimoire_ensure_loaded, TestFiles),
     available_tests_for_entity(Entity, Tests),
     maplist(run_test, Tests, Results).
@@ -190,55 +194,53 @@ test_excluded(TestUnit, ExcludePatterns) :-
         sub_string(TestStr, _, _, _, PatternStr)
     ).
 
+% Check if test file should be excluded based on path
+test_file_excluded(FilePath, ExcludePatterns) :-
+    member(Pattern, ExcludePatterns),
+    atom_string(FilePath, FilePathStr),
+    atom_string(Pattern, PatternStr),
+    sub_string(FilePathStr, _, _, _, PatternStr).
+
 % Run all discovered tests (with filtering)
 run_all_tests :-
     format('~n=== Running All Discovered Tests ===~n'),
-    % Manually load all .plt files to avoid PLUnit's module scoping issues
-    discover_test_files(TestFiles),
-    maplist(grimoire_ensure_loaded, TestFiles),
-    % Get all test units and filter
-    findall(Unit, current_test_unit(Unit), AllTests),
+    % Get exclusion patterns first
     get_test_exclude_patterns(ExcludePatterns),
-    findall(Unit,
-        (member(Unit, AllTests), \+ test_excluded(Unit, ExcludePatterns)),
-        Tests),
-    length(AllTests, TotalCount),
-    length(Tests, Count),
-    (ExcludePatterns \= [] ->
-        format('Found ~w test units (~w excluded)~n~n', [Count, TotalCount])
+    % Discover and filter test files before loading
+    discover_test_files(AllTestFiles),
+    findall(File,
+        (member(File, AllTestFiles), \+ test_file_excluded(File, ExcludePatterns)),
+        TestFiles),
+    length(AllTestFiles, TotalFiles),
+    length(TestFiles, LoadedFiles),
+    ExcludedFiles is TotalFiles - LoadedFiles,
+    (ExcludedFiles > 0 ->
+        format('Loading ~w test files (~w excluded)~n', [LoadedFiles, ExcludedFiles])
     ;
-        format('Found ~w test units~n~n', [Count])
+        format('Loading ~w test files~n', [LoadedFiles])
     ),
+    % Load filtered test files
+    maplist(grimoire_ensure_loaded, TestFiles),
+    % Get all test units
+    findall(Unit, current_test_unit(Unit), Tests),
+    length(Tests, Count),
+    format('Found ~w test units~n~n', [Count]),
     run_tests(Tests),
     test_summary.
 
 % Run specific tests (interface compatibility)
 run_specific_tests(TestArgs) :-
     format('~n=== Running Specific Tests: ~w ===~n', [TestArgs]),
-    % ALWAYS load ALL test files to ensure consistent environment
-    discover_test_files(TestFiles),
+    % Get exclusion patterns and filter files before loading
+    get_test_exclude_patterns(ExcludePatterns),
+    discover_test_files(AllTestFiles),
+    findall(File,
+        (member(File, AllTestFiles), \+ test_file_excluded(File, ExcludePatterns)),
+        TestFiles),
     maplist(grimoire_ensure_loaded, TestFiles),
     build_test_registry(Registry),
-    % Resolve requested args to concrete test units:
-    % - If Arg matches a unit name exactly, include it
-    % - Otherwise treat Arg as an entity/path substring and include all matching units
-    % Build units from both exact unit names and entity/path substring matches
-    findall(Exact, (
-        member(Arg, TestArgs),
-        atom(Arg),
-        member(Arg-_, Registry),
-        Exact = Arg
-    ), ExactUnits),
-    findall(U, (
-        member(Arg, TestArgs),
-        atom(Arg),
-        available_tests_for_entity(Arg, UnitsForArg),
-        member(U, UnitsForArg)
-    ), EntityUnits),
-    append(ExactUnits, EntityUnits, UnitsAllDup),
-    sort(UnitsAllDup, Units),
-    % Run the selected units together
-    run_tests(Units),
+    % Use run_test_arg to handle each argument (supports unit:test syntax)
+    forall(member(Arg, TestArgs), run_test_arg(Registry, Arg)),
     test_summary.
 
 % Helper to run a single test argument (handles unit:test syntax)

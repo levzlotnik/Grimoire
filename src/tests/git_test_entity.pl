@@ -19,15 +19,19 @@ component(test_project, has(git(repository)), git(repository([
 
 % Test project needs a self component for git_repository_root derivation
 component(test_project, self, semantic(folder('/tmp/test_project'))).
+component(test_project, core_dump_ignorelist, [git_repository_root]).
 
 % Bad entity with nonexistent path (for negative test)
 component(git_bad_entity, git_repository_root, '/nonexistent/path').
+component(git_bad_entity, core_dump_ignorelist, [git_repository_root]).
 
 % Mock entity with predictable test path
 component(git_mock_entity, git_repository_root, '/tmp/test_git_mock').
+component(git_mock_entity, core_dump_ignorelist, [git_repository_root]).
 
 % Not-git entity with predictable test path (directory without .git)
 component(git_not_git_entity, git_repository_root, '/tmp/test_not_git').
+component(git_not_git_entity, core_dump_ignorelist, [git_repository_root]).
 
 % Complete test entity with full DSL pattern
 component(git_complete_test, has(git(repository)), git(repository([
@@ -35,6 +39,7 @@ component(git_complete_test, has(git(repository)), git(repository([
     branch(main)
 ]))).
 component(git_complete_test, self, semantic(folder('/tmp/test_git_complete'))).
+component(git_complete_test, core_dump_ignorelist, [git_repository_root]).
 
 docstring(test_entity(git), "Test entity container for git domain verification tests").
 docstring(test_project, "Test project entity with git repository").

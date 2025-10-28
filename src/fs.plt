@@ -28,15 +28,6 @@ test(fs_structure_verification, [
         folder('test_dir', [file('nested_file.txt')])
     ])))).
 
-% Test fs(file_content) verification
-test(fs_file_content_verification, [
-    setup(setup_content_test),
-    cleanup(cleanup_content_test)
-]) :-
-    user:please_verify(component(content_test_entity, has(fs(file_content)), fs(file_content(
-        'content_test.txt', contains(["hello", "world"])
-    )))).
-
 % Test fs(permissions) verification on executable script
 test(fs_permissions_verification, [
     setup(setup_permissions_test),
@@ -128,16 +119,6 @@ test(verify_missing_file_throws, [
         file('nonexistent.txt')
     ])))).
 
-% Test verification failure for content mismatch
-test(verify_content_mismatch_throws, [
-    setup(setup_content_mismatch_test),
-    cleanup(cleanup_content_mismatch_test),
-    throws(verification_error(fs, missing_content("missing")))
-]) :-
-    user:please_verify(component(content_fail_entity, has(fs(file_content)), fs(file_content(
-        'content_test.txt', contains(["missing"])
-    )))).
-
 % Debug test - check if fs entity exists (basic sanity check)
 test(debug_entity_integrity) :-
     user:entity(fs).
@@ -176,26 +157,6 @@ cleanup_test_structure :-
     (exists_file('test_file.txt') -> delete_file('test_file.txt'); true),
     (exists_file('test_dir/nested_file.txt') -> delete_file('test_dir/nested_file.txt'); true),
     (exists_directory('test_dir') -> delete_directory('test_dir'); true).
-
-% Setup for content test
-setup_content_test :-
-    % Create test file
-    open('content_test.txt', write, Stream),
-    write(Stream, 'hello world from test file'),
-    close(Stream).
-
-cleanup_content_test :-
-    % Cleanup file only
-    (exists_file('content_test.txt') -> delete_file('content_test.txt'); true).
-
-% Setup file with specific content for content verification
-create_content_test_file :-
-    open('content_test.txt', write, Stream),
-    write(Stream, 'hello world from test file'),
-    close(Stream).
-
-cleanup_content_test_file :-
-    (exists_file('content_test.txt') -> delete_file('content_test.txt'); true).
 
 % Setup for permissions test
 setup_permissions_test :-
@@ -277,12 +238,3 @@ setup_missing_file_test :-
 cleanup_missing_file_test :-
     % No cleanup needed
     true.
-
-% Setup for content mismatch test
-setup_content_mismatch_test :-
-    open('content_test.txt', write, Stream),
-    write(Stream, 'hello world from test file'),
-    close(Stream).
-
-cleanup_content_mismatch_test :-
-    (exists_file('content_test.txt') -> delete_file('content_test.txt'); true).

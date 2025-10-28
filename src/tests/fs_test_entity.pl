@@ -5,26 +5,21 @@
 
 % Sub-entities for different test scenarios
 entity(mock_entity).
-entity(content_test_entity).
 entity(perm_test_entity).
 entity(fail_entity).
-entity(content_fail_entity).
 
 % Main test entity with fs(structure) component
 component(test_entity(fs), has(fs(structure)), fs(structure([
     file('test_file.txt'),
     folder('test_dir', [file('nested_file.txt')])
 ]))).
-
-% Content test entity
-component(content_test_entity, has(fs(file_content)), fs(file_content(
-    'content_test.txt', contains(["hello", "world"])
-))).
+component(test_entity(fs), core_dump_ignorelist, [fs_structure_file, fs_structure_folder, has(fs(structure))]).
 
 % Permissions test entity
 component(perm_test_entity, has(fs(permissions)), fs(permissions(
     'test_script.sh', executable
 ))).
+component(perm_test_entity, core_dump_ignorelist, [fs_permission_requirement, has(fs(permissions))]).
 
 % Mock entity for verify test
 component(mock_entity, fs_test_prop, test_value).
@@ -33,9 +28,6 @@ component(mock_entity, fs_test_prop, test_value).
 component(fail_entity, has(fs(structure)), fs(structure([
     file('nonexistent.txt')
 ]))).
-
-component(content_fail_entity, has(fs(file_content)), fs(file_content(
-    'content_test.txt', contains(["missing"])
-))).
+component(fail_entity, core_dump_ignorelist, [fs_structure_file, has(fs(structure))]).
 
 docstring(test_entity(fs), "Test entity container for fs domain verification tests").

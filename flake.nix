@@ -24,73 +24,75 @@
     forAllSystems = nixpkgs.lib.genAttrs systems;
   in rec
   {
+    # Expose grimoire environment for dependent flakes (top-level, not in packages)
+    grimoireEnv = forAllSystems (system:
+      let
+        # First get base pkgs without overlay
+        basePkgs = nixpkgs.legacyPackages.${system};
+
+        # Then apply overlays to get pkgs with grimoire-golems and grimoire-py available
+        pkgs = import nixpkgs {
+          inherit system;
+          overlays = [
+            golems.overlays.default
+            grimoire-py.overlays.default
+          ];
+        };
+
+        # Create base grimoire environment with overlay-enabled pkgs
+        baseGrimoireEnv = import ./deps/grimoire.nix { inherit pkgs; };
+
+        # Extend the Python environment to include grimoire-golems and grimoire-py while preserving all base packages
+        extendedPython = pkgs.python313.withPackages (ps: with ps; [
+          # Core Python packages (from deps/grimoire.nix)
+          requests
+          python-dotenv
+          gitpython
+          baseGrimoireEnv.janus-swi
+          baseGrimoireEnv.pydantic-ai
+          # API/Server packages
+          fastapi
+          uvicorn
+          pydantic
+          fastmcp  # FastMCP - Pythonic MCP client and server
+          # Testing packages
+          httpx
+          pytest
+          pytest-asyncio
+          # Development packages
+          black
+          # Web framework
+          flask
+          # YAML support (needed by MCP server)
+          pyyaml
+          # Scientific computing
+          numpy
+          scipy
+          # ML/Generative models
+          huggingface-hub
+          # Additional grimoire packages
+          grimoire-golems
+          grimoire-py
+        ]);
+      in
+      baseGrimoireEnv // {
+        python = extendedPython;
+        buildInputs = baseGrimoireEnv.buildInputs ++ [ extendedPython ];
+      }
+    );
+
     # Expose grimoire environment for dependent flakes
     lib = {
-      getGrimoireEnv = system: self.packages.${system}.grimoireEnv;
+      getGrimoireEnv = system: self.grimoireEnv.${system};
     };
 
     # Packages
     packages = forAllSystems (system:
     let
-      # First get base pkgs without overlay
-      basePkgs = nixpkgs.legacyPackages.${system};
-
-      # Then apply overlays to get pkgs with grimoire-golems and grimoire-py available
-      pkgs = import nixpkgs {
-        inherit system;
-        overlays = [
-          golems.overlays.default
-          grimoire-py.overlays.default
-        ];
-      };
-
-      # Create base grimoire environment with overlay-enabled pkgs
-      baseGrimoireEnv = import ./deps/grimoire.nix { inherit pkgs; };
-
-      # Extend the Python environment to include grimoire-golems and grimoire-py while preserving all base packages
-      # We need to extract the packages from the base environment and add our new ones
-      extendedPython = pkgs.python313.withPackages (ps: with ps; [
-        # Core Python packages (from deps/grimoire.nix)
-        requests
-        python-dotenv
-        gitpython
-        baseGrimoireEnv.janus-swi
-        baseGrimoireEnv.pydantic-ai
-        # API/Server packages
-        fastapi
-        uvicorn
-        pydantic
-        fastmcp  # FastMCP - Pythonic MCP client and server
-        # Testing packages
-        httpx
-        pytest
-        pytest-asyncio
-        # Development packages
-        black
-        # Web framework
-        flask
-        # YAML support (needed by MCP server)
-        pyyaml
-        # Scientific computing
-        numpy
-        scipy
-        # ML/Generative models
-        huggingface-hub
-        # Additional grimoire packages
-        grimoire-golems
-        grimoire-py
-      ]);
-
-      # Create extended grimoire environment
-      grimoireEnv = baseGrimoireEnv // {
-        python = extendedPython;
-        buildInputs = baseGrimoireEnv.buildInputs ++ [ extendedPython ];
-      };
+      pkgs = nixpkgs.legacyPackages.${system};
+      grimoireEnv = self.grimoireEnv.${system};
     in
     {
-      # Export the grimoireEnv for use by devShells and dependent flakes
-      inherit grimoireEnv;
-
       # Grimoire templates wrapper scripts
       grimoire-templates-tools = pkgs.stdenv.mkDerivation {
         name = "grimoire-templates-tools";
@@ -155,7 +157,7 @@ EOF
     devShells = forAllSystems (system:
     let
       pkgs = nixpkgs.legacyPackages.${system};
-      grimoireEnv = self.packages.${system}.grimoireEnv;
+      grimoireEnv = self.grimoireEnv.${system};
     in
     {
       default = pkgs.mkShell {

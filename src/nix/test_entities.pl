@@ -25,6 +25,7 @@ component(test_flake_ref, nix_flake_ref, './src/nix/test_flake').
 
 entity(test_bad_flake).
 component(test_bad_flake, nix_flake_ref, '').
+component(test_bad_flake, core_dump_ignorelist, [nix_flake_ref]).
 
 docstring(test_flake_ref, "Test entity with valid flake ref").
 docstring(test_bad_flake, "Test entity with invalid flake ref").

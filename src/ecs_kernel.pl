@@ -462,6 +462,10 @@ verify(Pattern) :-
 %% CORE DUMP: COMPLETE SYSTEM STATE INTROSPECTION
 %% ============================================================================
 
+% Strip prolog_stack from error context to avoid ungrounded variables
+strip_error_stack(error(Formal, context(prolog_stack(_), Message)), error(Formal, context(verify/1, Message))) :- !.
+strip_error_stack(Error, Error).
+
 core_dump(CoreDump) :-
     % Collect all components with their verification status
     findall(
@@ -470,31 +474,45 @@ core_dump(CoreDump) :-
          catch(
              (please_verify(component(A, B, C)), R = success),
              E,
-             R = failure(E)
+             (strip_error_stack(E, CleanE), R = failure(CleanE))
          )),
         Ontology
     ),
-    % Partition verified components
-    findall(C, member(C-success, Ontology), VerifiedOntology),
-    % Partition broken components with their errors
-    findall(C-E, member(C-failure(E), Ontology), BrokenOntology),
+    % First partition: split into ignored vs non-ignored (regardless of verification)
+    partition(is_component_in_ignorelist, Ontology, IgnoredAll, NonIgnored),
+    % Extract ignored components (strip verification result)
+    findall(C-R, member(C-R, IgnoredAll), IgnoredOntology),
+    % Partition non-ignored: verified vs broken
+    findall(C, member(C-success, NonIgnored), VerifiedOntology),
+    findall(C-E, member(C-failure(E), NonIgnored), BrokenOntology),
     % The core dump IS the ontology, partitioned by verification status
     CoreDump = core_dump(
         verified(VerifiedOntology),
-        broken(BrokenOntology)
+        broken(BrokenOntology),
+        ignored(IgnoredOntology)
     ).
+
+% Helper: Check if a component is in the core dump ignorelist
+is_component_in_ignorelist(component(Entity, ComponentType, _)-_) :-
+    component(Entity, core_dump_ignorelist, IgnoredTypes),
+    member(ComponentType, IgnoredTypes).
 
 docstring(core_dump,
     {|string(_)||
-    Captures complete system state as verified and broken ontology.
+    Captures complete system state as verified, broken, and ignored ontology.
 
-    Format: core_dump(core_dump(verified(Components), broken(ComponentErrors)))
+    Format: core_dump(core_dump(verified(Components), broken(ComponentErrors), ignored(IgnoredErrors)))
 
     Behavior:
     1. Queries all components in the knowledge base
     2. Attempts verification on each component
-    3. Partitions into verified (success) and broken (failure with error)
-    4. Returns complete system state
+    3. Partitions into three categories:
+       - verified: Components that passed verification
+       - broken: Components that failed verification (not in core_dump_ignorelist)
+       - ignored: Components that failed verification but marked with core_dump_ignorelist
+
+    The 'ignored' category contains components that shouldn't appear in core dumps:
+    negative test cases, temporary test fixtures, mock entities, etc.
 
     This is the natural "core dump" for knowledge systems - complete introspection
     of the entire ontology with verification status. Unlike traditional core dumps
@@ -599,7 +617,7 @@ mount_semantic_file(Path) :-
             true  % Already mounted, silently succeed
         )
     ;
-        throw(error(existence_error(source_sink, Path), _))
+        throw(error(existence_error(source_sink, Path), context(grimoire_ensure_loaded/1, 'File does not exist')))
     ).
 
 mount_semantic_dir(Path) :-
@@ -610,7 +628,7 @@ mount_semantic_dir(Path) :-
     (exists_file(SemanticFile) ->
         mount_semantic_file(SemanticFile)
     ;
-        throw(error(no_semantics_file(AbsPath), _))
+        throw(error(no_semantics_file(AbsPath), context(grimoire_ensure_loaded/1, 'No semantics.pl file in directory')))
     ).
 
 docstring(mount_semantic,
@@ -629,7 +647,7 @@ mount_semantic(Source) :-
     ; Source = folder(Path) ->
         mount_semantic_dir(Path)
     ;
-        throw(error(invalid_source(Source), _))
+        throw(error(invalid_source(Source), context(grimoire_ensure_loaded/1, 'Source must be file(Path) or folder(Path)')))
     ).
 
 docstring(unmount_semantic,
@@ -641,13 +659,23 @@ docstring(unmount_semantic,
     |}
 ).
 
-unmount_semantic(Path) :-
-    absolute_file_name(Path, AbsPath),
-    mounted_semantic(AbsPath, _),
-    % Unload the file properly
-    unload_file(AbsPath),
-    % Remove from mounting registry
-    retractall(mounted_semantic(AbsPath, _)).
+unmount_semantic(Source) :-
+    (Source = file(Path) ->
+        % For files, unmount the file directly
+        absolute_file_name(Path, AbsPath),
+        FilePath = AbsPath
+    ; Source = folder(Path) ->
+        % For folders, unmount the semantics.pl file inside
+        grimoire_resolve_path(Path, ResolvedPath),
+        absolute_file_name(ResolvedPath, AbsPath),
+        atomic_list_concat([AbsPath, '/semantics.pl'], FilePath)
+    ;
+        throw(error(invalid_source(Source), context(unmount_semantic/1, 'Source must be file(Path) or folder(Path)')))),
+
+    (mounted_semantic(FilePath, _)
+    -> (unload_file(FilePath),
+        retractall(mounted_semantic(FilePath, _)))
+    ; true).  % Not mounted, nothing to do
 
 list_mounted_semantics(Paths) :-
     findall(Path, mounted_semantic(Path, _), Paths).
@@ -690,6 +718,31 @@ docstring(load_entity,
         ?- entity(nix).  % Now available
     |}
 ).
+
+% Unload semantic entities
+unload_entity(semantic(Source)) :-
+    % Find all entities that have this semantic source as their self component
+    findall(Entity, component(Entity, self, semantic(Source)), Entities),
+
+    % Retract only the specific self components and entities for this source
+    forall(member(Entity, Entities),
+        (retractall(component(Entity, self, semantic(Source))),
+         retractall(entity(Entity)))),
+
+    % Now unmount the semantic file
+    unmount_semantic(Source).
+
+% Reload semantic entities (uses make_reload_file for file-as-source-of-truth)
+reload_entity(semantic(file(Path))) :-
+    grimoire_resolve_path(Path, ResolvedPath),
+    absolute_file_name(ResolvedPath, AbsPath),
+    make_reload_file(AbsPath).
+
+reload_entity(semantic(folder(Path))) :-
+    grimoire_resolve_path(Path, ResolvedPath),
+    absolute_file_name(ResolvedPath, AbsPath),
+    atomic_list_concat([AbsPath, '/semantics.pl'], SemanticsPath),
+    make_reload_file(SemanticsPath).
 
 % === SELF-ENTITY INTROSPECTION ===
 

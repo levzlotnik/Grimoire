@@ -24,7 +24,6 @@ component(fs, utility, directory_exists).
 
 % DSL pattern entities
 entity(fs(structure)).
-entity(fs(file_content)).
 entity(fs(permissions)).
 
 docstring(fs(structure),
@@ -44,20 +43,6 @@ docstring(fs(structure),
         ]))).
     |}).
 
-docstring(fs(file_content),
-    {|string(_)||
-    Declarative file content requirements.
-    Specify what content should exist in files.
-    Format: component(Entity, has(fs(file_content)), fs(file_content(Path, Requirements)))
-
-    Requirements can be:
-    - contains([String1, String2, ...]) - file must contain all these strings
-
-    Example:
-        component(my_project, has(fs(file_content)), fs(file_content(
-            "package.json", contains(["name", "version"])
-        ))).
-    |}).
 
 docstring(fs(permissions),
     {|string(_)||
@@ -96,21 +81,7 @@ register_dsl_schema(
     )
 ).
 
-% Schema 2: fs(file_content) - Content requirements
-register_dsl_schema(
-    fs,
-    has(fs(file_content)),
-    signature(fs(file_content(path('Path'), requirements('Requirements')))),
-    "Declarative file content requirements - verify file contains specific strings",
-    (
-        component(Entity, has(fs(file_content)), fs(file_content(Path, Requirements)))
-            ==> component(Entity, fs_content_requirement, content_spec(Path, Requirements))
-            ::  (atom(Path) ; string(Path)),
-                valid_content_requirements(Requirements)
-    )
-).
-
-% Schema 3: fs(permissions) - Permission requirements
+% Schema 2: fs(permissions) - Permission requirements
 register_dsl_schema(
     fs,
     has(fs(permissions)),
@@ -137,12 +108,6 @@ component(_, fs_structure_folder, folder_spec(Path, Contents))
     :: (atom(Path) ; string(Path)),
        is_list(Contents),
        folder_exists_and_valid(Path).
-
-% Leaf verification: fs_content_requirement
-component(_, fs_content_requirement, content_spec(Path, Reqs))
-    :: (atom(Path) ; string(Path)),
-       valid_content_requirements(Reqs),
-       file_exists_with_content(Path, Reqs).
 
 % Leaf verification: fs_permission_requirement
 component(_, fs_permission_requirement, permission_spec(Path, Type))
@@ -191,16 +156,6 @@ folder_exists_and_valid(Path) :-
     (exists_directory(Path) -> true
     ; throw(verification_error(fs, missing_folder(Path)))).
 
-% Verify file with content requirements
-file_exists_with_content(Path, contains(Strs)) :-
-    (atom(Path) ; string(Path)),
-    (exists_file(Path) -> true
-    ; throw(verification_error(fs, file_not_found(Path)))),
-    read_file_to_string(Path, Content, []),
-    forall(member(Str, Strs),
-        (sub_string(Content, _, _, _, Str) -> true
-        ; throw(verification_error(fs, missing_content(Str))))).
-
 % Verify file with permission
 file_exists_with_permission(Path, Type) :-
     (atom(Path) ; string(Path)),
@@ -229,11 +184,6 @@ verify_permission_on_os(Path, readable) :-
 verify_permission_on_os(Path, writable) :-
     (access_file(Path, write) -> true
     ; throw(verification_error(fs, not_writable(Path)))).
-
-% Validate content requirements format
-valid_content_requirements(contains(Strs)) :-
-    is_list(Strs),
-    forall(member(S, Strs), (atom(S) ; string(S))).
 
 % === SPELL REGISTRATIONS (PHASE 3) ===
 

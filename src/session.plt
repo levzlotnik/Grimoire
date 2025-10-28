@@ -49,29 +49,35 @@ test(session_switch, [
     % Create two sessions
     SessionId1 = test_session_switch_1,
     SessionId2 = test_session_switch_2,
-    user:magic_cast(conjure(session(create(id(SessionId1)))), _),
-    user:magic_cast(conjure(session(create(id(SessionId2)))), _),
+    user:magic_cast(conjure(session(create(id(SessionId1)))), CreateResult1),
+    assertion(CreateResult1 = ok(session(id(SessionId1), path(_)))),
+
+    user:magic_cast(conjure(session(create(id(SessionId2)))), CreateResult2),
+    assertion(CreateResult2 = ok(session(id(SessionId2), path(_)))),
 
     % Switch to first session
-    user:magic_cast(conjure(session(switch(id(SessionId1)))), Result1),
-    assertion(Result1 = ok(session(switched(id(SessionId1))))),
+    user:magic_cast(conjure(session(switch(id(SessionId1)))), SwitchResult1),
+    assertion(SwitchResult1 = ok(session(switched(id(SessionId1))))),
 
     % Verify current session
     user:current_session_id(CurrentId1),
     assertion(CurrentId1 = SessionId1),
 
     % Switch to second session
-    user:magic_cast(conjure(session(switch(id(SessionId2)))), Result2),
-    assertion(Result2 = ok(session(switched(id(SessionId2))))),
+    user:magic_cast(conjure(session(switch(id(SessionId2)))), SwitchResult2),
+    assertion(SwitchResult2 = ok(session(switched(id(SessionId2))))),
 
     % Verify current session changed
     user:current_session_id(CurrentId2),
     assertion(CurrentId2 = SessionId2),
 
     % Cleanup: delete sessions
-    user:magic_cast(conjure(session(switch(id(SessionId1)))), _),
-    user:magic_cast(conjure(session(delete(id(SessionId2)))), _),
-    user:magic_cast(conjure(session(delete(id(SessionId1)))), _).
+    user:magic_cast(conjure(session(switch(id(SessionId1)))), SwitchResult3),
+    assertion(SwitchResult3 = ok(session(switched(id(SessionId1))))),
+    user:magic_cast(conjure(session(delete(id(SessionId2)))), DeleteResult2),
+    assertion(DeleteResult2 = ok(session(deleted(id(SessionId2))))),
+    user:magic_cast(conjure(session(delete(id(SessionId1)))), DeleteResult1),
+    assertion(DeleteResult1 = ok(session(deleted(id(SessionId1))))).
 
 test(session_delete_active_clears_cli_session, [
     setup(setup_grimoire_data),
@@ -79,8 +85,10 @@ test(session_delete_active_clears_cli_session, [
 ]) :-
     % Create a session
     SessionId = test_session_delete_active,
-    user:magic_cast(conjure(session(create(id(SessionId)))), _),
-    user:magic_cast(conjure(session(switch(id(SessionId)))), _),
+    user:magic_cast(conjure(session(create(id(SessionId)))), CreateResult),
+    assertion(CreateResult = ok(session(id(SessionId), path(_)))),
+    user:magic_cast(conjure(session(switch(id(SessionId)))), SwitchResult),
+    assertion(SwitchResult = ok(session(switched(id(SessionId))))),
 
     % Verify it's the active session
     user:current_session_id(CurrentId),
@@ -90,8 +98,8 @@ test(session_delete_active_clears_cli_session, [
     user:component(session(SessionId), session_directory, SessionPath),
 
     % Delete active session (should succeed and clear cli-session)
-    user:magic_cast(conjure(session(delete(id(SessionId)))), Result),
-    assertion(Result = ok(session(deleted(id(SessionId))))),
+    user:magic_cast(conjure(session(delete(id(SessionId)))), DeleteResult),
+    assertion(DeleteResult = ok(session(deleted(id(SessionId))))),
 
     % Verify session directory was deleted
     assertion(\+ exists_directory(SessionPath)),
@@ -107,7 +115,8 @@ test(session_export_import, [
 ]) :-
     % Create a session
     SessionId = test_session_export,
-    user:magic_cast(conjure(session(create(id(SessionId)))), _),
+    user:magic_cast(conjure(session(create(id(SessionId)))), CreateResult),
+    assertion(CreateResult = ok(session(id(SessionId), path(_)))),
 
     % Export session
     TmpDir = '/tmp',
@@ -119,7 +128,8 @@ test(session_export_import, [
     user:component(session(SessionId), session_directory, SessionPath),
 
     % Delete original session
-    user:magic_cast(conjure(session(delete(id(SessionId)))), _),
+    user:magic_cast(conjure(session(delete(id(SessionId)))), DeleteResult),
+    assertion(DeleteResult = ok(session(deleted(id(SessionId))))),
     assertion(\+ exists_directory(SessionPath)),
 
     % Import session back
@@ -132,7 +142,8 @@ test(session_export_import, [
 
     % Cleanup
     delete_file(ArchivePath),
-    user:magic_cast(conjure(session(delete(id(SessionId)))), _).
+    user:magic_cast(conjure(session(delete(id(SessionId)))), FinalDeleteResult),
+    assertion(FinalDeleteResult = ok(session(deleted(id(SessionId))))).
 
 test(session_load_entity_persistence, [
     setup(setup_grimoire_data),
@@ -140,8 +151,10 @@ test(session_load_entity_persistence, [
 ]) :-
     % Create a session
     SessionId = test_session_load_entity,
-    user:magic_cast(conjure(session(create(id(SessionId)))), _),
-    user:magic_cast(conjure(session(switch(id(SessionId)))), _),
+    user:magic_cast(conjure(session(create(id(SessionId)))), CreateResult),
+    assertion(CreateResult = ok(session(id(SessionId), path(_)))),
+    user:magic_cast(conjure(session(switch(id(SessionId)))), SwitchResult),
+    assertion(SwitchResult = ok(session(switched(id(SessionId))))),
 
     % Create a test semantic file to load
     TestSemanticFile = '/tmp/test_semantic.pl',
@@ -151,8 +164,8 @@ test(session_load_entity_persistence, [
     close(Stream),
 
     % Load entity into session
-    user:magic_cast(conjure(session(load_entity(semantic(file(TestSemanticFile))))), Result),
-    assertion(Result = ok(semantic(file(TestSemanticFile)))),
+    user:magic_cast(conjure(session(load_entity(semantic(file(TestSemanticFile))))), LoadResult),
+    assertion(LoadResult = ok(semantic(file(TestSemanticFile)))),
 
     % Verify it was persisted to semantics.pl using component
     user:please_verify(component(session(SessionId), session_semantics_path, SemanticsPath)),
@@ -164,7 +177,8 @@ test(session_load_entity_persistence, [
 
     % Cleanup
     delete_file(TestSemanticFile),
-    user:magic_cast(conjure(session(delete(id(SessionId)))), _).
+    user:magic_cast(conjure(session(delete(id(SessionId)))), DeleteResult),
+    assertion(DeleteResult = ok(session(deleted(id(SessionId))))).
 
 test(session_command_history, [
     setup(setup_grimoire_data),
@@ -172,13 +186,17 @@ test(session_command_history, [
 ]) :-
     % Create a session
     SessionId = test_session_history,
-    user:magic_cast(conjure(session(create(id(SessionId)))), _),
-    user:magic_cast(conjure(session(switch(id(SessionId)))), _),
+    user:magic_cast(conjure(session(create(id(SessionId)))), CreateResult),
+    assertion(CreateResult = ok(session(id(SessionId), path(_)))),
+    user:magic_cast(conjure(session(switch(id(SessionId)))), SwitchResult1),
+    assertion(SwitchResult1 = ok(session(switched(id(SessionId))))),
 
     % Execute some spells to generate history
     % (spells are auto-logged to activity_log.jsonl)
-    user:magic_cast(conjure(session(switch(id(SessionId)))), _),
-    user:magic_cast(conjure(session(switch(id(SessionId)))), _),
+    user:magic_cast(conjure(session(switch(id(SessionId)))), SwitchResult2),
+    assertion(SwitchResult2 = ok(session(switched(id(SessionId))))),
+    user:magic_cast(conjure(session(switch(id(SessionId)))), SwitchResult3),
+    assertion(SwitchResult3 = ok(session(switched(id(SessionId))))),
 
     % Query history
     user:magic_cast(perceive(session(history(options([limit(5)])))), HistoryResult),
@@ -188,7 +206,8 @@ test(session_command_history, [
     assertion(Len >= 2),
 
     % Cleanup
-    user:magic_cast(conjure(session(delete(id(SessionId)))), _).
+    user:magic_cast(conjure(session(delete(id(SessionId)))), DeleteResult),
+    assertion(DeleteResult = ok(session(deleted(id(SessionId))))).
 
 test(session_persistent_spell_verification, [
     setup(setup_grimoire_data),
@@ -196,8 +215,10 @@ test(session_persistent_spell_verification, [
 ]) :-
     % Create a session and database
     SessionId = test_session_persistent,
-    user:magic_cast(conjure(session(create(id(SessionId)))), _),
-    user:magic_cast(conjure(session(switch(id(SessionId)))), _),
+    user:magic_cast(conjure(session(create(id(SessionId)))), CreateResult),
+    assertion(CreateResult = ok(session(id(SessionId), path(_)))),
+    user:magic_cast(conjure(session(switch(id(SessionId)))), SwitchResult),
+    assertion(SwitchResult = ok(session(switched(id(SessionId))))),
 
     % Create a database (which has session_persistence flag)
     TestDbPath = '/tmp/test_session_db.db',
@@ -219,25 +240,41 @@ test(session_persistent_spell_verification, [
 
     % Cleanup
     delete_file(TestDbPath),
-    user:magic_cast(conjure(session(delete(id(SessionId)))), _).
+    user:magic_cast(conjure(session(delete(id(SessionId)))), DeleteResult),
+    assertion(DeleteResult = ok(session(deleted(id(SessionId))))).
 
-test(session_unload_entity_not_implemented, [
+test(session_unload_entity_works, [
     setup(setup_grimoire_data),
     cleanup(cleanup_grimoire_data)
 ]) :-
     % Create a session
     SessionId = test_session_unload,
-    user:magic_cast(conjure(session(create(id(SessionId)))), _),
-    user:magic_cast(conjure(session(switch(id(SessionId)))), _),
+    user:magic_cast(conjure(session(create(id(SessionId)))), CreateResult),
+    assertion(CreateResult = ok(session(id(SessionId), path(_)))),
+    user:magic_cast(conjure(session(switch(id(SessionId)))), SwitchResult),
+    assertion(SwitchResult = ok(session(switched(id(SessionId))))),
 
-    % Try to unload entity (should throw not_implemented)
-    catch(
-        user:magic_cast(conjure(session(unload_entity(semantic(file('/tmp/test.pl'))))), _),
-        error(not_implemented, _),
-        true
-    ),
+    % Create a test semantic file to load
+    TestSemanticFile = '/tmp/test_unload_entity.pl',
+    open(TestSemanticFile, write, Stream),
+    write(Stream, ':- self_entity(test_unload_entity).\n'),
+    write(Stream, 'entity(test_unload_entity).\n'),
+    close(Stream),
+
+    % Load entity into session
+    user:magic_cast(conjure(session(load_entity(semantic(file(TestSemanticFile))))), LoadResult),
+    assertion(LoadResult = ok(semantic(file(TestSemanticFile)))),
+
+    % Unload entity
+    user:magic_cast(conjure(session(unload_entity(semantic(file(TestSemanticFile))))), UnloadResult),
+    assertion(UnloadResult = ok(unloaded(semantic(file(TestSemanticFile))))),
+
+    % Verify it was removed from session tracking
+    \+ user:component(session(SessionId), has(loaded_entity), semantic(file(TestSemanticFile))),
 
     % Cleanup
-    user:magic_cast(conjure(session(delete(id(SessionId)))), _).
+    delete_file(TestSemanticFile),
+    user:magic_cast(conjure(session(delete(id(SessionId)))), DeleteResult),
+    assertion(DeleteResult = ok(session(deleted(id(SessionId))))).
 
 :- end_tests(session).

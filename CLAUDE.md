@@ -1,3 +1,31 @@
+# INSTRUCTION COMPLIANCE PROTOCOL
+
+**CRITICAL: When the user gives you an explicit instruction or correction:**
+
+1. **STOP** whatever tangent you're on
+2. **ACKNOWLEDGE** the instruction explicitly ("You want me to X")
+3. **ASK** if anything is unclear - do NOT guess or substitute your own interpretation
+4. **EXECUTE** exactly what was instructed - nothing more, nothing less
+5. **VERIFY** the result addresses what they asked for
+
+**If you think the instruction is wrong or suboptimal:**
+- State clearly: "I understand you want X. However, I see Y. Should we address Y first or proceed with X?"
+- Wait for answer
+- Do NOT proceed with your alternative without explicit approval
+
+**If you made a mistake and are being corrected:**
+- Acknowledge: "You're right, I was wrong about X. I'm sorry."
+- Implement the correction immediately
+- Do NOT defend your mistake or deflect to other issues
+
+**RED FLAGS that you're failing:**
+- User repeats the same instruction
+- User escalates tone or uses profanity
+- User asks "are you listening?"
+- You're investigating something other than what was asked
+
+**When these occur: STOP, re-read their last 3 messages, and address ONLY what they explicitly asked for.**
+
 ## Grimoire Development Guide for AI Assistants
 
 This document contains critical patterns and conventions for working on the Grimoire codebase. **Read this carefully before making any changes.**
@@ -390,10 +418,6 @@ decode_golem_result(PyObj, PrologTerm) :-
 ## Testing Workflow
 
 ```bash
-# For development/agents: Use test_plt.sh directly (faster, cleaner output)
-./test_plt.sh src/db/semantics.plt
-./test_plt.sh src/git.plt
-
 # For users: Use grimoire test command
 ./grimoire test              # Run all tests
 ./grimoire test git          # Run specific domain
@@ -402,8 +426,6 @@ decode_golem_result(PyObj, PrologTerm) :-
 # Use exec for interactive testing
 ./grimoire exec
 ```
-
-**IMPORTANT FOR AGENTS:** Always use `./test_plt.sh <file>` for testing during development. Do not use `./grimoire test`.
 
 ## Common Anti-Patterns
 

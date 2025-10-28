@@ -25,9 +25,11 @@ component(test_expanded_entity, has(db(sqlite)), Spec) :-
 
 % Test entity for missing file verification (negative test)
 component(test_missing_entity, db_sqlite_file, '/nonexistent/database.db').
+component(test_missing_entity, core_dump_ignorelist, [db_sqlite_file]).
 
 % Test entity for invalid file verification (negative test)
 component(test_invalid_entity, db_sqlite_file, '/tmp/test_invalid_db.db').
+component(test_invalid_entity, core_dump_ignorelist, [db_sqlite_file]).
 
 docstring(test_entity(db), "Test entity container for db domain verification tests").
 docstring(test_verify_entity, "Test entity for db DSL pattern verification").

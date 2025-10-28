@@ -390,12 +390,23 @@ class Grimoire:
     # ========================================================================
 
     def test(self, args: Optional[List[str]] = None) -> TestResponse:
-        """Run test suite with optional args"""
-        return self._magic_cast(
-            "conjure(interface(test))",
-            {"Args": args or []},
-            TestResponse
+        """Run test suite with optional args
+
+        Note: This calls python_interface_test/2 directly (NOT via magic_cast)
+        because test is system infrastructure, not a user-facing spell.
+        Using magic_cast would set in_magic_cast flag and interfere with
+        tests that validate cast_impl guards.
+        """
+        result = janus.query_once(
+            "python_interface_test(Args, PyResult)",
+            {"Args": args or []}
         )
+
+        if not result.get('truth', False):
+            raise GrimoireError("Test command failed")
+
+        term = PrologTerm.from_dict(result['PyResult'])
+        return TestResponse.from_prolog(term)
 
     # ========================================================================
     # SESSION MANAGEMENT

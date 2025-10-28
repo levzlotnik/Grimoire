@@ -13,7 +13,7 @@ python3Packages.buildPythonPackage rec {
     owner = "pydantic";
     repo = "genai-prices";
     rev = "3e9bbcf4be110a0df22a4f9a50fb980aa60528bc";
-    sha256 = "sha256-ZYHIQmC5Qlu77WDB0TnqS7/K85KQwwFyYTGqdUPUlAc=";
+    sha256 = "sha256-1MO0GQJc22PsYicFwcTQ26IWIJ4NXWTq7cqy1E+shCg=";
     leaveDotGit = true;
   };
 

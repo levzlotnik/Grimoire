@@ -80,7 +80,7 @@ test(mkproject_basic_creation, [cleanup(cleanup_test_project)]) :-
 
     % Test project creation
     TestProjectName = 'test_basic_project',
-    cast(conjure(mkproject(TmpDir, TestProjectName, [git(false)])), Result), !,
+    user:magic_cast(conjure(mkproject(TmpDir, TestProjectName, [git(false)])), Result), !,
 
     % Should succeed
     assertion(Result = ok(project_created(_, TestProjectName))),
@@ -115,7 +115,7 @@ test(template_instantiation_rust, [cleanup(cleanup_test_project)]) :-
     % Test project creation with template
     TestProjectName = 'test_rust_project',
     catch(
-        cast(conjure(mkproject(TmpDir, TestProjectName, [template(rust), git(false)])), Result),
+        user:magic_cast(conjure(mkproject(TmpDir, TestProjectName, [template(rust), git(false)])), Result),
         Error,
         Result = error(caught_exception(Error))
     ), !,
@@ -159,7 +159,7 @@ test(mkproject_existing_project, [cleanup(cleanup_test_project)]) :-
     load_entity(semantic(folder('@/src/project'))), !,
 
     % Try to create project that already exists
-    cast(conjure(mkproject(TmpDir, TestProjectName, [git(false)])), Result), !,
+    user:magic_cast(conjure(mkproject(TmpDir, TestProjectName, [git(false)])), Result), !,
 
     % Should fail with appropriate error
     assertion(Result == error(project_already_exists(ProjectPath))),
@@ -181,7 +181,7 @@ test(mkproject_invalid_template) :-
 
     % Try to create project with invalid template
     catch(
-        cast(conjure(mkproject(TmpDir, 'test_project', [template(nonexistent_template), git(false)])), Result),
+        user:magic_cast(conjure(mkproject(TmpDir, 'test_project', [template(nonexistent_template), git(false)])), Result),
         _Error,
         Result = error(template_instantiation_failed)
     ), !,
@@ -201,7 +201,7 @@ test(mkproject_with_git, [cleanup(cleanup_test_project)]) :-
 
     % Test project creation with git
     TestProjectName = 'test_git_project',
-    cast(conjure(mkproject(TmpDir, TestProjectName, [git(true)])), Result), !,
+    user:magic_cast(conjure(mkproject(TmpDir, TestProjectName, [git(true)])), Result), !,
 
     % Check result - should succeed if git is available
     (Result = ok(project_created(_, TestProjectName)) ->

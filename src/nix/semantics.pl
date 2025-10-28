@@ -488,7 +488,7 @@ register_spell(
     [],
     implementation(conjure(nix(run(installable(Installable)))), RetVal, (
         Args = ["nix", "run", Installable],
-        magic_cast(conjure(shell(args(Args), interactive)), RetVal)
+        magic_cast(conjure(shell(args(Args))), RetVal)
     ))
 ).
 
@@ -504,7 +504,7 @@ register_spell(
     [],
     implementation(conjure(nix(run_with_args(installable(Installable), args(AppArgs)))), RetVal, (
         flatten([["nix", "run", Installable, "--"], AppArgs], Args),
-        magic_cast(conjure(shell(args(Args), interactive)), RetVal)
+        magic_cast(conjure(shell(args(Args))), RetVal)
     ))
 ).
 

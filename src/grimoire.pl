@@ -161,7 +161,7 @@ magic_cast(SpellTerm, Result) :-
     (ground(Result)
     -> true
     ; throw(error(
-        type_error(spell_output, Result, 'must be grounded'),
+        instantiation_error(Result),
         context(magic_cast/2, 'Spell returned ungrounded result')))
     ),
 
@@ -471,11 +471,11 @@ register_spell(
 
 register_spell(
     conjure(executable_program_interactive),
-    input(executable_program(program('Program'), args('Args'), interactive)),
+    input(executable_program_interactive(program('Program'), args('Args'))),
     output(ok(completion_message('Message'))),
     "Execute a program interactively with stdin/stdout/stderr passed through. Returns completion message.",
     [],
-    implementation(conjure(executable_program(program(Program), args(Args), interactive)), RetVal, (
+    implementation(conjure(executable_program_interactive(program(Program), args(Args))), RetVal, (
         setup_call_cleanup(
             process_create(
                 path(Program),
@@ -509,14 +509,14 @@ register_spell(
 
 register_spell(
     conjure(shell_interactive),
-    input(shell(args('Args'), interactive)),
+    input(shell_interactive(args('Args'))),
     output(ok(completion_message('Message'))),
     "Execute shell command interactively with stdin/stdout/stderr passed through. Returns completion message.",
     [],
-    implementation(conjure(shell(args(Args), interactive)), RetVal, (
+    implementation(conjure(shell_interactive(args(Args))), RetVal, (
         join_args(Args, JoinedArgs),
         magic_cast(
-            conjure(executable_program(program(sh), args(["-c", JoinedArgs]), interactive)),
+            conjure(executable_program_interactive(program(sh), args(["-c", JoinedArgs]))),
             RetVal
         )
     ))

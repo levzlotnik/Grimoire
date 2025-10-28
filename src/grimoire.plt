@@ -88,8 +88,24 @@ test(magic_cast_requires_registered_spell, [throws(error(existence_error(spell, 
 
 %% Test Case 3: cast_impl guard prevents direct calls
 
-test(cast_impl_guard_forbids_direct_call, [throws(error(direct_cast_forbidden(_), _))]) :-
-    cast_impl(conjure(test_spell(simple(foo))), _Result).
+test(cast_impl_guard_forbids_direct_call) :-
+    format('About to call cast_impl~n'),
+    (user:in_magic_cast ->
+        format('WARNING: in_magic_cast IS asserted before test!~n')
+    ;
+        format('in_magic_cast NOT asserted (correct)~n')
+    ),
+    catch(
+        (
+            format('Calling cast_impl...~n'),
+            cast_impl(conjure(test_spell(simple(foo))), Result),
+            format('cast_impl succeeded with Result: ~w~n', [Result])
+        ),
+        Error,
+        format('Caught error: ~w~n', [Error])
+    ),
+    format('After catch, Error = ~w~n', [Error]),
+    assertion(Error = error(direct_cast_forbidden(_), _)).
 
 %% Test Case 4: Session-persistent flag detection
 

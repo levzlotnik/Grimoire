@@ -5,6 +5,7 @@
 %% ============================================================================
 
 :- dynamic hit/2.
+:- multifile cast_post_hook/3.
 
 % Hook for session import delegation
 cast_post_hook(conjure(session(import(A))), Result, assertz(hit(conjure(session(import(A))), Result))).
@@ -62,22 +63,28 @@ test(entities_spell) :-
     is_list(Entities),
     member(system, Entities), !.
 
-test(prove_it_spell, [cleanup(retractall(hit(perceive(prove_it(component(_, _, _))), _)))]) :-
+test(prove_it_spell, [
+    setup(retractall(user:hit(perceive(prove_it(component(_, _, _))), _))),
+    cleanup(retractall(user:hit(perceive(prove_it(component(_, _, _))), _)))
+]) :-
     % Test prove_it delegation with subsystem (self is asserted, not provable)
     user:magic_cast(perceive(interface(prove_it(entity(system), type(subsystem), value(git)))), ExternalResult),
     % Verify internal spell called with correct transformed args
-    hit(perceive(prove_it(component(Entity, Type, HitValue))), InternalResult),
+    user:hit(perceive(prove_it(component(Entity, Type, HitValue))), InternalResult),
     assertion(Entity == system),
     assertion(Type == subsystem),
     assertion(HitValue == git),
     % Verify result passed through
     assertion(ExternalResult == InternalResult), !.
 
-test(sauce_me_spell, [cleanup(retractall(hit(perceive(sauce_me(spell(_))), _)))]) :-
+test(sauce_me_spell, [
+    setup(retractall(user:hit(perceive(sauce_me(spell(_))), _))),
+    cleanup(retractall(user:hit(perceive(sauce_me(spell(_))), _)))
+]) :-
     % Test sauce_me delegation with a known spell
     user:magic_cast(perceive(interface(sauce_me(spell_ctor(interface(component_types))))), ExternalResult),
     % Verify internal spell called with correct transformed args
-    hit(perceive(sauce_me(spell(SpellCtor))), InternalResult),
+    user:hit(perceive(sauce_me(spell(SpellCtor))), InternalResult),
     assertion(SpellCtor == interface(component_types)),
     % Verify result passed through
     assertion(ExternalResult == InternalResult), !.
@@ -91,67 +98,58 @@ test(system_instructions_spell) :-
 
 % Session tests - these delegate to session domain
 test(session_create_spell, [
-    setup((
-        get_time(T),
-        format(atom(SessionId), 'test_session_~w', [T]),
-        nb_setval(test_session_id, SessionId)
-    )),
-    cleanup((
-        nb_getval(test_session_id, SessionId),
-        retractall(hit(conjure(session(create(id(_)))), _)),
-        expand_file_name('~/.grimoire', [HomeGrimoire]),
-        format(atom(SessionPath), '~w/session-~w', [HomeGrimoire, SessionId]),
-        (exists_directory(SessionPath) -> delete_directory_and_contents(SessionPath) ; true)
-    ))
+    cleanup(retractall(user:hit(conjure(session(create(id(_)))), _)))
 ]) :-
-    nb_getval(test_session_id, SessionId),
+    get_time(T),
+    format(atom(SessionId), 'test_session_~w', [T]),
+
+    % Create session via interface
     user:magic_cast(conjure(interface(session_create(session_id(SessionId)))), ExternalResult),
+
     % Verify internal spell called with correct transformed args
-    hit(conjure(session(create(id(HitSessionId)))), InternalResult),
+    user:hit(conjure(session(create(id(HitSessionId)))), InternalResult),
     assertion(HitSessionId == SessionId),
     % Verify result passed through
-    assertion(ExternalResult == InternalResult), !.
+    assertion(ExternalResult == InternalResult),
+
+    % Clean up using session spell
+    user:magic_cast(conjure(session(delete(id(SessionId)))), _), !.
 
 test(session_export_import_delegation, [
-    setup((
-        get_time(T),
-        % Use integer timestamp to avoid dots in session ID
-        TInt is floor(T * 1000000),
-        format(atom(SessionId), 'test_exp_imp_~w', [TInt]),
-        nb_setval(test_session_id, SessionId),
-        % Export creates the archive name automatically as /tmp/session-{ID}.tar.gz
-        format(atom(ArchivePath), '/tmp/session-~w.tar.gz', [SessionId]),
-        nb_setval(test_archive_path, ArchivePath)
-    )),
     cleanup((
-        nb_getval(test_session_id, SessionId),
-        nb_getval(test_archive_path, ArchivePath),
-        retractall(hit(conjure(session(export(_, _))), _)),
-        retractall(hit(conjure(session(import(_))), _)),
-        expand_file_name('~/.grimoire', [HomeGrimoire]),
-        format(atom(SessionPath), '~w/session-~w', [HomeGrimoire, SessionId]),
-        (exists_directory(SessionPath) -> delete_directory_and_contents(SessionPath) ; true),
-        (exists_file(ArchivePath) -> delete_file(ArchivePath) ; true)
+        retractall(user:hit(conjure(session(export(_, _))), _)),
+        retractall(user:hit(conjure(session(import(_))), _))
     ))
 ]) :-
-    nb_getval(test_session_id, SessionId),
-    nb_getval(test_archive_path, ArchivePath),
+    get_time(T),
+    % Use integer timestamp to avoid dots in session ID
+    TInt is floor(T * 1000000),
+    format(atom(SessionId), 'test_exp_imp_~w', [TInt]),
+    % Export creates the archive name automatically as /tmp/session-{ID}.tar.gz
+    format(atom(ArchivePath), '/tmp/session-~w.tar.gz', [SessionId]),
 
     % Create a real session
     user:magic_cast(conjure(interface(session_create(session_id(SessionId)))), _),
 
     % Export it and verify delegation (destination is directory, not full path)
     user:magic_cast(conjure(interface(session_export(session_id(SessionId), destination('/tmp')))), ExportExternalResult),
-    hit(conjure(session(export(id(ExportSessionId), destination(ExportDest)))), ExportInternalResult),
+    user:hit(conjure(session(export(id(ExportSessionId), destination(ExportDest)))), ExportInternalResult),
     assertion(ExportSessionId == SessionId),
     assertion(ExportDest == '/tmp'),
     assertion(ExportExternalResult == ExportInternalResult),
 
+    % Delete the session (so we can re-import it)
+    user:magic_cast(conjure(session(delete(id(SessionId)))), _),
+
     % Import the created archive and verify delegation
     user:magic_cast(conjure(interface(session_import(archive(ArchivePath)))), ImportExternalResult),
-    hit(conjure(session(import(archive(ImportPath)))), ImportInternalResult),
+    user:hit(conjure(session(import(archive(ImportPath)))), ImportInternalResult),
     assertion(ImportPath == ArchivePath),
-    assertion(ImportExternalResult == ImportInternalResult), !.
+    assertion(ImportExternalResult == ImportInternalResult),
+
+    % Clean up: delete session and archive
+    user:magic_cast(conjure(session(delete(id(SessionId)))), _),
+    delete_file(ArchivePath), !.
 
 % === PYTHON_MAGIC_CAST TESTS ===
 

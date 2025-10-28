@@ -123,7 +123,7 @@ register_spell(
     implementation(perceive(interface(components(entity(EntityValue), type(TypeValue)))), Result, (
         get_all_components(component(EntityValue, TypeValue, _), Values),
         (   Values = []
-        ->  throw(error(existence_error(component, component(EntityValue, TypeValue, _)),
+        ->  throw(error(existence_error(component, component(EntityValue, TypeValue, not_found)),
                        context(perceive(interface(components)), 'Component does not exist')))
         ;   format_component_result(Values, FormattedResult),
             Result = ok(FormattedResult)
@@ -161,27 +161,27 @@ register_spell(
 %% INTERFACE OPERATIONS - TESTING
 %% ============================================================================
 
-register_spell(
-    conjure(interface(test)),
-    input(interface(test(args('Args')))),
-    output(either(ok(tests_passed), error(tests_failed('Reason')))),
-    "Run test suite with optional args",
-    [],
-    implementation(conjure(interface(test(args(ArgsValue)))), Result, (
-        catch(
-            (   grimoire_ensure_loaded('@/src/run_tests.pl'),
-                (   member('--list', ArgsValue)
-                ->  (list_available_tests, Result = ok(tests_listed))
-                ;   ArgsValue = []
-                ->  (run_all_tests, Result = ok(tests_passed))
-                ;   (run_specific_tests(ArgsValue), Result = ok(tests_passed))
-                )
-            ),
-            Error,
-            Result = error(tests_failed(Error))
-        )
-    ))
-).
+% Direct predicate for test command (NOT a spell - this is system infrastructure)
+% This is called directly from Python to avoid setting in_magic_cast flag
+% which would interfere with test execution that validates cast_impl guards
+interface_test(Args, Result) :-
+    catch(
+        (   grimoire_ensure_loaded('@/src/run_tests.pl'),
+            (   member('--list', Args)
+            ->  (list_available_tests, Result = ok(tests_listed))
+            ;   Args = []
+            ->  (run_all_tests, Result = ok(tests_passed))
+            ;   (run_specific_tests(Args), Result = ok(tests_passed))
+            )
+        ),
+        Error,
+        Result = error(tests_failed(Error))
+    ).
+
+% Python bridge for test command - converts result to Python dict
+python_interface_test(Args, PyResult) :-
+    interface_test(Args, Result),
+    term_struct_to_python_dict(Result, PyResult).
 
 % Exec - execute arbitrary Prolog query and return string results
 register_spell(
