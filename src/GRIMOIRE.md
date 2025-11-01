@@ -1,131 +1,289 @@
-# GRIMOIRE: Knowledge-Based Operating System
+# Grimoire System Instructions for LLMs
 
-Grimoire is an Entity-Component-System (ECS) architecture that serves as both an evolving knowledge base and an operating system. Every subsystem recursively implements the same ECS patterns, creating a fractal architecture of knowledge organization.
+## What is Grimoire?
 
-## Core Philosophy
+Grimoire is a knowledge-based operating system where **all state is declarative knowledge**. The knowledge base is written in Prolog and exposed via MCP tools.
 
-### Everything is Knowledge
-All system state, configuration, and operations are represented as semantic knowledge encoded in Prolog. There is no distinction between "code" and "data" - everything is declarative knowledge that can be reasoned about.
+## Internal Knowledge Structure
 
-### File-Based Truth
-All knowledge lives in files (`semantics.pl`), following the principle of immutability. There are no runtime assertions that modify the knowledge base - all knowledge is loaded from files and remains constant during execution. This ensures reproducibility and enables git-like versioning.
+Understanding how knowledge is represented helps you query it effectively.
 
-### Distributed Patterns
-Knowledge is organized locally - each domain (git, nix, filesystem, etc.) maintains its own `semantics.pl` file that declares entities and components relevant to that domain. These can be composed together through the `load_entity(semantic(...))` mechanism.
+### Entities and Components
 
-### Entity-Component-System Architecture
-- **Entities** (`entity/1`): Things that exist - from concrete objects like files to abstract concepts like transactions
-- **Components** (`component/3`): Relationships and properties that connect entities
-- **Systems**: Operations that act on entities with specific components
+The knowledge base uses three fundamental predicates:
 
-**Prolog Examples:**
 ```prolog
-% Entity declarations
+% Declare an entity exists
 entity(git).
-entity(nix).
-entity(session).
-entity(nix(flake(template(python)))).  % Hierarchical entity
 
-% Component declarations (entity, type, value)
-component(git, ctor, commit).           % git has constructor 'commit'
-component(git, ctor, clone).            % git has constructor 'clone'
-component(git, subsystem, vcs).         % git is a version control subsystem
-component(nix, concept, reproducibility). % nix embodies reproducibility concept
-component(session, source, file('state.pl')). % session has state file source
+% Associate typed properties with entities
+component(git, subsystem, version_control).
+component(git, ctor, commit).
+component(git, ctor, clone).
 
-% Documentation predicates
+% Document entities
 docstring(git, "Version control and knowledge evolution tracking").
-docstring(nix(flake), "Declarative, reproducible package management").
-
-% Self-entity declaration pattern (in semantics.pl files)
-:- self_entity(my_project).
-
-% Loading entities from semantic sources
-:- load_entity(semantic(file("src/git.pl"))).         % Individual .pl file with self_entity
-:- load_entity(semantic(folder("src/nix"))).          % Folder with semantics.pl
-:- load_entity(semantic(folder("src/project"))).      % Another folder with semantics.pl
-:- load_entity(semantic(folder("src/nix/templates/python"))). % Nested template folder
 ```
 
-### Recursive Subsystems
-Each domain implements the same ECS patterns recursively. For example, `nix` is an entity with its own entities like `nix(flake)`, which has its own entities like `nix(flake(template))`. This fractal structure allows unlimited depth while maintaining consistent patterns.
+### Component Expansion with `==>`
 
-## Knowledge Organization
+High-level component declarations automatically expand into queryable properties:
 
-### Semantic Sources
-- `semantic(file("path/to/file.pl"))`: Individual knowledge files
-- `semantic(folder("path/to/dir"))`: Folders containing `semantics.pl`
+```prolog
+% From src/git.pl - Repository component expands to queryable properties
+component(E, has(git(repository)), git(repository(Spec)))
+    ==> (component(E, git_repository_remote_name, Name) :-
+            member(remote(Name, _), Spec)),
+        (component(E, git_repository_remote_url, URL) :-
+            member(remote(_, URL), Spec)),
+        (component(E, git_repository_branch, Branch) :-
+            member(branch(Branch), Spec)).
+```
 
-Each semantic source is self-contained and can be loaded independently.
+This means when you query `component(Entity, git_repository_branch, Branch)`, the system automatically extracts it from the high-level `has(git(repository))` declaration.
 
-### Test Files (*.plt)
-Discriminative context that validates the generative knowledge. While `.pl` files define what exists (generative), `.plt` files verify correctness (discriminative). Tests ensure the knowledge base remains consistent and operations behave as expected.
+### Component Verification with `::`
 
-### Operation Model
-- **Perceive**: Query operations that observe without modification
-- **Conjure**: Mutable operations that change system state
-- **Cast**: The mechanism to execute spells with proper error handling
+Components can be verified against OS reality:
 
-All operations are structured as Prolog terms, maintaining semantic clarity and enabling reasoning about operations themselves.
+```prolog
+% From src/git.pl - Verify root is a real git repository
+component(_, git_repository_root, Root)
+    :: exists_directory(Root),
+       atomic_list_concat([Root, '/.git'], GitDir),
+       exists_directory(GitDir).
+```
 
-## Core Concepts
+The `::` operator declares verification constraints that are checked when components are validated.
 
-### Spell System
-The fundamental magic system of Grimoire. Spells are divided into two categories:
-- **conjure**: Mutable operations that change system state
-- **perceive**: Perception operations that query system state
+### DSL Schema Registration
 
-Note: `spell` is a conceptual entity. The actual usage patterns are shown below.
+Domains can register declarative schemas:
 
-#### Conjuration Spells
-Conjuration spells modify system state and must be cast using `cast/2` predicate for safety.
+```prolog
+% From src/fs.pl - Filesystem structure schema
+register_dsl_schema(
+    fs,
+    has(fs(structure)),
+    signature(fs(structure(items('Items')))),
+    "Declarative filesystem structure specification",
+    (
+        component(Entity, has(fs(structure)), fs(structure(Items)))
+            ==> (component(Entity, fs_structure_file, file_spec(Path, Opts)) :-
+                    extract_file_specs(Items, FileSpecs),
+                    member(file_spec(Path, Opts), FileSpecs))
+            ::  is_list(Items)
+    )
+).
+```
 
-Format: `cast(conjure(operation(...)), Result)`
+### Spell Registration
 
-Examples:
-- `cast(conjure(git(commit('message'))), Result)`
-- `cast(conjure(mkdir('path')), Result)`
+Operations are registered as spells with type signatures:
 
-#### Perception Spells
-Perception spells query system state without modification. Called directly, with variables unified to results.
+```prolog
+% From src/git.pl - Commit spell
+register_spell(
+    conjure(git(commit)),
+    input(git(commit(git_root('Root'), message('Message')))),
+    output(either(
+        ok(committed(hash('Hash'))),
+        error(git_error('Reason'))
+    )),
+    "Create a git commit with the given message",
+    [],
+    implementation(conjure(git(commit(git_root(Root), message(Message)))), Result, (
+        % Implementation here - Root and Message are grounded
+        atom_string(Message, MessageStr),
+        phrase(git_args(commit(Message)), Args),
+        magic_cast(conjure(executable_program(program(git), args(Args))), ExecResult),
+        (ExecResult = ok(_) ->
+            Result = ok(committed(hash("generated")))
+        ; ExecResult = error(E) ->
+            Result = error(git_error(E))
+        )
+    ))
+).
+```
 
-Format: `perceive(query(Var1, Var2, ...))`
+## Using Grimoire via MCP
 
-Examples:
-- `perceive(git(status(Branch, Ahead, Files)))`
-- `perceive(nix(flake(show(Apps, Packages, DevShells))))`
+You interact through MCP tools that expose the knowledge base and spell system.
 
-### Spell Examples
+### Discovering Spells
 
-| Operation | Spell Type | Usage | Description |
-|-----------|------------|-------|-------------|
-| Read File | Perceive | `perceive(read_file(FilePath, LineNumbers, Content))` | Read specific lines from files |
-| Edit File | Conjure | `cast(conjure(edit_file(file(Path), Edits)), Result)` | Modify file contents with structured operations |
-| Git Status | Perceive | `perceive(git(status))` | Query repository working tree status |
-| Git Clone | Conjure | `cast(conjure(git(clone(Url, Path))), Result)` | Clone repository to directory |
-| Nix Flake Info | Perceive | `perceive(nix(flake(show(Apps, Packages, DevShells))))` | Show flake outputs and metadata |
-| Nix Run | Conjure | `cast(conjure(nix(run(Target, Args))), Result)` | Execute nix applications |
-| List Entities | Perceive | `perceive(entities(EntityList))` | Get all loaded entities |
-| Create Project | Conjure | `cast(conjure(mkproject(Path, Name, Options)), Result)` | Initialize new project structure |
+```python
+# List all registered spells
+list_spells()
+# Returns: conjure(git(commit)), perceive(git(status)), ...
 
-### Interface Exploration
+# Get spell metadata (shows input format with template variables)
+sauce_me("git(commit)")
+# Returns: {
+#   "input": "git(commit(git_root('Root'), message('Message')))",
+#   "output": "either(ok(committed(hash('Hash'))), error(git_error('Reason')))",
+#   "docstring": "Create a git commit with the given message"
+# }
+```
 
-The system provides interface commands for ECS exploration:
+### Invoking Spells
 
-- `interface(entities)` - List all entities in the system
-- `interface(compt(Entity))` - List component types for an entity
-- `interface(comp(Entity, Type))` - List components of specific type
-- `interface(doc(Entity))` - Show entity documentation
-- `interface(status)` - Show session/transaction status
+Spells use template variable filling:
 
-### Core System Concepts
+```python
+# Conjure (state-changing)
+conjure("git(commit(git_root(Root), message(Message)))", {
+    "Root": "/path/to/repo",
+    "Message": "Fix bug"
+})
+# Returns: ok(committed(hash("abc123")))
 
-- **Transaction**: Atomic units of change with rollback capability through git-backed session management
-- **Hardware**: Hardware abstraction layer and system resource management
-- **Execute**: Execution contexts and runtime environments within Grimoire
-- **Source**: Source code and data representation with semantic tracking
-- **Project**: Organizational unit bundling source code, configuration, and resources
-- **Interface**: Command interfaces for system interaction (CLI, REST API, MCP protocols)
-- **Git**: Knowledge evolution tracking and version control subsystem
-- **Nix**: Symbolic configuration, package management, and build subsystem
-- **Session**: Transaction and workspace management with SQLite command logging
+# Perceive (read-only)
+perceive("git(status(git_root(Root)))", {"Root": "/path/to/repo"})
+# Returns: ok(status_info(branch(main), working_status(clean), files([])))
+```
+
+Template variables (capitalized in signature) are filled with values from the args dict.
+
+### Querying Components
+
+```python
+# List all entities
+entities()
+# Returns: [git, nix, db, session, project, ...]
+
+# Get component types for an entity
+component_types("git")
+# Returns: [ctor, subsystem, subcommand, ...]
+
+# Get all components of a specific type
+components("git", "ctor")
+# Returns: [commit, clone, add, push, pull, ...]
+
+# Get documentation
+docstring("git")
+# Returns: "Version control and knowledge evolution tracking"
+```
+
+### Sessions: Persistent State Across Compactions
+
+Sessions track spell execution history and persist state:
+
+```python
+# Create session
+conjure("session(create(name(Name)))", {"Name": "my_project"})
+
+# Switch to session (loads its knowledge)
+conjure("session(switch(name(Name)))", {"Name": "my_project"})
+
+# After compaction: recover context
+perceive("session(history(session_name(Name)))", {"Name": "my_project"})
+# Returns: [{
+#   "timestamp": 1234567890,
+#   "spell": "conjure(git(commit(...)))",
+#   "result": "ok(committed(...))"
+# }, ...]
+```
+
+Use session history after compaction to understand:
+- What operations were performed
+- What state was created/modified
+- What the user was working on
+
+## Common Operations
+
+### Git Operations
+
+```python
+# Clone repository
+conjure("git(clone(url(Url), path(Path)))", {
+    "Url": "https://github.com/user/repo",
+    "Path": "/tmp/repo"
+})
+
+# Stage files
+conjure("git(add(git_root(Root), paths(Paths)))", {
+    "Root": "/path/to/repo",
+    "Paths": ["file1.txt", "file2.txt"]
+})
+
+# Commit (note: git_root wrapper required for repo operations)
+conjure("git(commit(git_root(Root), message(Message)))", {
+    "Root": "/path/to/repo",
+    "Message": "Update files"
+})
+
+# Check status
+perceive("git(status(git_root(Root)))", {"Root": "/path/to/repo"})
+```
+
+### Filesystem Operations
+
+```python
+# Read file
+perceive("fs(read_file(path(Path), start(Start), end(End)))", {
+    "Path": "/tmp/config.txt",
+    "Start": 1,
+    "End": 10
+})
+
+# Edit file
+conjure("fs(edit_file(file(Path), edits(Edits)))", {
+    "Path": "/tmp/file.txt",
+    "Edits": [{"insert": {"line": 1, "content": "New line"}}]
+})
+
+# Create directory
+conjure("fs(mkdir(path(Path), options(Options)))", {
+    "Path": "/tmp/newdir",
+    "Options": []
+})
+```
+
+### Database Operations
+
+```python
+# Create database
+conjure("db(create(file(DbPath), schema(SchemaSpec)))", {
+    "DbPath": "/tmp/mydb.db",
+    "SchemaSpec": {"file": "schema.sql"}
+})
+
+# Query database
+perceive("db(query(database(DbPath), sql(SQL)))", {
+    "DbPath": "/tmp/mydb.db",
+    "SQL": "SELECT * FROM users WHERE age > 18"
+})
+```
+
+## Key Principles
+
+1. **Knowledge is declarative** - Entities and components are declared in Prolog files
+2. **Components expand automatically** - `==>` operator creates queryable properties
+3. **Components are verifiable** - `::` operator checks against OS reality
+4. **Spells are type-safe** - All operations have registered input/output formats
+5. **Template variables show requirements** - Capitalized names indicate what args to provide
+6. **Results are structured** - Always `ok(...)` for success or `error(...)` for failure
+7. **Sessions persist state** - Use session history to recover context after compaction
+
+## Error Handling
+
+All spells return structured results:
+
+```python
+# Success
+ok(result(...))
+
+# Failure
+error(reason(...))
+```
+
+Always check the result structure and handle errors appropriately.
+
+## Further Documentation
+
+- `README.md` - Building and using Grimoire
+- `docs/ecs.md` - Entity-Component-System deep dive
+- `docs/spells.md` - Spell system internals
+- `docs/session.md` - Session domain and persistence
+- `CLAUDE.md` - Development patterns for contributing

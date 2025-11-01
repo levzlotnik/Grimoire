@@ -75,7 +75,7 @@ verify(component(_E, db_sqlite_file, File)) :-
 
 Understanding these three patterns is CRITICAL:
 
-**Pattern 1: Manual `component/3` Rules** - External Activation (OS Reality → KB)
+**Manual `component/3` Rules** - External Activation (OS Reality → KB)
 ```prolog
 % Use when component values come from EXTERNAL sources (OS, databases, git status)
 % NOT from Grimoire's KB - from external state that changes independently
@@ -85,7 +85,7 @@ component(E, git_repository_current_branch, Branch) :-
 ```
 **When to use:** Component depends on external factors not tracked in Grimoire's KB.
 
-**Pattern 2: `::` Operator** - Verification ONLY (KB → OS Reality Check)
+**`::` Operator** - Verification ONLY (KB → OS Reality Check)
 ```prolog
 % ONLY generates verify/1 clause, NO component expansion
 % Used to verify KB values against OS reality at test time
@@ -95,7 +95,7 @@ component(_E, git_repository_root, Root)
 ```
 **When to use:** Verify a component (already in KB) matches OS reality. Does NOT create expansion rules.
 
-**Pattern 3: `==>` Operator** - KB Implications (KB → KB, with verification)
+**`==>` Operator** - KB Implications (KB → KB, with verification)
 ```prolog
 % Generates BOTH component expansion rules AND verify clause
 % Used for deriving KB components from other KB components
@@ -107,7 +107,7 @@ component(E, has(git(repository)), git(repository(Spec)))
 
 ### Detailed Pattern Examples
 
-**Pattern 1: Component Expansion with Verification (using `==>` operator)**
+**Component Expansion with Verification (using `==>` operator)**
 
 ```prolog
 component(Entity, has(db(sqlite)), db(sqlite(database_id(DbId), file(File), schema(Schema))))
@@ -157,7 +157,7 @@ please_verify(component(A, B, C)) :-
 - Only components with `::` verification rules can be invalid
 - Verification failures are explicit exceptions, not silent failures
 
-### Pattern 2: Leaf Verification Only
+### Leaf Verification Only
 
 ```prolog
 component(_E, db_sqlite_file, File)
@@ -168,7 +168,7 @@ component(_E, db_sqlite_file, File)
 **What this generates:**
 1. One `verify/1` clause with the constraints
 
-### Pattern 3: Expansion Without Verification
+### Expansion Without Verification
 
 ```prolog
 component(Entity, git_repository_remote_url, URL)
@@ -275,6 +275,122 @@ register_spell(conjure(git(commit)), ...)
 register_spell(conjure(git(commit(Message))), ...)
 ```
 
+### Spell Options
+
+Spells can specify options in the 5th argument:
+
+```prolog
+register_spell(
+    conjure(db(create)),
+    input(db(create(file('File'), schema('Schema')))),
+    output(ok(db(sqlite(file('File'))))),
+    "Create a SQLite database",
+    [session_persistent(has(db(sqlite)))],  % ← Spell options
+    implementation(...)
+).
+```
+
+**Available options:**
+- `session_persistent(ComponentProperty)` - Auto-persist successful results to active session
+  - On successful `ok(ResultData)`, creates: `component(session(SessionId), ComponentProperty, ResultData)`
+  - Appends to session's `semantics.pl` file
+  - Session hooks automatically handle this (see `src/session.pl`)
+
+## Spell Invocation Patterns
+
+### From Prolog (Internal)
+
+```prolog
+% Direct invocation
+magic_cast(conjure(git(commit("message"))), Result).
+
+% FUTURE: do-notation for monadic chaining (NOT YET IMPLEMENTED)
+% See poc/do_notation_final.pl for planned syntax
+do((
+    V1 <- conjure(backend(run)),
+    V2 <- conjure(frontend(run)),
+    Result = ok(V1, V2)
+)).
+```
+
+### From Python/MCP (External)
+
+**Current pattern** - Spell signature with explicit variable bindings:
+
+```python
+# Perceive query with variables
+grimoire.perceive("git(status(Root))", {"Root": "/path/to/repo"})
+
+# Conjure spell with variables
+grimoire.conjure("git(commit(Message))", {"Message": "Initial commit"})
+
+# No variables needed
+grimoire.perceive("interface(entities)", {})
+```
+
+**Why this pattern:**
+1. **Self-documenting** - Signature shows what variables are required
+2. **Type-checkable** - Can validate args match pattern structure
+3. **Discoverable** - Docstring shows example with variable names
+4. **Composable** - Works naturally with nested terms
+
+**Template Filling:**
+The Python bridge fills variables in the spell signature using provided args dict:
+- `"git(status(Root))"` + `{"Root": "/tmp"}` → `git(status("/tmp"))`
+- Missing required variables throw `error(missing_template_arg(Var), _)`
+
+## Session Domain Patterns
+
+The session domain provides persistent state across Grimoire invocations:
+
+### Session Structure
+
+```
+$GRIMOIRE_DATA/sessions/{session_id}/
+├── semantics.pl          # Session knowledge (components)
+└── activity_log.jsonl    # Spell cast history
+```
+
+### Session Components
+
+```prolog
+% Session entity self-reference
+component(session(SessionId), self, semantic(folder(SessionFolder)))
+    ==> component(session(SessionId), session_directory, SessionFolder),
+        component(session(SessionId), session_semantics_path, SemanticsPath),
+        component(session(SessionId), session_activity_log_path, LogPath).
+```
+
+### Session Hooks
+
+**Automatic spell logging:**
+- Every spell cast is logged to `activity_log.jsonl` via `cast_post_hook`
+- Includes timestamp, spell term, and result
+
+**Automatic persistence:**
+- Spells with `session_persistent` option auto-save results to session
+- Example: `db(create)` saves database info for later recovery
+
+### Session Workflow
+
+```prolog
+% Create session
+magic_cast(conjure(session(create(id('my-project')))), Result).
+
+% Switch to session (loads its semantics.pl)
+magic_cast(conjure(session(switch(id('my-project')))), Result).
+
+% Session-persistent spells auto-save state
+magic_cast(conjure(db(create(file('/tmp/db.sqlite'), schema([])))), Result).
+% → Automatically creates: component(session('my-project'), has(db(sqlite)), ...)
+
+% Export session for backup
+magic_cast(conjure(session(export(id('my-project'), path('/tmp/backup.tar.gz')))), Result).
+
+% Import session to restore
+magic_cast(conjure(session(import(path('/tmp/backup.tar.gz')))), Result).
+```
+
 ## Testing Patterns
 
 ### File-Based Test Entities
@@ -330,12 +446,37 @@ cleanup_test_repo :-
 **Setup/Cleanup Rules:**
 - ✅ Create/delete directories and files
 - ✅ Run `process_create(path(git), ...)`
+- ✅ Create session entities for session tests
 - ❌ NEVER `assertz(component(...))`
 - ❌ NEVER `retract(entity(...))`
 
 **Tests use `user:` prefix:**
 - Inside `begin_tests(...) ... end_tests(...)` blocks: `user:please_verify(...)`, `user:magic_cast(...)`
 - Outside test blocks: no `user:` prefix
+
+### Testing Sessions
+
+```prolog
+% Setup can create test sessions
+setup_test_session :-
+    TestSessionId = test_session_xyz,
+    magic_cast(conjure(session(create(id(TestSessionId)))), _).
+
+cleanup_test_session :-
+    TestSessionId = test_session_xyz,
+    magic_cast(conjure(session(delete(id(TestSessionId)))), _).
+
+test(session_persistence, [
+    setup(setup_test_session),
+    cleanup(cleanup_test_session)
+]) :-
+    % Test that session-persistent spells work
+    user:magic_cast(conjure(session(switch(id(test_session_xyz)))), _),
+    user:magic_cast(conjure(db(create(file('/tmp/test.db'), schema([])))), Result),
+    Result = ok(_),
+    % Verify component was persisted
+    user:please_verify(component(session(test_session_xyz), has(db(sqlite)), _)).
+```
 
 ## Critical Implementation Patterns
 
@@ -363,6 +504,26 @@ findall(true, my_predicate(...), Solutions), length(Solutions, N)
 
 # Check for multiple implementations or matches
 # Fix with findall pattern above or cut AFTER validation
+```
+
+### Error Handling in Spells
+
+```prolog
+% ✅ CORRECT - Explicit error returns
+implementation(conjure(git(commit(Message))), Result, (
+    (exists_directory('.git')
+    -> (atom_string(Message, MessageStr),
+        process_create(path(git), ['commit', '-m', MessageStr], []),
+        Result = ok(committed))
+    ;  Result = error(not_a_git_repository))
+)).
+
+% ❌ WRONG - Unhandled exceptions
+implementation(conjure(git(commit(Message))), Result, (
+    atom_string(Message, MessageStr),
+    process_create(path(git), ['commit', '-m', MessageStr], []),  % Throws on error!
+    Result = ok(committed)
+)).
 ```
 
 ## Python Bridge Pattern
@@ -414,6 +575,8 @@ decode_golem_result(PyObj, PrologTerm) :-
 - **NEVER** use `git add .` or `git add -A`
 - **ALWAYS** use `git add -u` or add files individually
 - Use `git mv` instead of `mv` for tracked files
+- Check `git status` before committing
+- Write meaningful commit messages
 
 ## Testing Workflow
 
@@ -470,6 +633,29 @@ cast_impl(conjure(thing(X)), Result) :-
     Result = ok(PyObj).
 ```
 
+### ❌ Anti-Pattern 7: Unclear spell invocation
+```python
+# WRONG - unclear what variables are needed
+perceive("git(status)", {})  # Error: missing Root
+
+# CORRECT - self-documenting
+perceive("git(status(Root))", {"Root": "/path/to/repo"})
+```
+
+### ❌ Anti-Pattern 8: Bypassing session hooks
+```prolog
+% WRONG - modifying session state directly
+append_to_file(SessionSemanticsPath, 'component(...).\n').
+
+% CORRECT - let session_persistent option handle it
+register_spell(
+    conjure(my(spell)),
+    ...,
+    [session_persistent(my_component_type)],  % Auto-saves on success
+    implementation(...)
+).
+```
+
 ## Key Principles
 
 1. **NEVER write `verify/1` manually** - Use `::` operator
@@ -482,6 +668,9 @@ cast_impl(conjure(thing(X)), Result) :-
 8. **Generative (`==>`) expands to multiple components**
 9. **Discriminative (`::`) auto-generates verify clauses**
 10. **All knowledge lives in files, not runtime assertions**
+11. **Spell invocations show variables explicitly** - `"spell(Var1, Var2)"` + args dict
+12. **Sessions provide persistence** - Use `session_persistent` option for stateful spells
+13. **Hooks handle cross-cutting concerns** - Logging, persistence, etc.
 
 ## File Structure
 
@@ -496,12 +685,121 @@ domain/
 
 1. Add DSL schema in `semantics.pl` using `==>` and `::` operators
 2. Add `register_spell/6` for any new spells (implementation inline)
-3. Create file-based test entities in `src/tests/`
-4. Write PLUnit tests using `user:please_verify` and `user:magic_cast`
-5. **NEVER write `verify/1` clauses manually**
+3. Consider if spell needs `session_persistent` option
+4. Create file-based test entities in `src/tests/`
+5. Write PLUnit tests using `user:please_verify` and `user:magic_cast`
+6. **NEVER write `verify/1` clauses manually**
+7. Update MCP/CLI interfaces if adding user-facing features
+
+## Future Features
+
+### Do-Notation (Planned)
+
+See `poc/do_notation_final.pl` for planned monadic spell composition syntax:
+
+```prolog
+% FUTURE: Explicit monadic chaining (NOT YET IMPLEMENTED)
+my_complex_spell(Result) :-
+    do((
+        V1 <- conjure(backend(run)),
+        V2 <- conjure(frontend(run)),
+        some_property(V1, Prop),
+        V3 <- conjure(process(Prop)),
+        Result = ok(V3)
+    )).
+```
+
+**Status:** Proof-of-concept complete, not yet integrated into main codebase.
+
+**Benefits:**
+- Automatic error short-circuiting
+- Clean sequential spell composition
+- Makes spell dependencies explicit
 
 ## Documentation References
 
 - **`README.md`** - User-facing documentation
 - **`DESIGN.md`** - Architectural deep dive
+- **`src/GRIMOIRE.md`** - LLM system instructions for using Grimoire
 - **`overhaul-2/`** - Domain migration plans
+- **`plans/`** - Feature plans and design documents
+- **`poc/`** - Proof-of-concept implementations
+
+## Common Patterns Summary
+
+### Component Patterns
+```prolog
+% External activation (OS → KB)
+component(E, git_branch, Branch) :- ...
+
+% KB verification (KB → OS check)
+component(_, git_root, Root) :: exists_directory(Root).
+
+% KB expansion (KB → KB)
+component(E, has(X), Data) ==> component(E, x_field, Field) :- ...
+```
+
+### Spell Patterns
+```prolog
+% Basic spell
+register_spell(
+    conjure(domain(action)),
+    input(...),
+    output(...),
+    "Docstring",
+    [],  % No options
+    implementation(conjure(domain(action(Args))), Result, (...))
+).
+
+% Session-persistent spell
+register_spell(
+    conjure(domain(action)),
+    input(...),
+    output(...),
+    "Docstring",
+    [session_persistent(component_type)],  % Auto-save results
+    implementation(...)
+).
+```
+
+### Test Patterns
+```prolog
+% File-based test entity
+:- load_entity(semantic(file('@/src/tests/domain_test.pl'))).
+
+test(my_test, [setup(setup_fn), cleanup(cleanup_fn)]) :-
+    user:magic_cast(conjure(domain(action(...))), Result),
+    assertion(Result = ok(_)).
+```
+
+### Invocation Patterns
+```python
+# From Python/MCP
+grimoire.conjure("domain(action(Var1, Var2))", {"Var1": val1, "Var2": val2})
+grimoire.perceive("domain(query(Var))", {"Var": value})
+```
+
+```prolog
+% From Prolog
+magic_cast(conjure(domain(action(val1, val2))), Result).
+magic_cast(perceive(domain(query(value))), Result).
+```
+
+## Debugging Tips
+
+1. **Use `core_dump/1`** to inspect full system state
+2. **Check spell docstrings** with `docstring(SpellCtor)`
+3. **Verify components** with `please_verify(component(...))`
+4. **Trace spell execution** in session activity logs
+5. **Test incrementally** - write tests as you develop
+6. **Use `user:` prefix** in PLUnit test blocks
+7. **Check for choicepoints** - PLUnit will warn you
+
+## Getting Help
+
+When stuck:
+1. Check this document first
+2. Look at existing domain implementations for patterns
+3. Read test files to see usage examples
+4. Examine `src/ecs_kernel.pl` for low-level details
+5. Check `plans/` directory for feature documentation

@@ -325,16 +325,9 @@ class GrimoireCLI:
     def handle_mcp(self, args: argparse.Namespace) -> int:
         """Handle mcp command - start MCP server"""
         try:
-            # Find mcp_server.py
-            api_dir = os.path.join(os.getenv('GRIMOIRE_ROOT', '.'), 'src', 'interface', 'api')
-            mcp_server_path = os.path.join(api_dir, 'mcp_server.py')
-
-            print(f"Starting MCP server from {mcp_server_path}...")
-
-            # Run mcp server using the same Python interpreter as this script
-            cmd = [sys.executable, mcp_server_path] + args.args
-            result = subprocess.run(cmd, cwd=api_dir)
-            return result.returncode
+            # Import and run the MCP server main function
+            from grimoire.mcp import main as mcp_main
+            return mcp_main(args.args) or 0
         except Exception as e:
             print(f"Error starting MCP server: {e}", file=sys.stderr)
             return 1
