@@ -590,15 +590,10 @@ register_spell(
     [],
     implementation(perceive(prove_it(component(Entity, ComponentType, Value))), Result, (
         catch(
-            (prove_component_provenance(component(Entity, ComponentType, Value), Proof),
-             Proof = proof(_, GenBy, Verif),
-             Result = ok(qed(
-                component(Entity, ComponentType, Value),
-                GenBy,
-                Verif
-             ))),
-            Error,
-            Result = error(sus(Error))
+            (prove_it(component(Entity, ComponentType, Value), Proof),
+             Result = ok(Proof)),
+            error(sus(Reason), _Context),
+            Result = error(sus(Reason))
         )
     ))
 ).

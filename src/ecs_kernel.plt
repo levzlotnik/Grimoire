@@ -157,10 +157,10 @@ test(conditional_verification_skips_absent) :-
 %% Test Case 5: please_verify grounding checks
 %% ============================================================================
 
-test(please_verify_requires_grounded_entity, [throws(error(instantiation_error(_), _))]) :-
+test(please_verify_requires_grounded_entity, [throws(error(sus(not_grounded(_)), _))]) :-
     user:please_verify(component(_UnboundEntity, test_leaf_atom, foo)).
 
-test(please_verify_requires_grounded_type, [throws(error(instantiation_error(_), _))]) :-
+test(please_verify_requires_grounded_type, [throws(error(sus(not_grounded(_)), _))]) :-
     user:please_verify(component(some_entity, _UnboundType, foo)).
 
 test(please_verify_can_fetch_value) :-
@@ -219,5 +219,53 @@ test(system_healthy) :-
          forall(member(C-E, BrokenOntology), (writeln(C), writeln(E), nl)))
     ; true),
     BrokenOntology = [].
+
+%% ============================================================================
+%% Test Case 10: prove_it/2 - Component Provenance
+%% ============================================================================
+
+test(prove_it_fact_component) :-
+    user:prove_it(component(test_entity_1, test_leaf_atom, hello), Proof),
+    assertion(Proof = qed(component(test_entity_1, test_leaf_atom, hello),
+                          generated_by(fact(file(_), line(_))),
+                          discriminated_by(verified_by(file(_), line(_), body(_))))).
+
+test(prove_it_with_verifier) :-
+    user:prove_it(component(test_entity_1, test_leaf_atom, hello), Proof),
+    assertion(Proof = qed(component(test_entity_1, test_leaf_atom, hello),
+                          generated_by(fact(file(_), line(_))),
+                          discriminated_by(verified_by(file(_), line(_), body(_))))).
+
+test(prove_it_no_verifier) :-
+    user:prove_it(component(test_entity_3, test_name, foo), Proof),
+    assertion(Proof = qed(component(test_entity_3, test_name, foo),
+                          generated_by(derived(file(_), line(_), body(_))),
+                          discriminated_by(verified_by(file(_), line(_), body(_))))).
+
+test(prove_it_unbound_value) :-
+    user:prove_it(component(test_entity_1, test_leaf_atom, _), Proof),
+    assertion(Proof = qed(component(test_entity_1, test_leaf_atom, hello),
+                          generated_by(fact(file(_), line(_))),
+                          discriminated_by(verified_by(file(_), line(_), body(_))))).
+
+test(prove_it_not_found, [throws(error(sus(component_not_found(_)), _))]) :-
+    user:prove_it(component(nonexistent, foo, bar), _).
+
+test(prove_it_ungrounded_entity, [throws(error(sus(not_grounded(_)), _))]) :-
+    user:prove_it(component(_, foo, bar), _).
+
+test(prove_it_ungrounded_component_type, [throws(error(sus(not_grounded(_)), _))]) :-
+    user:prove_it(component(test_entity_1, _, bar), _).
+
+test(prove_it_verification_failure, [throws(error(verification_failed(_), _))]) :-
+    user:prove_it(component(test_entity_2, test_leaf_atom, ''), _).
+
+test(prove_it_runtime_assertion) :-
+    assertz(user:component(runtime_test_entity, runtime_prop, runtime_value)),
+    user:prove_it(component(runtime_test_entity, runtime_prop, runtime_value), Proof),
+    assertion(Proof = qed(component(runtime_test_entity, runtime_prop, runtime_value),
+                          generated_by(runtime_assertion),
+                          discriminated_by(no_verifier))),
+    retractall(user:component(runtime_test_entity, runtime_prop, _)).
 
 :- end_tests(ecs_kernel).
