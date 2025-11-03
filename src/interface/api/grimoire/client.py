@@ -329,31 +329,67 @@ class Grimoire:
         term = PrologTerm.from_dict(result['PyResult'])
         return output_type.from_prolog(term)
 
+    def _resolve_entity(self, entity: Optional[str]) -> str:
+        """
+        Resolve entity from optional parameter.
+
+        If entity is provided, return it.
+        If entity is None, query focused entity from session.
+        If no focus set, default to 'system'.
+
+        Args:
+            entity: Optional entity name
+
+        Returns:
+            Resolved entity name
+        """
+        if entity is not None:
+            return entity
+
+        # Try to get focused entity
+        try:
+            focused_result = self.session_get_focused()
+            if focused_result.is_success:
+                # Extract entity from focused_entity(entity(...), ...)
+                focused_data = focused_result.result
+                if hasattr(focused_data, 'functor') and focused_data.functor == 'focused_entity':
+                    entity_term = focused_data.args[0]
+                    if hasattr(entity_term, 'functor') and entity_term.functor == 'entity':
+                        return str(entity_term.args[0])
+        except:
+            pass
+
+        # Default to system
+        return 'system'
+
     # ========================================================================
     # ECS INTROSPECTION
     # ========================================================================
 
-    def component_types(self, entity: str) -> ComponentTypesResponse:
-        """List all component types for an entity"""
+    def component_types(self, entity: Optional[str] = None) -> ComponentTypesResponse:
+        """List all component types for an entity (defaults to focused entity or 'system')"""
+        resolved_entity = self._resolve_entity(entity)
         return self._magic_cast(
             "perceive(interface(component_types))",
-            {"Entity": entity},
+            {"Entity": resolved_entity},
             ComponentTypesResponse
         )
 
-    def components(self, entity: str, comp_type: str) -> ComponentsResponse:
-        """Get verified components with smart singleton/set detection"""
+    def components(self, entity: Optional[str] = None, comp_type: str = "") -> ComponentsResponse:
+        """Get verified components with smart singleton/set detection (defaults to focused entity or 'system')"""
+        resolved_entity = self._resolve_entity(entity)
         return self._magic_cast(
             "perceive(interface(components))",
-            {"Entity": entity, "Type": comp_type},
+            {"Entity": resolved_entity, "Type": comp_type},
             ComponentsResponse
         )
 
-    def docstring(self, entity: str) -> DocstringResponse:
-        """Get entity docstring"""
+    def docstring(self, entity: Optional[str] = None) -> DocstringResponse:
+        """Get entity docstring (defaults to focused entity or 'system')"""
+        resolved_entity = self._resolve_entity(entity)
         return self._magic_cast(
             "perceive(interface(docstring))",
-            {"Entity": entity},
+            {"Entity": resolved_entity},
             DocstringResponse
         )
 
@@ -449,6 +485,46 @@ class Grimoire:
         return self._magic_cast(
             "conjure(interface(session_import))",
             {"Archive": archive},
+            GenericResponse
+        )
+
+    def session_focus_entity(self, entity: str) -> GenericResponse:
+        """Focus on entity by name"""
+        return self._magic_cast(
+            "conjure(interface(session_focus_entity))",
+            {"Entity": entity},
+            GenericResponse
+        )
+
+    def session_focus_path(self, path: str) -> GenericResponse:
+        """Focus on entity by path"""
+        return self._magic_cast(
+            "conjure(interface(session_focus_path))",
+            {"Path": path},
+            GenericResponse
+        )
+
+    def session_get_focused(self) -> GenericResponse:
+        """Get focused entity with structured information"""
+        return self._magic_cast(
+            "perceive(interface(session_focused))",
+            {},
+            GenericResponse
+        )
+
+    def session_unfocus(self) -> GenericResponse:
+        """Clear focused entity"""
+        return self._magic_cast(
+            "conjure(interface(session_unfocus))",
+            {},
+            GenericResponse
+        )
+
+    def session_status(self) -> GenericResponse:
+        """Get session status including focused entity"""
+        return self._magic_cast(
+            "perceive(interface(session_status))",
+            {},
             GenericResponse
         )
 

@@ -44,8 +44,9 @@ class GrimoireCLI:
 
         # comp command
         comp_parser = subparsers.add_parser('comp', help='List components of specific type')
-        comp_parser.add_argument('entity', help='Entity to query')
         comp_parser.add_argument('comp_type', help='Component type to list')
+        comp_parser.add_argument('-e', '--entity', default=None,
+                                help='Entity to query (default: focused entity or system)')
 
         # doc command
         doc_parser = subparsers.add_parser('doc', help='Show entity documentation')
@@ -113,6 +114,13 @@ class GrimoireCLI:
         # repl command
         subparsers.add_parser('repl', help='Start interactive REPL')
 
+        # focus command
+        focus_parser = subparsers.add_parser('focus', help='Focus on entity or show current focus')
+        focus_parser.add_argument('target', nargs='?', help='Entity name or path to focus on (omit to show current focus)')
+
+        # unfocus command
+        subparsers.add_parser('unfocus', help='Clear focused entity')
+
         # exec command
         exec_parser = subparsers.add_parser('exec', help='Execute arbitrary Prolog query')
         exec_parser.add_argument('query', help='Prolog query to execute')
@@ -132,10 +140,12 @@ class GrimoireCLI:
     def handle_compt(self, args: argparse.Namespace) -> int:
         """Handle compt command - list component types"""
         try:
-            entity = args.entity or 'system'
-            result = self.grimoire.component_types(entity)
+            # Pass entity (could be None) - client will resolve to focused or 'system'
+            result = self.grimoire.component_types(args.entity)
 
-            print(f"{entity} component types:")
+            # Get the resolved entity for display (it's in the client already)
+            entity_display = args.entity if args.entity else "(focused or system)"
+            print(f"{entity_display} component types:")
             for comp_type in result.types:
                 print(f"  {comp_type}")
             return 0
@@ -146,9 +156,11 @@ class GrimoireCLI:
     def handle_comp(self, args: argparse.Namespace) -> int:
         """Handle comp command - list components"""
         try:
+            # Pass entity (could be None) - client will resolve to focused or 'system'
             result = self.grimoire.components(args.entity, args.comp_type)
 
-            print(f"{args.entity} components of type {args.comp_type}:")
+            entity_display = args.entity if args.entity else "(focused or system)"
+            print(f"{entity_display} components of type {args.comp_type}:")
 
             if result.is_unique:
                 print(f"  {result.value}")
@@ -164,10 +176,11 @@ class GrimoireCLI:
     def handle_doc(self, args: argparse.Namespace) -> int:
         """Handle doc command - show documentation"""
         try:
-            entity = args.entity or 'system'
-            result = self.grimoire.docstring(entity)
+            # Pass entity (could be None) - client will resolve to focused or 'system'
+            result = self.grimoire.docstring(args.entity)
 
-            print(f"Documentation for '{entity}':")
+            entity_display = args.entity if args.entity else "(focused or system)"
+            print(f"Documentation for '{entity_display}':")
             print(result.docstring)
             return 0
         except GrimoireError as e:
@@ -189,9 +202,37 @@ class GrimoireCLI:
 
     def handle_status(self, args: argparse.Namespace) -> int:
         """Handle status command - show session status"""
-        print("Error: status command not yet implemented in interface domain", file=sys.stderr)
-        print("Use the Prolog CLI: ./grimoire status", file=sys.stderr)
-        return 1
+        try:
+            result = self.grimoire.session_status()
+            if result.is_success:
+                status = result.result
+                # Pretty-print the structured session status
+                if hasattr(status, 'functor') and status.functor == 'session_status':
+                    session_id = status.args[0].args[0] if hasattr(status.args[0], 'args') else status.args[0]
+                    session_path = status.args[1].args[0] if hasattr(status.args[1], 'args') else status.args[1]
+                    focused_term = status.args[2]
+                    active_term = status.args[3]
+
+                    print(f"Session: {session_id}")
+                    print(f"Path: {session_path}")
+
+                    # Handle focused entity
+                    if hasattr(focused_term, 'functor') and focused_term.functor == 'entity':
+                        focused_entity = focused_term.args[0]
+                        print(f"Focused: {focused_entity}")
+                    else:
+                        print("Focused: none")
+
+                    print(f"Active: {active_term}")
+                else:
+                    print(result.result)
+            else:
+                print(f"Error: {result.error}", file=sys.stderr)
+                return 1
+            return 0
+        except GrimoireError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            return 1
 
     def handle_test(self, args: argparse.Namespace) -> int:
         """Handle test command - run tests"""
@@ -338,6 +379,80 @@ class GrimoireCLI:
         print("Please use the Prolog CLI: ./grimoire repl", file=sys.stderr)
         return 1
 
+    def handle_focus(self, args: argparse.Namespace) -> int:
+        """Handle focus command - focus on entity or show current focus"""
+        try:
+            # No target - show current focus
+            if not args.target:
+                result = self.grimoire.session_get_focused()
+                if result.is_success:
+                    focused = result.result
+                    # Pretty-print the structured output
+                    if hasattr(focused, 'functor') and focused.functor == 'focused_entity':
+                        entity_term = focused.args[0]
+                        loc_term = focused.args[1]
+                        key_comps_term = focused.args[2]
+
+                        entity_name = str(entity_term.args[0]) if hasattr(entity_term, 'args') else str(entity_term)
+                        print(f"Focused on: {entity_name}")
+
+                        if hasattr(loc_term, 'args') and loc_term.args:
+                            print(f"Location: {loc_term.args[0]}")
+
+                        if hasattr(key_comps_term, 'args') and key_comps_term.args:
+                            comps = key_comps_term.args[0] if key_comps_term.args else []
+                            if comps and hasattr(comps, '__iter__'):
+                                print(f"Key components: {', '.join(str(c) for c in comps)}")
+                    else:
+                        print(result.result)
+                else:
+                    print("No entity focused")
+                return 0
+
+            # Has target - set focus
+            target = args.target
+
+            # Detect if target is a path (contains / or is .)
+            if '/' in target or target == '.':
+                # Resolve to absolute path
+                import os
+                abs_path = os.path.abspath(target)
+                result = self.grimoire.session_focus_path(abs_path)
+            else:
+                # Treat as entity name
+                result = self.grimoire.session_focus_entity(target)
+
+            if result.is_success:
+                focused = result.result
+                if hasattr(focused, 'functor') and focused.functor == 'focused':
+                    entity_term = focused.args[0]
+                    entity_name = str(entity_term.args[0]) if hasattr(entity_term, 'args') else str(entity_term)
+                    print(f"Focused on: {entity_name}")
+                else:
+                    print(result.result)
+            else:
+                print(f"Error: {result.error}", file=sys.stderr)
+                return 1
+
+            return 0
+        except GrimoireError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            return 1
+
+    def handle_unfocus(self, args: argparse.Namespace) -> int:
+        """Handle unfocus command - clear focused entity"""
+        try:
+            result = self.grimoire.session_unfocus()
+            if result.is_success:
+                print("Focus cleared")
+            else:
+                print(f"Error: {result.error}", file=sys.stderr)
+                return 1
+            return 0
+        except GrimoireError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            return 1
+
     def handle_exec(self, args: argparse.Namespace) -> int:
         """Handle exec command - execute arbitrary Prolog query"""
         try:
@@ -399,6 +514,8 @@ class GrimoireCLI:
             'serve': self.handle_serve,
             'mcp': self.handle_mcp,
             'repl': self.handle_repl,
+            'focus': self.handle_focus,
+            'unfocus': self.handle_unfocus,
             'exec': self.handle_exec,
             'read_file': self.handle_read_file,
             'edit_file': self.handle_edit_file,

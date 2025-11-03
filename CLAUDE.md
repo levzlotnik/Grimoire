@@ -64,6 +64,117 @@ verify(component(_E, db_sqlite_file, File)) :-
     exists_file(FileStr).
 ```
 
+## Critical: Exception vs Error Result Semantics
+
+**Understanding when to throw vs when to return error results is ESSENTIAL:**
+
+### `prove_it` and `please_verify` - Can Throw
+
+```prolog
+% prove_it/2 - Returns proof OR throws
+prove_it(component(E, C, V), Proof) :-
+    % Either succeeds with: Proof = qed(component(...), generated_by(...), discriminated_by(...))
+    % OR throws with: sus(...)
+
+% please_verify/1 - Like prove_it but discards proof on success
+please_verify(component(E, C, V)) :-
+    % Either succeeds (proof discarded)
+    % OR throws exception
+```
+
+**When to use:**
+- Use in predicate bodies when you need validation
+- Throwing indicates a verification failure that should propagate
+
+### `magic_cast` - Returns ok(...) or error(...)
+
+```prolog
+% magic_cast/2 - Returns structured result
+magic_cast(SpellTerm, Result) :-
+    % Result = ok(...)     - Spell succeeded
+    % Result = error(...)  - Spell failed at runtime
+    % Throws ONLY if SpellTerm is invalid (not a registered spell)
+```
+
+**Spell implementation rules based on output signature:**
+
+```prolog
+% ✅ CORRECT - output(ok(...)) guaranteed to succeed, NEVER throws
+register_spell(
+    conjure(some(guaranteed_operation)),
+    input(some(guaranteed_operation(data('Data')))),
+    output(ok(result('Result'))),  % ← NO either = guaranteed success
+    "Operation that always succeeds",
+    [],
+    implementation(conjure(some(guaranteed_operation(data(Data)))), Result, (
+        % Process data - no error conditions
+        process_data(Data, ProcessedResult),
+        Result = ok(result(ProcessedResult))  % ✅ Always returns ok
+    ))
+).
+
+% ✅ CORRECT - output(either(...)) can fail, returns error instead of throwing
+register_spell(
+    conjure(session(create)),
+    input(session(create(id('SessionId')))),
+    output(either(                                                  % ← either = can fail
+        ok(session(id('SessionId'), path('Path'))),
+        error(session_error('Reason'))
+    )),
+    "Create a new session",
+    [],
+    implementation(conjure(session(create(id(SessionId)))), Result, (
+        (exists_directory(SessionPath)
+        -> Result = error(session_error(session_already_exists(SessionId)))  % ✅ Return error
+        ; (make_directory(SessionPath),
+           Result = ok(session(id(SessionId), path(SessionPath)))))
+    ))
+).
+
+% ✅ CORRECT - output(either(ok(...), error(...))) MUST return error, NOT throw
+register_spell(
+    conjure(session(focus_entity)),
+    input(session(focus_entity(entity('Entity')))),
+    output(either(                                               % ← either means return error
+        ok(focused(entity('Entity'))),
+        error(focus_error('Reason'))
+    )),
+    "Focus on entity by name",
+    [],
+    implementation(conjure(session(focus_entity(entity(Entity)))), Result, (
+        (entity(Entity)
+        -> (append_component_to_session_file(...),
+            Result = ok(focused(entity(Entity))))
+        ; Result = error(focus_error(entity_not_found(Entity))))  % ✅ Return error
+    ))
+).
+
+% ❌ WRONG - output has either but implementation throws
+register_spell(
+    conjure(session(focus_entity)),
+    input(session(focus_entity(entity('Entity')))),
+    output(either(ok(...), error(...))),  % ← Says it returns error
+    "Focus on entity",
+    [],
+    implementation(conjure(session(focus_entity(entity(Entity)))), Result, (
+        (entity(Entity)
+        -> true
+        ; throw(error(entity_not_found(Entity), ...))),  % ❌ Should return error(...) instead
+        Result = ok(...)
+    ))
+).
+```
+
+**Rule:**
+- If `output(ok(...))` - Spell is **guaranteed to succeed**, implementation NEVER throws, ALWAYS returns `ok(...)`
+- If `output(either(ok(...), error(...)))` - Spell can fail, implementation returns `ok(...)` or `error(...)`, NEVER throws
+
+**Why this matters:**
+- `output(ok(...))` is a contract: "This operation is infallible"
+- `output(either(...))` is a contract: "I handle errors gracefully and return structured results"
+- Clients can pattern match on `ok`/`error` without try-catch
+- **ALL spells must NEVER throw** - they either always succeed or return error results
+
 ## Declarative Component DSL
 
 ### Operators

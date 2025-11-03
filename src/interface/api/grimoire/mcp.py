@@ -36,8 +36,8 @@ def _model_to_string(model: Any) -> str:
 
 
 @mcp.tool()
-def component_types(entity: str = "system") -> str:
-    """List all component types for an entity"""
+def component_types(entity: Optional[str] = None) -> str:
+    """List all component types for an entity (defaults to focused entity or 'system')"""
     try:
         result = grimoire.component_types(entity)
         return _model_to_string(result)
@@ -46,8 +46,8 @@ def component_types(entity: str = "system") -> str:
 
 
 @mcp.tool()
-def components(entity: str, component_type: str) -> str:
-    """Get verified components with smart singleton/set detection"""
+def components(component_type: str, entity: Optional[str] = None) -> str:
+    """Get verified components with smart singleton/set detection (defaults to focused entity or 'system')"""
     try:
         result = grimoire.components(entity, component_type)
         return _model_to_string(result)
@@ -56,8 +56,8 @@ def components(entity: str, component_type: str) -> str:
 
 
 @mcp.tool()
-def docstring(entity: str = "system") -> str:
-    """Get entity docstring"""
+def docstring(entity: Optional[str] = None) -> str:
+    """Get entity docstring (defaults to focused entity or 'system')"""
     try:
         result = grimoire.docstring(entity)
         return result.docstring
@@ -186,6 +186,56 @@ def exec_query(query_str: str) -> str:
     try:
         solutions = grimoire.exec(query_str)
         return yaml.dump({"solutions": solutions}, default_flow_style=False)
+    except GrimoireError as e:
+        return f"Error: {e}"
+
+
+@mcp.tool()
+def focus_entity(entity: str) -> str:
+    """Focus on an entity by name for subsequent operations"""
+    try:
+        result = grimoire.session_focus_entity(entity)
+        return _model_to_string(result)
+    except GrimoireError as e:
+        return f"Error: {e}"
+
+
+@mcp.tool()
+def focus_path(path: str) -> str:
+    """Focus on an entity by path (looks up entity via self component)"""
+    try:
+        result = grimoire.session_focus_path(path)
+        return _model_to_string(result)
+    except GrimoireError as e:
+        return f"Error: {e}"
+
+
+@mcp.tool()
+def get_focused() -> str:
+    """Get currently focused entity with structured information"""
+    try:
+        result = grimoire.session_get_focused()
+        return _model_to_string(result)
+    except GrimoireError as e:
+        return f"Error: {e}"
+
+
+@mcp.tool()
+def unfocus() -> str:
+    """Clear focused entity"""
+    try:
+        result = grimoire.session_unfocus()
+        return _model_to_string(result)
+    except GrimoireError as e:
+        return f"Error: {e}"
+
+
+@mcp.tool()
+def session_status() -> str:
+    """Get session status including focused entity"""
+    try:
+        result = grimoire.session_status()
+        return _model_to_string(result)
     except GrimoireError as e:
         return f"Error: {e}"
 

@@ -270,6 +270,61 @@ register_spell(
     ))
 ).
 
+register_spell(
+    conjure(interface(session_focus_entity)),
+    input(interface(session_focus_entity(entity('Entity')))),
+    output('FocusResult'),
+    "Focus on entity by name (delegates to session domain)",
+    [],
+    implementation(conjure(interface(session_focus_entity(entity(EntityValue)))), Result, (
+        magic_cast(conjure(session(focus_entity(entity(EntityValue)))), Result)
+    ))
+).
+
+register_spell(
+    conjure(interface(session_focus_path)),
+    input(interface(session_focus_path(path('Path')))),
+    output('FocusResult'),
+    "Focus on entity by path (delegates to session domain)",
+    [],
+    implementation(conjure(interface(session_focus_path(path(PathValue)))), Result, (
+        magic_cast(conjure(session(focus_path(path(PathValue)))), Result)
+    ))
+).
+
+register_spell(
+    perceive(interface(session_focused)),
+    input(interface(session_focused)),
+    output('FocusedResult'),
+    "Get focused entity with structured information (delegates to session domain)",
+    [],
+    implementation(perceive(interface(session_focused)), Result, (
+        magic_cast(perceive(session(focused)), Result)
+    ))
+).
+
+register_spell(
+    conjure(interface(session_unfocus)),
+    input(interface(session_unfocus)),
+    output('UnfocusResult'),
+    "Clear focused entity (delegates to session domain)",
+    [],
+    implementation(conjure(interface(session_unfocus)), Result, (
+        magic_cast(conjure(session(unfocus)), Result)
+    ))
+).
+
+register_spell(
+    perceive(interface(session_status)),
+    input(interface(session_status)),
+    output('StatusResult'),
+    "Get session status including focused entity (delegates to session domain)",
+    [],
+    implementation(perceive(interface(session_status)), Result, (
+        magic_cast(perceive(session(status)), Result)
+    ))
+).
+
 %% ============================================================================
 %% INTERFACE OPERATIONS - META-INTROSPECTION
 %% ============================================================================

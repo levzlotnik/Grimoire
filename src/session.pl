@@ -143,7 +143,10 @@ persist_if_session_persistent(_, _).  % Catch-all for non-ok results
 register_spell(
     conjure(session(create)),
     input(session(create(id('SessionId')))),
-    output(ok(session(id('SessionId'), path('Path')))),
+    output(either(
+        ok(session(id('SessionId'), path('Path'))),
+        error(session_error('Reason'))
+    )),
     "Create a new session directory and initialize empty state",
     [],
     implementation(conjure(session(create(id(SessionId)))), Result, (
@@ -153,30 +156,27 @@ register_spell(
 
         % Check if session already exists
         (exists_directory(SessionPath)
-        -> throw(error(session_already_exists(SessionId),
-                      context(session(create), 'Session directory already exists')))
-        ; true),
+        -> Result = error(session_error(session_already_exists(SessionId)))
+        ; (% Create session directory
+           make_directory(SessionPath),
 
-        % Create session directory
-        make_directory(SessionPath),
+           % Initialize semantics.pl with self_entity directive
+           atomic_list_concat([SessionPath, '/semantics.pl'], SemanticsPath),
+           format(string(InitialContent),
+               ":- self_entity(session('~w')).~n~n", [SessionId]),
+           open(SemanticsPath, write, SemStream),
+           write(SemStream, InitialContent),
+           close(SemStream),
 
-        % Initialize semantics.pl with self_entity directive
-        atomic_list_concat([SessionPath, '/semantics.pl'], SemanticsPath),
-        format(string(InitialContent),
-            ":- self_entity(session('~w')).~n~n", [SessionId]),
-        open(SemanticsPath, write, SemStream),
-        write(SemStream, InitialContent),
-        close(SemStream),
+           % Initialize activity_log.jsonl (empty file)
+           atomic_list_concat([SessionPath, '/activity_log.jsonl'], LogPath),
+           open(LogPath, write, LogStream),
+           close(LogStream),
 
-        % Initialize activity_log.jsonl (empty file)
-        atomic_list_concat([SessionPath, '/activity_log.jsonl'], LogPath),
-        open(LogPath, write, LogStream),
-        close(LogStream),
+           % Load the session semantics file to activate the session entity
+           load_entity(semantic(file(SemanticsPath))),
 
-        % Load the session semantics file to activate the session entity
-        load_entity(semantic(file(SemanticsPath))),
-
-        Result = ok(session(id(SessionId), path(SessionPath)))
+           Result = ok(session(id(SessionId), path(SessionPath)))))
     ))
 ).
 
@@ -184,7 +184,10 @@ register_spell(
 register_spell(
     conjure(session(switch)),
     input(session(switch(id('SessionId')))),
-    output(ok(session(switched(id('SessionId'))))),
+    output(either(
+        ok(session(switched(id('SessionId')))),
+        error(session_error('Reason'))
+    )),
     "Switch the active CLI session, unloading old session and loading new one",
     [],
     implementation(conjure(session(switch(id(SessionId)))), Result, (
@@ -194,31 +197,28 @@ register_spell(
 
         % Verify target session directory exists
         (exists_directory(SessionPath)
-        -> true
-        ; throw(error(session_not_found(SessionId),
-                     context(session(switch), 'Session directory does not exist')))),
+        -> (% Get target session semantics path
+            atomic_list_concat([SessionPath, '/semantics.pl'], NewSemanticsPath),
 
-        % Get target session semantics path
-        atomic_list_concat([SessionPath, '/semantics.pl'], NewSemanticsPath),
+            % Unload old session if one is active
+            (current_session_id(OldSessionId)
+            -> (component(session(OldSessionId), self, OldSessionSemantic)
+               -> unload_entity(OldSessionSemantic)
+               ; true)
+            ; true),
 
-        % Unload old session if one is active
-        (current_session_id(OldSessionId)
-        -> (component(session(OldSessionId), self, OldSessionSemantic)
-           -> unload_entity(OldSessionSemantic)
-           ; true)
-        ; true),
+            % Load new session
+            load_entity(semantic(file(NewSemanticsPath))),
 
-        % Load new session
-        load_entity(semantic(file(NewSemanticsPath))),
+            % Update cli-session file
+            atomic_list_concat([DataPath, '/cli-session'], CliSessionPath),
+            atom_string(SessionId, SessionIdStr),
+            open(CliSessionPath, write, Stream),
+            write(Stream, SessionIdStr),
+            close(Stream),
 
-        % Update cli-session file
-        atomic_list_concat([DataPath, '/cli-session'], CliSessionPath),
-        atom_string(SessionId, SessionIdStr),
-        open(CliSessionPath, write, Stream),
-        write(Stream, SessionIdStr),
-        close(Stream),
-
-        Result = ok(session(switched(id(SessionId))))
+            Result = ok(session(switched(id(SessionId)))))
+        ; Result = error(session_error(session_not_found(SessionId))))
     ))
 ).
 
@@ -226,7 +226,10 @@ register_spell(
 register_spell(
     conjure(session(delete)),
     input(session(delete(id('SessionId')))),
-    output(ok(session(deleted(id('SessionId'))))),
+    output(either(
+        ok(session(deleted(id('SessionId')))),
+        error(session_error('Reason'))
+    )),
     "Delete a session directory and all its data, unloading from KB first",
     [],
     implementation(conjure(session(delete(id(SessionId)))), Result, (
@@ -236,27 +239,24 @@ register_spell(
 
         % Verify session exists
         (exists_directory(SessionPath)
-        -> true
-        ; throw(error(session_not_found(SessionId),
-                     context(session(delete), 'Session directory does not exist')))),
+        -> (% Unload session if loaded
+            (component(session(SessionId), self, SessionSemantic)
+            -> unload_entity(SessionSemantic)
+            ; true),
 
-        % Unload session if loaded
-        (component(session(SessionId), self, SessionSemantic)
-        -> unload_entity(SessionSemantic)
-        ; true),
+            % If this is the active session, clear cli-session file
+            (current_session_id(ActiveId)
+            -> (SessionId = ActiveId
+               -> (atomic_list_concat([DataPath, '/cli-session'], CliSessionPath),
+                   (exists_file(CliSessionPath) -> delete_file(CliSessionPath) ; true))
+               ; true)
+            ; true),
 
-        % If this is the active session, clear cli-session file
-        (current_session_id(ActiveId)
-        -> (SessionId = ActiveId
-           -> (atomic_list_concat([DataPath, '/cli-session'], CliSessionPath),
-               (exists_file(CliSessionPath) -> delete_file(CliSessionPath) ; true))
-           ; true)
-        ; true),
+            % Delete directory
+            delete_directory_and_contents(SessionPath),
 
-        % Delete directory
-        delete_directory_and_contents(SessionPath),
-
-        Result = ok(session(deleted(id(SessionId))))
+            Result = ok(session(deleted(id(SessionId)))))
+        ; Result = error(session_error(session_not_found(SessionId))))
     ))
 ).
 
@@ -264,7 +264,10 @@ register_spell(
 register_spell(
     conjure(session(export)),
     input(session(export(id('SessionId'), destination('DestPath')))),
-    output(ok(session(exported(archive('ArchivePath'))))),
+    output(either(
+        ok(session(exported(archive('ArchivePath')))),
+        error(session_error('Reason'))
+    )),
     "Export session to tar.gz archive",
     [],
     implementation(conjure(session(export(id(SessionId), destination(DestPath)))), Result, (
@@ -274,27 +277,21 @@ register_spell(
 
         % Verify session exists
         (exists_directory(SessionDir)
-        -> true
-        ; throw(error(session_not_found(SessionId),
-                     context(session(export), 'Session directory does not exist')))),
+        -> (% Verify destination exists
+            (exists_directory(DestPath)
+            -> (% Create archive path
+                atomic_list_concat([DestPath, '/session-', SessionId, '.tar.gz'], ArchivePath),
 
-        % Verify destination exists
-        (exists_directory(DestPath)
-        -> true
-        ; throw(error(destination_not_found(DestPath),
-                     context(session(export), 'Destination directory does not exist')))),
+                % Get parent directory and folder name
+                file_directory_name(SessionDir, ParentDir),
+                file_base_name(SessionDir, FolderName),
 
-        % Create archive path
-        atomic_list_concat([DestPath, '/session-', SessionId, '.tar.gz'], ArchivePath),
+                % Create tar.gz archive
+                process_create(path(tar), ['-czf', ArchivePath, '-C', ParentDir, FolderName], []),
 
-        % Get parent directory and folder name
-        file_directory_name(SessionDir, ParentDir),
-        file_base_name(SessionDir, FolderName),
-
-        % Create tar.gz archive
-        process_create(path(tar), ['-czf', ArchivePath, '-C', ParentDir, FolderName], []),
-
-        Result = ok(session(exported(archive(ArchivePath))))
+                Result = ok(session(exported(archive(ArchivePath)))))
+            ; Result = error(session_error(destination_not_found(DestPath)))))
+        ; Result = error(session_error(session_not_found(SessionId))))
     ))
 ).
 
@@ -302,7 +299,10 @@ register_spell(
 register_spell(
     conjure(session(import)),
     input(session(import(archive('ArchivePath')))),
-    output(ok(session(imported(id('SessionId'))))),
+    output(either(
+        ok(session(imported(id('SessionId')))),
+        error(session_error('Reason'))
+    )),
     "Unpack session archive into sessions directory",
     [],
     implementation(conjure(session(import(archive(ArchivePath)))), Result, (
@@ -311,31 +311,27 @@ register_spell(
 
         % Verify archive exists
         (exists_file(ArchivePath)
-        -> true
-        ; throw(error(archive_not_found(ArchivePath),
-                     context(session(import), 'Archive file does not exist')))),
+        -> (% Extract session ID from archive filename
+            file_base_name(ArchivePath, ArchiveName),
+            atom_string(ArchiveName, ArchiveStr),
+            (re_matchsub("session-(?<id>[^.]+)", ArchiveStr, Match, [])
+            -> (get_dict(id, Match, SessionIdStr),
+                atom_string(SessionId, SessionIdStr),
 
-        % Extract session ID from archive filename
-        file_base_name(ArchivePath, ArchiveName),
-        atom_string(ArchiveName, ArchiveStr),
-        (re_matchsub("session-(?<id>[^.]+)", ArchiveStr, Match, [])
-        -> get_dict(id, Match, SessionIdStr),
-           atom_string(SessionId, SessionIdStr)
-        ; throw(error(invalid_archive_name(ArchivePath),
-                     context(session(import), 'Archive must be named session-{ID}.tar.gz')))),
+                % Extract archive
+                process_create(path(tar), ['-xzf', ArchivePath, '-C', DataPath], []),
 
-        % Extract archive
-        process_create(path(tar), ['-xzf', ArchivePath, '-C', DataPath], []),
+                % Load the imported session's semantics.pl
+                atomic_list_concat([DataPath, '/session-', SessionId], SessionPath),
+                atomic_list_concat([SessionPath, '/semantics.pl'], SemanticsPath),
+                load_entity(semantic(file(SemanticsPath))),
 
-        % Load the imported session's semantics.pl
-        atomic_list_concat([DataPath, '/session-', SessionId], SessionPath),
-        atomic_list_concat([SessionPath, '/semantics.pl'], SemanticsPath),
-        load_entity(semantic(file(SemanticsPath))),
+                % Verify it was imported correctly
+                please_verify(component(session(SessionId), session_directory, _)),
 
-        % Verify it was imported correctly
-        please_verify(component(session(SessionId), session_directory, _)),
-
-        Result = ok(session(imported(id(SessionId))))
+                Result = ok(session(imported(id(SessionId)))))
+            ; Result = error(session_error(invalid_archive_name(ArchivePath)))))
+        ; Result = error(session_error(archive_not_found(ArchivePath))))
     ))
 ).
 
@@ -343,25 +339,25 @@ register_spell(
 register_spell(
     conjure(session(load_entity)),
     input(session(load_entity(semantic('Semantic')))),
-    output(ok(semantic('Semantic'))),
+    output(either(
+        ok(semantic('Semantic')),
+        error(session_error('Reason'))
+    )),
     "Load an entity into the session and track it for auto-loading on boot",
     [],
     implementation(conjure(session(load_entity(semantic(Semantic)))), Result, (
-        % Must have an active session
+        % Check for active session
         (current_session_id(SessionId)
-        -> true
-        ; throw(error(no_active_session,
-                     context(session(load_entity), 'No active session')))),
+        -> (% Load the entity
+            load_entity(semantic(Semantic)),
 
-        % Load the entity
-        load_entity(semantic(Semantic)),
+            % Append to semantics.pl and reload
+            component(session(SessionId), session_semantics_path, SemanticsPath),
+            append_component_to_session_file(SemanticsPath,
+                component(session(SessionId), has(loaded_entity), semantic(Semantic))),
 
-        % Append to semantics.pl and reload
-        component(session(SessionId), session_semantics_path, SemanticsPath),
-        append_component_to_session_file(SemanticsPath,
-            component(session(SessionId), has(loaded_entity), semantic(Semantic))),
-
-        Result = ok(semantic(Semantic))
+            Result = ok(semantic(Semantic)))
+        ; Result = error(session_error(no_active_session)))
     ))
 ).
 
@@ -369,25 +365,181 @@ register_spell(
 register_spell(
     conjure(session(unload_entity)),
     input(session(unload_entity(semantic('Semantic')))),
-    output(ok(unloaded(semantic('Semantic')))),
+    output(either(
+        ok(unloaded(semantic('Semantic'))),
+        error(session_error('Reason'))
+    )),
     "Unload an entity from the session and remove tracking",
     [],
     implementation(conjure(session(unload_entity(semantic(Semantic)))), Result, (
-        % Must have an active session
+        % Check for active session
         (current_session_id(SessionId)
-        -> true
-        ; throw(error(no_active_session,
-                     context(session(unload_entity), 'No active session')))),
+        -> (% Unload the entity
+            unload_entity(semantic(Semantic)),
 
-        % Unload the entity
-        unload_entity(semantic(Semantic)),
+            % Remove from semantics.pl and reload
+            component(session(SessionId), session_semantics_path, SemanticsPath),
+            remove_component_from_session_file(SemanticsPath,
+                component(session(SessionId), has(loaded_entity), semantic(Semantic))),
 
-        % Remove from semantics.pl and reload
-        component(session(SessionId), session_semantics_path, SemanticsPath),
-        remove_component_from_session_file(SemanticsPath,
-            component(session(SessionId), has(loaded_entity), semantic(Semantic))),
+            Result = ok(unloaded(semantic(Semantic))))
+        ; Result = error(session_error(no_active_session)))
+    ))
+).
 
-        Result = ok(unloaded(semantic(Semantic)))
+% Focus on entity by name
+register_spell(
+    conjure(session(focus_entity)),
+    input(session(focus_entity(entity('Entity')))),
+    output(either(
+        ok(focused(entity('Entity'))),
+        error(focus_error('Reason'))
+    )),
+    "Set focused entity for current session by entity name",
+    [],
+    implementation(conjure(session(focus_entity(entity(Entity)))), Result, (
+        % Check for active session
+        (current_session_id(SessionId)
+        -> (% Verify entity exists
+            (entity(Entity)
+            -> (% Get session semantics path
+                component(session(SessionId), session_semantics_path, SemanticsPath),
+
+                % Remove old focus if exists
+                (component(session(SessionId), focused_entity, _OldEntity)
+                -> remove_component_from_session_file(SemanticsPath,
+                       component(session(SessionId), focused_entity, _))
+                ; true),
+
+                % Set new focus
+                append_component_to_session_file(SemanticsPath,
+                    component(session(SessionId), focused_entity, Entity)),
+
+                Result = ok(focused(entity(Entity))))
+            ; Result = error(focus_error(entity_not_found(Entity)))))
+        ; Result = error(focus_error(no_active_session)))
+    ))
+).
+
+% Focus on entity by path
+register_spell(
+    conjure(session(focus_path)),
+    input(session(focus_path(path('Path')))),
+    output(either(
+        ok(focused(entity('Entity'))),
+        error(focus_error('Reason'))
+    )),
+    "Set focused entity for current session by path lookup via self component",
+    [],
+    implementation(conjure(session(focus_path(path(Path)))), Result, (
+        % Check for active session
+        (current_session_id(SessionId)
+        -> (% Convert to absolute path
+            absolute_file_name(Path, AbsPath),
+
+            % Find entity with matching self component
+            findall(E, component(E, self, semantic(folder(AbsPath))), Matches),
+            (Matches = []
+            -> Result = error(focus_error(no_entity_for_path(AbsPath)))
+            ; Matches = [Entity]
+            -> (% Get session semantics path
+                component(session(SessionId), session_semantics_path, SemanticsPath),
+
+                % Remove old focus if exists
+                (component(session(SessionId), focused_entity, _OldEntity)
+                -> remove_component_from_session_file(SemanticsPath,
+                       component(session(SessionId), focused_entity, _))
+                ; true),
+
+                % Set new focus
+                append_component_to_session_file(SemanticsPath,
+                    component(session(SessionId), focused_entity, Entity)),
+
+                Result = ok(focused(entity(Entity))))
+            ; Result = error(focus_error(ambiguous_entities(Matches)))))
+        ; Result = error(focus_error(no_active_session)))
+    ))
+).
+
+% Get focused entity with structured info
+register_spell(
+    perceive(session(focused)),
+    input(session(focused)),
+    output(either(
+        ok(focused_entity(entity('Entity'), loc('Location'), key_comps('KeyComps'))),
+        error(no_entity_focused)
+    )),
+    "Get currently focused entity with structured information",
+    [],
+    implementation(perceive(session(focused)), Result, (
+        % Check for active session
+        (current_session_id(SessionId)
+        -> (% Get focused entity
+            (component(session(SessionId), focused_entity, Entity)
+            -> (% Get entity location via self component
+                (component(Entity, self, Location)
+                -> true
+                ; Location = unknown),
+
+                % Collect key has(...) components
+                findall(has(Domain), component(Entity, has(Domain), _), KeyComps),
+
+                Result = ok(focused_entity(entity(Entity), loc(Location), key_comps(KeyComps))))
+            ; Result = error(no_entity_focused)))
+        ; Result = error(no_entity_focused))
+    ))
+).
+
+% Clear focused entity
+register_spell(
+    conjure(session(unfocus)),
+    input(session(unfocus)),
+    output(either(
+        ok(unfocused),
+        error(session_error('Reason'))
+    )),
+    "Clear focused entity for current session",
+    [],
+    implementation(conjure(session(unfocus)), Result, (
+        % Check for active session
+        (current_session_id(SessionId)
+        -> (% Get session semantics path
+            component(session(SessionId), session_semantics_path, SemanticsPath),
+
+            % Remove focus if exists
+            (component(session(SessionId), focused_entity, _)
+            -> remove_component_from_session_file(SemanticsPath,
+                   component(session(SessionId), focused_entity, _))
+            ; true),
+
+            Result = ok(unfocused))
+        ; Result = error(session_error(no_active_session)))
+    ))
+).
+
+% Get session status with focused entity info
+register_spell(
+    perceive(session(status)),
+    input(session(status)),
+    output(ok(session_status(id('SessionId'), path('Path'), focused('Focused'), active('Active')))),
+    "Get current session status including focused entity",
+    [],
+    implementation(perceive(session(status)), Result, (
+        % Get active session ID
+        (current_session_id(SessionId)
+        -> Active = true
+        ; (SessionId = none, Active = false)),
+
+        % Get session path if active
+        (Active = true
+        -> (component(session(SessionId), session_directory, SessionPath),
+            % Get focused entity if exists
+            (component(session(SessionId), focused_entity, FocusedEntity)
+            -> Focused = entity(FocusedEntity)
+            ; Focused = none))
+        ; (SessionPath = none, Focused = none)),
+
+        Result = ok(session_status(id(SessionId), path(SessionPath), focused(Focused), active(Active)))
     ))
 ).
 
@@ -395,40 +547,40 @@ register_spell(
 register_spell(
     perceive(session(history)),
     input(session(history(options('Options')))),
-    output(ok(history(commands('Commands')))),
+    output(either(
+        ok(history(commands('Commands'))),
+        error(session_error('Reason'))
+    )),
     "Get command history from activity log",
     [],
     implementation(perceive(session(history(options(Options)))), Result, (
-        % Must have an active session
+        % Check for active session
         (current_session_id(SessionId)
-        -> true
-        ; throw(error(no_active_session,
-                     context(session(history), 'No active session')))),
+        -> (% Get activity log path
+            component(session(SessionId), session_activity_log_path, LogPath),
 
-        % Get activity log path
-        component(session(SessionId), session_activity_log_path, LogPath),
+            % Parse options
+            (member(limit(Limit), Options) -> true ; Limit = 10),
 
-        % Parse options
-        (member(limit(Limit), Options) -> true ; Limit = 10),
+            % Read and parse JSONL
+            (exists_file(LogPath)
+            -> read_file_to_string(LogPath, LogContent, [])
+            ; LogContent = ""),
 
-        % Read and parse JSONL
-        (exists_file(LogPath)
-        -> read_file_to_string(LogPath, LogContent, [])
-        ; LogContent = ""),
+            split_string(LogContent, "\n", "", AllLines),
+            exclude(=(""), AllLines, Lines),
 
-        split_string(LogContent, "\n", "", AllLines),
-        exclude(=(""), AllLines, Lines),
+            % Take last N lines
+            reverse(Lines, ReversedLines),
+            length(ReversedLines, TotalLines),
+            ActualLimit is min(Limit, TotalLines),
+            (ActualLimit > 0
+            -> (length(LimitedLines, ActualLimit),
+                append(LimitedLines, _, ReversedLines),
+                reverse(LimitedLines, Commands))
+            ; Commands = []),
 
-        % Take last N lines
-        reverse(Lines, ReversedLines),
-        length(ReversedLines, TotalLines),
-        ActualLimit is min(Limit, TotalLines),
-        (ActualLimit > 0
-        -> (length(LimitedLines, ActualLimit),
-            append(LimitedLines, _, ReversedLines),
-            reverse(LimitedLines, Commands))
-        ; Commands = []),
-
-        Result = ok(history(commands(Commands)))
+            Result = ok(history(commands(Commands))))
+        ; Result = error(session_error(no_active_session)))
     ))
 ).

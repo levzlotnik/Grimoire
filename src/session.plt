@@ -277,4 +277,230 @@ test(session_unload_entity_works, [
     user:magic_cast(conjure(session(delete(id(SessionId)))), DeleteResult),
     assertion(DeleteResult = ok(session(deleted(id(SessionId))))).
 
+test(session_focus_entity_by_name, [
+    setup(setup_grimoire_data),
+    cleanup(cleanup_grimoire_data)
+]) :-
+    % Create a test entity
+    TestSemanticFile = '/tmp/test_focus_entity.pl',
+    open(TestSemanticFile, write, Stream),
+    write(Stream, ':- self_entity(test_focus_entity).\n'),
+    write(Stream, 'entity(test_focus_entity).\n'),
+    close(Stream),
+    load_entity(semantic(file(TestSemanticFile))),
+
+    % Create a session
+    SessionId = test_session_focus_entity,
+    user:magic_cast(conjure(session(create(id(SessionId)))), CreateResult),
+    assertion(CreateResult = ok(session(id(SessionId), path(_)))),
+    user:magic_cast(conjure(session(switch(id(SessionId)))), SwitchResult),
+    assertion(SwitchResult = ok(session(switched(id(SessionId))))),
+
+    % Focus on test entity
+    user:magic_cast(conjure(session(focus_entity(entity(test_focus_entity)))), FocusResult),
+    assertion(FocusResult = ok(focused(entity(test_focus_entity)))),
+
+    % Verify focus was persisted to session
+    user:please_verify(component(session(SessionId), focused_entity, test_focus_entity)),
+
+    % Cleanup
+    user:magic_cast(conjure(session(delete(id(SessionId)))), DeleteResult),
+    assertion(DeleteResult = ok(session(deleted(id(SessionId))))),
+    unload_entity(semantic(file(TestSemanticFile))),
+    delete_file(TestSemanticFile).
+
+test(session_focus_by_path, [
+    setup(setup_grimoire_data),
+    cleanup(cleanup_grimoire_data)
+]) :-
+    % Create a session
+    SessionId = test_session_focus_path,
+    user:magic_cast(conjure(session(create(id(SessionId)))), CreateResult),
+    assertion(CreateResult = ok(session(id(SessionId), path(_)))),
+    user:magic_cast(conjure(session(switch(id(SessionId)))), SwitchResult),
+    assertion(SwitchResult = ok(session(switched(id(SessionId))))),
+
+    % Create a test directory and entity with self component
+    TestDir = '/tmp/test_focus_path_dir',
+    (exists_directory(TestDir) -> delete_directory_and_contents(TestDir) ; true),
+    make_directory(TestDir),
+
+    TestSemanticFile = '/tmp/test_focus_path_entity.pl',
+    open(TestSemanticFile, write, Stream),
+    write(Stream, ':- self_entity(test_focus_path_entity).\n'),
+    write(Stream, 'entity(test_focus_path_entity).\n'),
+    format(Stream, 'component(test_focus_path_entity, self, semantic(folder(\'~w\'))).\n', [TestDir]),
+    close(Stream),
+
+    % Load the test entity
+    load_entity(semantic(file(TestSemanticFile))),
+
+    % Focus by path
+    user:magic_cast(conjure(session(focus_path(path(TestDir)))), FocusResult),
+    assertion(FocusResult = ok(focused(entity(test_focus_path_entity)))),
+
+    % Verify focus was persisted
+    user:component(session(SessionId), focused_entity, FocusedEntity),
+    assertion(FocusedEntity = test_focus_path_entity),
+
+    % Cleanup
+    unload_entity(semantic(file(TestSemanticFile))),
+    delete_file(TestSemanticFile),
+    delete_directory_and_contents(TestDir),
+    user:magic_cast(conjure(session(delete(id(SessionId)))), DeleteResult),
+    assertion(DeleteResult = ok(session(deleted(id(SessionId))))).
+
+test(session_get_focused_structured_output, [
+    setup(setup_grimoire_data),
+    cleanup(cleanup_grimoire_data)
+]) :-
+    % Create a test entity
+    TestSemanticFile = '/tmp/test_get_focused_entity.pl',
+    open(TestSemanticFile, write, Stream),
+    write(Stream, ':- self_entity(test_get_focused_entity).\n'),
+    write(Stream, 'entity(test_get_focused_entity).\n'),
+    close(Stream),
+    load_entity(semantic(file(TestSemanticFile))),
+
+    % Create a session
+    SessionId = test_session_get_focused,
+    user:magic_cast(conjure(session(create(id(SessionId)))), CreateResult),
+    assertion(CreateResult = ok(session(id(SessionId), path(_)))),
+    user:magic_cast(conjure(session(switch(id(SessionId)))), SwitchResult),
+    assertion(SwitchResult = ok(session(switched(id(SessionId))))),
+
+    % Focus on test entity
+    user:magic_cast(conjure(session(focus_entity(entity(test_get_focused_entity)))), FocusResult),
+    assertion(FocusResult = ok(focused(entity(test_get_focused_entity)))),
+
+    % Get focused entity with structured output
+    user:magic_cast(perceive(session(focused)), GetFocusedResult),
+    GetFocusedResult = ok(focused_entity(entity(test_get_focused_entity), loc(_Location), key_comps(_KeyComps))),
+
+    % Cleanup
+    user:magic_cast(conjure(session(delete(id(SessionId)))), DeleteResult),
+    assertion(DeleteResult = ok(session(deleted(id(SessionId))))),
+    unload_entity(semantic(file(TestSemanticFile))),
+    delete_file(TestSemanticFile).
+
+test(session_unfocus, [
+    setup(setup_grimoire_data),
+    cleanup(cleanup_grimoire_data)
+]) :-
+    % Create a test entity
+    TestSemanticFile = '/tmp/test_unfocus_entity.pl',
+    open(TestSemanticFile, write, Stream),
+    write(Stream, ':- self_entity(test_unfocus_entity).\n'),
+    write(Stream, 'entity(test_unfocus_entity).\n'),
+    close(Stream),
+    load_entity(semantic(file(TestSemanticFile))),
+
+    % Create a session
+    SessionId = test_session_unfocus,
+    user:magic_cast(conjure(session(create(id(SessionId)))), CreateResult),
+    assertion(CreateResult = ok(session(id(SessionId), path(_)))),
+    user:magic_cast(conjure(session(switch(id(SessionId)))), SwitchResult),
+    assertion(SwitchResult = ok(session(switched(id(SessionId))))),
+
+    % Focus on test entity
+    user:magic_cast(conjure(session(focus_entity(entity(test_unfocus_entity)))), FocusResult),
+    assertion(FocusResult = ok(focused(entity(test_unfocus_entity)))),
+
+    % Verify focus exists
+    user:component(session(SessionId), focused_entity, test_unfocus_entity),
+
+    % Unfocus
+    user:magic_cast(conjure(session(unfocus)), UnfocusResult),
+    assertion(UnfocusResult = ok(unfocused)),
+
+    % Verify focus was removed
+    \+ user:component(session(SessionId), focused_entity, _),
+
+    % Cleanup
+    user:magic_cast(conjure(session(delete(id(SessionId)))), DeleteResult),
+    assertion(DeleteResult = ok(session(deleted(id(SessionId))))),
+    unload_entity(semantic(file(TestSemanticFile))),
+    delete_file(TestSemanticFile).
+
+test(session_status_shows_focused_entity, [
+    setup(setup_grimoire_data),
+    cleanup(cleanup_grimoire_data)
+]) :-
+    % Create a test entity
+    TestSemanticFile = '/tmp/test_status_entity.pl',
+    open(TestSemanticFile, write, Stream),
+    write(Stream, ':- self_entity(test_status_entity).\n'),
+    write(Stream, 'entity(test_status_entity).\n'),
+    close(Stream),
+    load_entity(semantic(file(TestSemanticFile))),
+
+    % Create a session
+    SessionId = test_session_status_focused,
+    user:magic_cast(conjure(session(create(id(SessionId)))), CreateResult),
+    assertion(CreateResult = ok(session(id(SessionId), path(_)))),
+    user:magic_cast(conjure(session(switch(id(SessionId)))), SwitchResult),
+    assertion(SwitchResult = ok(session(switched(id(SessionId))))),
+
+    % Get status with no focus
+    user:magic_cast(perceive(session(status)), StatusResult1),
+    StatusResult1 = ok(session_status(id(SessionId), path(_), focused(none), active(true))),
+
+    % Focus on test entity
+    user:magic_cast(conjure(session(focus_entity(entity(test_status_entity)))), FocusResult),
+    assertion(FocusResult = ok(focused(entity(test_status_entity)))),
+
+    % Get status with focus
+    user:magic_cast(perceive(session(status)), StatusResult2),
+    StatusResult2 = ok(session_status(id(SessionId), path(_), focused(entity(test_status_entity)), active(true))),
+
+    % Cleanup
+    user:magic_cast(conjure(session(delete(id(SessionId)))), DeleteResult),
+    assertion(DeleteResult = ok(session(deleted(id(SessionId))))),
+    unload_entity(semantic(file(TestSemanticFile))),
+    delete_file(TestSemanticFile).
+
+test(session_focus_nonexistent_entity_fails, [
+    setup(setup_grimoire_data),
+    cleanup(cleanup_grimoire_data)
+]) :-
+    % Create a session
+    SessionId = test_session_focus_error,
+    user:magic_cast(conjure(session(create(id(SessionId)))), CreateResult),
+    assertion(CreateResult = ok(session(id(SessionId), path(_)))),
+    user:magic_cast(conjure(session(switch(id(SessionId)))), SwitchResult),
+    assertion(SwitchResult = ok(session(switched(id(SessionId))))),
+
+    % Try to focus on nonexistent entity - should return error
+    user:magic_cast(conjure(session(focus_entity(entity(nonexistent_entity_xyz)))), FocusResult),
+    assertion(FocusResult = error(focus_error(entity_not_found(nonexistent_entity_xyz)))),
+
+    % Cleanup
+    user:magic_cast(conjure(session(delete(id(SessionId)))), DeleteResult),
+    assertion(DeleteResult = ok(session(deleted(id(SessionId))))).
+
+test(session_focus_path_no_entity_fails, [
+    setup(setup_grimoire_data),
+    cleanup(cleanup_grimoire_data)
+]) :-
+    % Create a session
+    SessionId = test_session_focus_path_error,
+    user:magic_cast(conjure(session(create(id(SessionId)))), CreateResult),
+    assertion(CreateResult = ok(session(id(SessionId), path(_)))),
+    user:magic_cast(conjure(session(switch(id(SessionId)))), SwitchResult),
+    assertion(SwitchResult = ok(session(switched(id(SessionId))))),
+
+    % Create a directory with no entity
+    TestDir = '/tmp/test_no_entity_dir',
+    (exists_directory(TestDir) -> delete_directory_and_contents(TestDir) ; true),
+    make_directory(TestDir),
+
+    % Try to focus by path - should return error
+    user:magic_cast(conjure(session(focus_path(path(TestDir)))), FocusResult),
+    assertion(FocusResult = error(focus_error(no_entity_for_path(TestDir)))),
+
+    % Cleanup
+    delete_directory_and_contents(TestDir),
+    user:magic_cast(conjure(session(delete(id(SessionId)))), DeleteResult),
+    assertion(DeleteResult = ok(session(deleted(id(SessionId))))).
+
 :- end_tests(session).
