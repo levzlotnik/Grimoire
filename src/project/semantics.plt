@@ -170,6 +170,152 @@ test(spell_project_structure, [
     user:magic_cast(perceive(project(structure(test_web_app))), Result),
     assertion(Result = ok(project_info(type(web_service), sources(_), contexts(_)))).
 
+% === PROJECT INIT TESTS ===
+
+% Test basic init without any infrastructure
+test(init_basic_no_infrastructure, [
+    setup(setup_test_init_dir),
+    cleanup(cleanup_test_init_dir)
+]) :-
+    TestDir = '/tmp/grimoire_test_init',
+
+    % Run init
+    user:magic_cast(conjure(project(init(folder(TestDir), options([])))), Result),
+
+    % Check result is success
+    assertion(Result = ok(initialized(entity(project(_)), path(TestDir), detected([]), skills(_)))),
+
+    % Verify files were created
+    directory_file_path(TestDir, 'semantics.pl', SemanticsPath),
+    directory_file_path(TestDir, 'semantics.plt', TestPath),
+    assertion(exists_file(SemanticsPath)),
+    assertion(exists_file(TestPath)),
+
+    % Cleanup Grimoire-tracked session
+    user:magic_cast(conjure(session(delete(id(default)))), DeleteResult),
+    assertion(DeleteResult = ok(_)).
+
+% Test init with git repository
+test(init_with_git) :-
+    TestDir = '/tmp/grimoire_test_init_git',
+    (exists_directory(TestDir) ->
+        delete_directory_and_contents(TestDir), format('Deleted existing test dir ~w~n', [TestDir]) ;
+        true),
+    make_directory(TestDir),
+    format('Created test dir ~w~n', [TestDir]),
+
+    % Initialize git repo
+    user:magic_cast(conjure(git(init(path(TestDir)))), ResultGit),
+    format('Initialized git repo in ~w~n    Result: ~q~n', [TestDir, ResultGit]),
+    assertion(ResultGit = ok(_OkGit)),
+
+    % Run init
+    user:magic_cast(conjure(project(init(folder(TestDir), options([])))), Result),
+    format('Ran project init in ~w~n    Result: ~q~n', [TestDir, Result]),
+
+    % Check git was detected
+    assertion(Result = ok(initialized(entity(_Entity), path(_Path), detected(Features), skills(_Skills)))),
+    assertion(member(git, Features)),
+
+    % Verify .gitignore was updated
+    directory_file_path(TestDir, '.gitignore', GitignorePath),
+    assertion(exists_file(GitignorePath)),
+    read_file_to_string(GitignorePath, GitignoreContent, []),
+    assertion(sub_string(GitignoreContent, _, _, _, 'activity_log.jsonl')),
+
+    % Cleanup Grimoire-tracked session
+    user:magic_cast(conjure(session(delete(id(default)))), DeleteResult),
+    assertion(DeleteResult = ok(_)).
+
+% Test init fails when semantics.pl exists without force
+test(init_fails_existing_semantics, [
+    setup(setup_test_init_dir)
+    % cleanup(cleanup_test_init_dir)
+]) :-
+    TestDir = '/tmp/grimoire_test_init',
+
+    % Create existing semantics.pl
+    directory_file_path(TestDir, 'semantics.pl', SemanticsPath),
+    open(SemanticsPath, write, Stream),
+    write(Stream, '% existing file\n'),
+    close(Stream),
+
+    % Run init without force - should fail
+    user:magic_cast(conjure(project(init(folder(TestDir), options([])))), Result),
+
+    assertion(Result = error(_)).
+
+% Test init with force option overwrites existing
+test(init_force_overwrites) :-
+    TestDir = '/tmp/grimoire_test_init_force',
+    (exists_directory(TestDir) -> delete_directory_and_contents(TestDir) ; true),
+    make_directory(TestDir),
+
+    % Create existing semantics.pl
+    directory_file_path(TestDir, 'semantics.pl', SemanticsPath),
+    open(SemanticsPath, write, Stream),
+    write(Stream, '% existing file\n'),
+    close(Stream),
+
+    % Run init with force - should succeed
+    user:magic_cast(conjure(project(init(folder(TestDir), options([force])))), Result),
+
+    assertion(Result = ok(initialized(_, _, _, _))),
+
+    % Verify new content was written
+    read_file_to_string(SemanticsPath, NewContent, []),
+    assertion(sub_string(NewContent, _, _, _, 'self_entity')),
+
+    % Cleanup Grimoire-tracked session
+    user:magic_cast(conjure(session(delete(id(default)))), DeleteResult),
+    assertion(DeleteResult = ok(_)).
+
+% Test entity name sanitization
+test(init_sanitizes_entity_name, [
+    setup((
+        TestDir = '/tmp/grimoire-test-CAPS',
+        (exists_directory(TestDir) -> delete_directory_and_contents(TestDir) ; true),
+        make_directory(TestDir)
+    )),
+    cleanup((
+        TestDir = '/tmp/grimoire-test-CAPS',
+        (exists_directory(TestDir) -> delete_directory_and_contents(TestDir) ; true)
+    ))
+]) :-
+    TestDir = '/tmp/grimoire-test-CAPS',
+
+    % Run init
+    user:magic_cast(conjure(project(init(folder(TestDir), options([])))), Result),
+
+    % Entity name should be sanitized: grimoire-test-CAPS -> grimoire_test_caps
+    Result = ok(initialized(entity(project(EntityName)), _, _, _)),
+    assertion(EntityName = grimoire_test_caps),
+
+    % Cleanup Grimoire-tracked session
+    user:magic_cast(conjure(session(delete(id(default)))), DeleteResult),
+    assertion(DeleteResult = ok(_)).
+
+% Test session creation and focus
+test(init_creates_default_session) :-
+    TestDir = '/tmp/grimoire_test_init_session',
+    (exists_directory(TestDir) -> delete_directory_and_contents(TestDir) ; true),
+    make_directory(TestDir),
+
+    % Run init
+    user:magic_cast(conjure(project(init(folder(TestDir), options([])))), Result),
+    assertion(Result = ok(initialized(entity(Entity), _, _, _))),
+
+    % Verify default session exists and entity is focused
+    user:magic_cast(perceive(session(status)), StatusResult),
+    assertion(StatusResult = ok(session_status(id(default), _, focused(entity(Entity)), active(true)))),
+
+    user:magic_cast(perceive(session(focused)), FocusResult),
+    assertion(FocusResult = ok(focused_entity(entity(Entity), _, _))),
+
+    % Cleanup default session
+    user:magic_cast(conjure(session(delete(id(default)))), DeleteResult),
+    assertion(DeleteResult = ok(_)).
+
 :- end_tests(project).
 
 % === SETUP/CLEANUP HELPERS ===
@@ -250,3 +396,14 @@ delete_if_exists(Dir) :-
     (exists_directory(Dir) ->
         delete_directory_and_contents(Dir)
     ; true).
+
+% Helper to create and cleanup test directory for init tests
+setup_test_init_dir :-
+    TestDir = '/tmp/grimoire_test_init',
+    (exists_directory(TestDir) -> delete_directory_and_contents(TestDir) ; true),
+    make_directory(TestDir).
+
+cleanup_test_init_dir :-
+    TestDir = '/tmp/grimoire_test_init',
+    (exists_directory(TestDir) -> delete_directory_and_contents(TestDir) ; true).
+

@@ -503,4 +503,106 @@ test(session_focus_path_no_entity_fails, [
     user:magic_cast(conjure(session(delete(id(SessionId)))), DeleteResult),
     assertion(DeleteResult = ok(session(deleted(id(SessionId))))).
 
+test(session_activity_log_empty, [
+    setup(setup_grimoire_data),
+    cleanup(cleanup_grimoire_data)
+]) :-
+    % Create a session
+    SessionId = test_activity_empty,
+    user:magic_cast(conjure(session(create(id(SessionId)))), CreateResult),
+    assertion(CreateResult = ok(_)),
+    user:magic_cast(conjure(session(switch(id(SessionId)))), SwitchResult),
+    assertion(SwitchResult = ok(_)),
+
+    % Get activity log - should only have switch (which was just performed)
+    user:magic_cast(perceive(session(activity_log)), ActivityResult),
+    assertion(ActivityResult = ok(activity_log([spell_activity(conjure(session), 1)]))),
+
+    % Cleanup
+    user:magic_cast(conjure(session(delete(id(SessionId)))), DeleteResult),
+    assertion(DeleteResult = ok(_)).
+
+test(session_activity_log_counts_spells, [
+    setup(setup_grimoire_data),
+    cleanup(cleanup_grimoire_data)
+]) :-
+    % Create a session with some activity
+    SessionId = test_activity_counts,
+    user:magic_cast(conjure(session(create(id(SessionId)))), CreateResult),
+    assertion(CreateResult = ok(_)),
+    user:magic_cast(conjure(session(switch(id(SessionId)))), SwitchResult),
+    assertion(SwitchResult = ok(_)),
+
+    % Perform some spells that will be logged
+    user:magic_cast(perceive(interface(entities)), R1),
+    assertion(R1 = ok(_)),
+    user:magic_cast(perceive(interface(entities)), R2),
+    assertion(R2 = ok(_)),
+    user:magic_cast(perceive(interface(entities)), R3),
+    assertion(R3 = ok(_)),
+
+    % Get activity log - should have counts
+    user:magic_cast(perceive(session(activity_log)), ok(activity_log(Activities))),
+    assertion(Activities \= []),
+
+    % Verify we have multiple spell types logged
+    % Should have: 1 conjure(session) for switch, 3+ perceive(interface) for entities
+    member(spell_activity(perceive(interface), PerceiveCount), Activities),
+    assertion(PerceiveCount >= 3),
+
+    % Cleanup
+    user:magic_cast(conjure(session(delete(id(SessionId)))), DeleteResult),
+    assertion(DeleteResult = ok(_)).
+
+test(session_context_no_focused_entity, [
+    setup(setup_grimoire_data),
+    cleanup(cleanup_grimoire_data)
+]) :-
+    % Create a session without focusing
+    SessionId = test_context_no_focus,
+    user:magic_cast(conjure(session(create(id(SessionId)))), CreateResult),
+    assertion(CreateResult = ok(_)),
+    user:magic_cast(conjure(session(switch(id(SessionId)))), SwitchResult),
+    assertion(SwitchResult = ok(_)),
+
+    % Get context - should have no focused entity
+    user:magic_cast(perceive(session(context)), ContextResult),
+    assertion(ContextResult = ok(session(SessionId), focused(none, components_values([])), common_activity(_))),
+
+    % Cleanup
+    user:magic_cast(conjure(session(delete(id(SessionId)))), DeleteResult),
+    assertion(DeleteResult = ok(_)).
+
+test(session_context_with_focused_entity, [
+    setup(setup_grimoire_data),
+    cleanup(cleanup_grimoire_data)
+]) :-
+    % Create a test entity
+    TestSemanticFile = '/tmp/test_context_entity.pl',
+    open(TestSemanticFile, write, Stream),
+    write(Stream, ':- self_entity(test_context_entity).\n'),
+    write(Stream, 'entity(test_context_entity).\n'),
+    write(Stream, 'component(test_context_entity, test_comp, test_value).\n'),
+    close(Stream),
+    load_entity(semantic(file(TestSemanticFile))),
+
+    % Create session and focus on entity
+    SessionId = test_context_focus,
+    user:magic_cast(conjure(session(create(id(SessionId)))), CreateResult),
+    assertion(CreateResult = ok(_)),
+    user:magic_cast(conjure(session(switch(id(SessionId)))), SwitchResult),
+    assertion(SwitchResult = ok(_)),
+    user:magic_cast(conjure(session(focus_entity(entity(test_context_entity)))), FocusResult),
+    assertion(FocusResult = ok(_)),
+
+    % Get context - should have focused entity with components
+    user:magic_cast(perceive(session(context)), ok(session(SessionId), focused(entity(test_context_entity), components_values(ComponentValues)), common_activity(_))),
+    assertion(ComponentValues \= []),
+
+    % Cleanup
+    unload_entity(semantic(file(TestSemanticFile))),
+    delete_file(TestSemanticFile),
+    user:magic_cast(conjure(session(delete(id(SessionId)))), DeleteResult),
+    assertion(DeleteResult = ok(_)).
+
 :- end_tests(session).

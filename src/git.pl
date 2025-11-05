@@ -56,7 +56,19 @@ component(E, has(git(repository)), git(repository(Spec)))
     ==> (component(E, git_repository_remote_name, Name) :- member(remote(Name, _), Spec)),
         (component(E, git_repository_remote_url, URL) :- member(remote(_, URL), Spec)),
         (component(E, git_repository_branch, Branch) :- member(branch(Branch), Spec)),
-        (component(E, git_repository_clean, Clean) :- member(clean(Clean), Spec)).
+        (component(E, git_repository_clean, Clean) :- member(clean(Clean), Spec)),
+        % Skills derived from git repository
+        (component(E, skill(git(push)), SpellTerm) :-
+            member(remote(_, _), Spec),  % Only if remote exists
+            component(E, git_repository_root, Root),
+            SpellTerm = conjure(git(push(git_root(Root))))),
+        (component(E, skill(git(pull)), SpellTerm) :-
+            member(remote(_, _), Spec),  % Only if remote exists
+            component(E, git_repository_root, Root),
+            SpellTerm = conjure(git(pull(git_root(Root))))),
+        (component(E, skill(git(status)), SpellTerm) :-
+            component(E, git_repository_root, Root),
+            SpellTerm = perceive(git(status(git_root(Root))))).
 
 % === EXTERNAL ACTIVATION PATTERNS (Pattern 1: OS Reality → KB) ===
 % ALL component queries use magic_cast(perceive(git(...))) to query git state

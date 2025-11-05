@@ -203,6 +203,31 @@ test(git_repository_working_status_auto_detect, [
     user:please_verify(component(git_complete_test, git_repository_working_status, WorkingStatus)),
     assertion(member(WorkingStatus, [clean, dirty, unknown])).
 
+% === SKILL DERIVATION TESTS ===
+
+test(git_skills_derived_from_repository, [
+    setup(setup_git_skill_test),
+    cleanup(cleanup_git_skill_test)
+]) :-
+    % Check that status skill is derived
+    user:please_verify(component(git_skill_test, skill(git(status)), SpellTerm)),
+    assertion(SpellTerm = perceive(git(status(git_root('/tmp/test_git_skills'))))),
+    % Check pull skill is NOT derived (no remote)
+    \+ component(git_skill_test, skill(git(pull)), _),
+    % Check push skill is NOT derived (no remote)
+    \+ component(git_skill_test, skill(git(push)), _).
+
+test(git_skills_with_remote, [
+    setup(setup_git_skill_with_remote_test),
+    cleanup(cleanup_git_skill_with_remote_test)
+]) :-
+    % Check push skill is derived
+    user:please_verify(component(git_skill_remote_test, skill(git(push)), PushSpell)),
+    assertion(PushSpell = conjure(git(push(git_root('/tmp/test_git_skills_remote'))))),
+    % Check pull skill is derived
+    user:please_verify(component(git_skill_remote_test, skill(git(pull)), PullSpell)),
+    assertion(PullSpell = conjure(git(pull(git_root('/tmp/test_git_skills_remote'))))).
+
 :- end_tests(git).
 
 % === SETUP/CLEANUP HELPERS ===
@@ -401,4 +426,26 @@ setup_git_auto_detect_test :-
 
 cleanup_git_auto_detect_test :-
     TestPath = '/tmp/test_git_complete',
+    (exists_directory(TestPath) -> delete_directory_and_contents(TestPath) ; true).
+
+% Git skill tests setup - ONLY filesystem operations
+setup_git_skill_test :-
+    TestPath = '/tmp/test_git_skills',
+    (exists_directory(TestPath) -> delete_directory_and_contents(TestPath) ; true),
+    make_directory_path(TestPath),
+    user:magic_cast(conjure(git(init(path(TestPath)))), _).
+
+cleanup_git_skill_test :-
+    TestPath = '/tmp/test_git_skills',
+    (exists_directory(TestPath) -> delete_directory_and_contents(TestPath) ; true).
+
+% Git skill with remote setup - ONLY filesystem operations
+setup_git_skill_with_remote_test :-
+    TestPath = '/tmp/test_git_skills_remote',
+    (exists_directory(TestPath) -> delete_directory_and_contents(TestPath) ; true),
+    make_directory_path(TestPath),
+    user:magic_cast(conjure(git(init(path(TestPath)))), _).
+
+cleanup_git_skill_with_remote_test :-
+    TestPath = '/tmp/test_git_skills_remote',
     (exists_directory(TestPath) -> delete_directory_and_contents(TestPath) ; true).

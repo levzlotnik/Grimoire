@@ -830,8 +830,54 @@ register_spell(
 ).
 
 
-% Load core system components - loaded AFTER spell system is defined
-% Phase 2 domains (working)
+% ========================================================================
+% SKILL SYSTEM
+% ========================================================================
+
+% Invoke skill on entity - resolves skill component to spell and casts it
+register_spell(
+    conjure(invoke_skill),
+    input(invoke_skill(entity('Entity'), skill('SkillTerm'))),
+    output(either(
+        ok(skill_result('Result')),
+        error(skill_error('Reason'))
+    )),
+    "Invoke a skill on an entity. Skills are derived from entity components and represent available operations. The skill term is resolved to a spell term which is then cast.",
+    [],
+    implementation(conjure(invoke_skill(entity(Entity), skill(SkillTerm))), Result, (
+        % Skill component should map to a spell term
+        (catch(please_verify(component(Entity, skill(SkillTerm), SpellTerm)), _, fail)
+        -> (magic_cast(SpellTerm, SpellResult),
+            Result = ok(skill_result(SpellResult)))
+        ;  Result = error(skill_error(skill_not_found(Entity, SkillTerm))))
+    ))
+).
+
+% List all skills available on an entity
+register_spell(
+    perceive(skills),
+    input(skills(entity('Entity'))),
+    output(either(
+        ok(skills_list('Skills')),
+        error(skill_error('Reason'))
+    )),
+    "List all available skills for an entity. Skills are operations derived from entity structure (e.g., nix packages become build skills).",
+    [],
+    implementation(perceive(skills(entity(Entity))), Result, (
+        catch(
+            (findall(
+                skill(SkillTerm, SpellTerm),
+                component(Entity, skill(SkillTerm), SpellTerm),
+                Skills
+             ),
+             Result = ok(skills_list(Skills))),
+            Error,
+            Result = error(skill_error(Error))
+        )
+    ))
+).
+
+
 :- load_entity(semantic(file("@/src/git.pl"))).
 :- load_entity(semantic(file("@/src/utils.pl"))).
 :- load_entity(semantic(folder("@/src/nix"))).
@@ -839,7 +885,6 @@ register_spell(
 :- load_entity(semantic(folder("@/src/db"))).
 :- load_entity(semantic(folder("@/src/project"))).
 
-% Phase 3: Session domain (requires db, fs, utils)
 :- load_entity(semantic(file("@/src/session.pl"))).
 
 % Interface domain - Python-Prolog bridge

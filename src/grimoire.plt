@@ -1,6 +1,20 @@
 :- use_module(library(plunit)).
 
 %% ============================================================================
+%% Test Entity with Skills (OUTSIDE test block)
+%% ============================================================================
+
+entity(test_skill_entity).
+component(test_skill_entity, test_data, [foo, bar, baz]).
+
+% Derive test skills from test_data
+component(E, test_data, Data)
+    ==> (component(E, skill(test(item(Item))), SpellTerm) :-
+            member(Item, Data),
+            format(string(Arg), 'test_~w', [Item]),
+            SpellTerm = conjure(test_spell(simple(Arg)))).
+
+%% ============================================================================
 %% Test Spell Registrations (OUTSIDE test block for user module visibility)
 %% ============================================================================
 
@@ -12,8 +26,9 @@ register_spell(
     "Test spell for grimoire.plt verification",
     [],
     implementation(conjure(test_spell(simple(Arg))), Result, (
-        string(Arg),
-        Result = ok(result(Arg))
+        (string(Arg)
+        -> Result = ok(result(Arg))
+        ; Result = error(test_error(invalid_arg_type(Arg))))
     ))
 ).
 
@@ -223,6 +238,34 @@ test(sauce_me_conjure_spell) :-
     % Verify implementation (stored as string)
     assertion(string(ImplText)),
     assertion(sub_string(ImplText, _, _, _, 'implementation')).
+
+%% Skill System Tests
+
+test(skills_perception_empty) :-
+    % Test entity with no skills
+    user:magic_cast(perceive(skills(entity(system))), Result),
+    Result = ok(skills_list(Skills)),
+    assertion(is_list(Skills)).
+
+test(skills_derivation_from_component) :-
+    % Test that skills are derived from test_skill_entity
+    user:magic_cast(perceive(skills(entity(test_skill_entity))), Result),
+    Result = ok(skills_list(Skills)),
+    assertion(is_list(Skills)),
+    assertion(member(skill(test(item(foo)), _), Skills)),
+    assertion(member(skill(test(item(bar)), _), Skills)),
+    assertion(member(skill(test(item(baz)), _), Skills)),
+    assertion(length(Skills, 3)).
+
+test(invoke_skill_executes_spell) :-
+    % Invoke a derived skill and verify it executes the spell
+    user:magic_cast(conjure(invoke_skill(entity(test_skill_entity), skill(test(item(foo))))), Result),
+    assertion(Result == ok(skill_result(ok(result("test_foo"))))).
+
+test(invoke_skill_not_found) :-
+    % Try to invoke nonexistent skill
+    user:magic_cast(conjure(invoke_skill(entity(system), skill(nonexistent(skill)))), Result),
+    assertion(Result == error(skill_error(skill_not_found(system, nonexistent(skill))))).
 
 :- end_tests(grimoire).
 

@@ -88,26 +88,6 @@ test(spell_perceive_core_dump) :-
     assertion(is_list(Ignored)),
     assertion(Broken = []).
 
-% Test round-trip: perceive(core_dump) == perceive(read_core_dump_db) . conjure(core_dump_db)
-test(spell_core_dump_db_roundtrip, [cleanup(cleanup_core_dump_db)]) :-
-    TestDbPath = '/tmp/test_core_dump.db',
-
-    % Step 1: Get core dump
-    user:magic_cast(perceive(core_dump), Result1),
-    Result1 = ok(Dump1),
-    Dump1 = core_dump(verified(_), broken(_), ignored(_)),
-
-    % Step 2: Write to database
-    user:magic_cast(conjure(core_dump_db(db_path(TestDbPath))), WriteResult),
-    assertion(WriteResult = ok(dumped)),
-
-    % Step 3: Read from database
-    user:magic_cast(perceive(read_core_dump_db(db_path(TestDbPath))), ReadResult),
-    ReadResult = ok(Dump2),
-
-    % Step 4: Verify round-trip
-    assertion(Dump1 == Dump2).
-
 % Test round-trip: perceive(core_dump) == perceive(read_core_dump_tsv) . conjure(core_dump_tsv)
 % test(spell_core_dump_tsv_roundtrip, [cleanup(cleanup_core_dump_tsv)]) :-
 test(spell_core_dump_tsv_roundtrip) :-
@@ -170,10 +150,6 @@ setup_hierarchy :-
 cleanup_hierarchy :-
     % No cleanup needed
     true.
-
-cleanup_core_dump_db :-
-    (exists_file('/tmp/test_core_dump.db') -> delete_file('/tmp/test_core_dump.db') ; true),
-    (exists_file('/tmp/test_core_dump.schema.sql') -> delete_file('/tmp/test_core_dump.schema.sql') ; true).
 
 cleanup_core_dump_tsv :-
     (exists_file('/tmp/test_core_dump.tsv') -> delete_file('/tmp/test_core_dump.tsv') ; true).

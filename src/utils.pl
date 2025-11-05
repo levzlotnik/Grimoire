@@ -6,7 +6,6 @@ entity(utils(tree_builder)).
 entity(utils(validator)).
 entity(utils(collection)).
 entity(utils(core_dump)).
-entity(utils(core_dump_db)).
 entity(utils(core_dump_csv)).
 
 % === DOCUMENTATION ===
@@ -255,41 +254,6 @@ register_spell(
     ))
 ).
 
-% Dump core dump to SQLite database
-register_spell(
-    conjure(core_dump_db),
-    input(core_dump_db(db_path('DbPath'))),
-    output(either(ok(dumped), error('SomeDbError'))),
-    "Write current core dump to SQLite database (single table with status column)",
-    [],
-    implementation(conjure(core_dump_db(db_path(DbPath))), Result, (
-        catch(
-            (core_dump(Dump),
-             write_core_dump_to_db(Dump, DbPath),
-             Result = ok(dumped)),
-            Error,
-            Result = error(Error)
-        )
-    ))
-).
-
-% Read core dump from SQLite database
-register_spell(
-    perceive(read_core_dump_db),
-    input(read_core_dump_db(db_path('DbPath'))),
-    output(either(ok(core_dump(verified('VerifiedOntology'), broken('BrokenOntology'), ignored('IgnoredOntology'))), error('SomeDbError'))),
-    "Read core dump from SQLite database",
-    [],
-    implementation(perceive(read_core_dump_db(db_path(DbPath))), Result, (
-        catch(
-            (read_core_dump_from_db(DbPath, Dump),
-             Result = ok(Dump)),
-            Error,
-            Result = error(Error)
-        )
-    ))
-).
-
 % Dump core dump to TSV file
 register_spell(
     conjure(core_dump_tsv),
@@ -326,65 +290,6 @@ register_spell(
 ).
 
 % === CORE DUMP HELPER IMPLEMENTATIONS ===
-
-% Write core dump to database using db spells
-write_core_dump_to_db(core_dump(verified(Verified), broken(Broken), ignored(Ignored)), DbPath) :-
-    % Create database
-    magic_cast(conjure(db(create(file(DbPath), schema(sql("CREATE TABLE dummy (id INTEGER);"))))), CreateResult),
-    (CreateResult = ok(_) -> true ; throw(CreateResult)),
-
-    % Convert to rows: components(E, P, V, ErrorStr, IsIgnored)
-    % Verified: ErrorStr = "", IsIgnored = not_ignored
-    % Broken: ErrorStr = <error>, IsIgnored = not_ignored
-    % Ignored: ErrorStr = <error>, IsIgnored = ignored
-    findall(
-        components(E, P, V, "", not_ignored),
-        member(component(E, P, V), Verified),
-        VerifiedRows
-    ),
-    findall(
-        components(E, P, V, ErrorStr, not_ignored),
-        (member(component(E, P, V)-Error, Broken),
-         term_string(Error, ErrorStr)),
-        BrokenRows
-    ),
-    findall(
-        components(E, P, V, ErrorStr, ignored),
-        (member(component(E, P, V)-Error, Ignored),
-         term_string(Error, ErrorStr)),
-        IgnoredRows
-    ),
-    append([VerifiedRows, BrokenRows, IgnoredRows], AllRows),
-
-    % Write all rows to single table
-    magic_cast(conjure(db(write_table(database(DbPath), table(components), rows(AllRows)))), WriteResult),
-    (WriteResult = ok(_) -> true ; throw(WriteResult)).
-
-% Read core dump from database using db spells
-read_core_dump_from_db(DbPath, core_dump(verified(Verified), broken(Broken), ignored(Ignored))) :-
-    % Read all rows
-    magic_cast(perceive(db(read_table(database(DbPath), table(components)))), ReadResult),
-    (ReadResult = ok(rows(Rows)) -> true ; throw(ReadResult)),
-
-    % Partition by ErrorStr and IsIgnored columns
-    findall(
-        component(E, P, V),
-        member(components(E, P, V, "", not_ignored), Rows),
-        Verified
-    ),
-    findall(
-        component(E, P, V)-Error,
-        (member(components(E, P, V, ErrorStr, not_ignored), Rows),
-         ErrorStr \= "",
-         term_string(Error, ErrorStr)),
-        Broken
-    ),
-    findall(
-        component(E, P, V)-Error,
-        (member(components(E, P, V, ErrorStr, ignored), Rows),
-         term_string(Error, ErrorStr)),
-        Ignored
-    ).
 
 % Write core dump to TSV using library(csv) with tab separator
 write_core_dump_to_tsv(core_dump(verified(Verified), broken(Broken), ignored(Ignored)), TsvPath) :-

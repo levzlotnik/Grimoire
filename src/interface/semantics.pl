@@ -325,6 +325,58 @@ register_spell(
     ))
 ).
 
+register_spell(
+    perceive(interface(session_context)),
+    input(interface(session_context)),
+    output(ok(session('SessionId'), focused('FocusInfo'), common_activity('Activities'))),
+    "Get comprehensive session context for LLM state recovery (delegates to session domain)",
+    [],
+    implementation(perceive(interface(session_context)), Result, (
+        magic_cast(perceive(session(context)), Result)
+    ))
+).
+
+%% ============================================================================
+%% INTERFACE OPERATIONS - SKILL SYSTEM
+%% ============================================================================
+
+register_spell(
+    conjure(interface(invoke_skill)),
+    input(interface(invoke_skill(entity('Entity'), skill('SkillTerm')))),
+    output('SkillResult'),
+    "Invoke a skill on an entity (delegates to invoke_skill spell)",
+    [],
+    implementation(conjure(interface(invoke_skill(entity(EntityValue), skill(SkillTermValue)))), Result, (
+        magic_cast(conjure(invoke_skill(entity(EntityValue), skill(SkillTermValue))), Result)
+    ))
+).
+
+register_spell(
+    perceive(interface(skills)),
+    input(interface(skills(entity('Entity')))),
+    output('SkillsList'),
+    "List all available skills for an entity (delegates to skills perception)",
+    [],
+    implementation(perceive(interface(skills(entity(EntityValue)))), Result, (
+        magic_cast(perceive(skills(entity(EntityValue))), Result)
+    ))
+).
+
+%% ============================================================================
+%% INTERFACE OPERATIONS - PROJECT INITIALIZATION
+%% ============================================================================
+
+register_spell(
+    conjure(interface(init)),
+    input(interface(init(folder('Folder'), options('Options')))),
+    output('InitResult'),
+    "Initialize Grimoire for existing project (delegates to project domain)",
+    [],
+    implementation(conjure(interface(init(folder(Folder), options(Options)))), Result, (
+        magic_cast(conjure(project(init(folder(Folder), options(Options)))), Result)
+    ))
+).
+
 %% ============================================================================
 %% INTERFACE OPERATIONS - META-INTROSPECTION
 %% ============================================================================

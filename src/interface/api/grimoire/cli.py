@@ -39,8 +39,8 @@ class GrimoireCLI:
 
         # compt command
         compt_parser = subparsers.add_parser('compt', help='List component types')
-        compt_parser.add_argument('entity', nargs='?', default=None,
-                                 help='Entity to query (default: current context)')
+        compt_parser.add_argument('-e', '--entity', default=None,
+                                 help='Entity to query (default: focused entity or system)')
 
         # comp command
         comp_parser = subparsers.add_parser('comp', help='List components of specific type')
@@ -50,8 +50,8 @@ class GrimoireCLI:
 
         # doc command
         doc_parser = subparsers.add_parser('doc', help='Show entity documentation')
-        doc_parser.add_argument('entity', nargs='?', default=None,
-                               help='Entity to document (default: current context)')
+        doc_parser.add_argument('-e', '--entity', default=None,
+                               help='Entity to document (default: focused entity or system)')
 
         # entities command
         subparsers.add_parser('entities', help='List all entities in the system')
@@ -89,6 +89,9 @@ class GrimoireCLI:
         session_import_parser = session_subparsers.add_parser('import', help='Import session from archive')
         session_import_parser.add_argument('archive', help='Archive path to import')
 
+        # session context
+        session_context_parser = session_subparsers.add_parser('context', help='Get comprehensive session context')
+
         # conjure command
         conjure_parser = subparsers.add_parser('conjure', help='Cast conjuration spells')
         conjure_parser.add_argument('spell', nargs='?', help='Spell to cast')
@@ -120,6 +123,24 @@ class GrimoireCLI:
 
         # unfocus command
         subparsers.add_parser('unfocus', help='Clear focused entity')
+
+        # init command
+        init_parser = subparsers.add_parser('init', help='Initialize Grimoire for existing project')
+        init_parser.add_argument('path', nargs='?', default='.',
+                                help='Project directory (default: current directory)')
+        init_parser.add_argument('--force', action='store_true',
+                                help='Overwrite existing semantics.pl')
+
+        # do command
+        do_parser = subparsers.add_parser('do', help='Invoke a skill on an entity')
+        do_parser.add_argument('skill_term', help='Skill term to invoke (e.g., "nix(build(hello))")')
+        do_parser.add_argument('-e', '--entity', default=None,
+                              help='Entity to invoke skill on (default: focused entity or system)')
+
+        # skills command
+        skills_parser = subparsers.add_parser('skills', help='List available skills for an entity')
+        skills_parser.add_argument('-e', '--entity', default=None,
+                                  help='Entity to query skills for (default: focused entity or system)')
 
         # exec command
         exec_parser = subparsers.add_parser('exec', help='Execute arbitrary Prolog query')
@@ -255,7 +276,7 @@ class GrimoireCLI:
         """Handle session command - session management"""
         try:
             if not args.session_subcommand:
-                print("Error: session command requires subcommand (create/switch/delete/export/import)", file=sys.stderr)
+                print("Error: session command requires subcommand (create/switch/delete/export/import/context)", file=sys.stderr)
                 return 1
 
             if args.session_subcommand == "create":
@@ -273,6 +294,11 @@ class GrimoireCLI:
             elif args.session_subcommand == "import":
                 result = self.grimoire.session_import(args.archive)
                 print(result.result)
+            elif args.session_subcommand == "context":
+                result = self.grimoire.session_context()
+                # Pretty-print the context result
+                import yaml
+                print(yaml.dump(result.model_dump(), default_flow_style=False, sort_keys=False))
             else:
                 print(f"Error: Unknown session subcommand: {args.session_subcommand}", file=sys.stderr)
                 return 1
@@ -453,6 +479,77 @@ class GrimoireCLI:
             print(f"Error: {e}", file=sys.stderr)
             return 1
 
+    def handle_init(self, args: argparse.Namespace) -> int:
+        """Handle init command - initialize Grimoire for existing project"""
+        try:
+            import os
+            abs_path = os.path.abspath(args.path)
+            options = ['force'] if args.force else []
+
+            result = self.grimoire.conjure(
+                "project(init(folder(Folder), options(Options)))",
+                {"Folder": abs_path, "Options": options}
+            )
+
+            if result.is_success:
+                print(result.result)
+            else:
+                print(f"Error: {result.error}", file=sys.stderr)
+                return 1
+            return 0
+        except GrimoireError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            return 1
+
+    def handle_do(self, args: argparse.Namespace) -> int:
+        """Handle do command - invoke a skill on an entity"""
+        try:
+            result = self.grimoire.do(args.skill_term, args.entity)
+            if result.is_success:
+                print(result.result)
+            else:
+                print(f"Error: {result.error}", file=sys.stderr)
+                return 1
+            return 0
+        except GrimoireError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            return 1
+
+    def handle_skills(self, args: argparse.Namespace) -> int:
+        """Handle skills command - list available skills for an entity"""
+        try:
+            result = self.grimoire.skills(args.entity)
+            if result.is_success:
+                entity_display = args.entity if args.entity else "(focused or system)"
+                print(f"Available skills for {entity_display}:")
+                # Result structure is ok(skills_list([skill(...), ...]))
+                if hasattr(result.result, 'functor') and result.result.functor == 'skill_result':
+                    # Unwrap skill_result from invoke_skill delegation
+                    inner = result.result.args[0]
+                    if hasattr(inner, 'functor') and inner.functor == 'skills_list':
+                        skills = inner.args[0] if inner.args else []
+                        if skills and hasattr(skills, '__iter__'):
+                            for skill in skills:
+                                print(f"  {skill}")
+                        else:
+                            print("  (no skills available)")
+                elif hasattr(result.result, 'functor') and result.result.functor == 'skills_list':
+                    skills = result.result.args[0] if result.result.args else []
+                    if skills and hasattr(skills, '__iter__'):
+                        for skill in skills:
+                            print(f"  {skill}")
+                    else:
+                        print("  (no skills available)")
+                else:
+                    print(result.result)
+            else:
+                print(f"Error: {result.error}", file=sys.stderr)
+                return 1
+            return 0
+        except GrimoireError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            return 1
+
     def handle_exec(self, args: argparse.Namespace) -> int:
         """Handle exec command - execute arbitrary Prolog query"""
         try:
@@ -516,6 +613,9 @@ class GrimoireCLI:
             'repl': self.handle_repl,
             'focus': self.handle_focus,
             'unfocus': self.handle_unfocus,
+            'init': self.handle_init,
+            'do': self.handle_do,
+            'skills': self.handle_skills,
             'exec': self.handle_exec,
             'read_file': self.handle_read_file,
             'edit_file': self.handle_edit_file,

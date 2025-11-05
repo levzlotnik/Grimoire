@@ -133,6 +133,25 @@ register_spell(
     ))
 ).
 
+% Initialize Grimoire integration for existing project
+register_spell(
+    conjure(project(init)),
+    input(project(init(folder('Folder'), options('Options')))),
+    output(either(
+        ok(initialized(entity('Entity'), path('Path'), detected('Features'), skills('Skills'))),
+        error(init_error('Reason'))
+    )),
+    "Initialize Grimoire integration for existing project (non-invasive). Creates semantics.pl/.plt, detects git/nix infrastructure, creates 'default' session, and focuses on entity. Options: [force] to overwrite existing semantics.pl",
+    [],
+    implementation(conjure(project(init(folder(Folder), options(Options)))), Result, (
+        catch(
+            project_init_impl(Folder, Options, Result),
+            Error,
+            Result = error(init_error(Error))
+        )
+    ))
+).
+
 % === HELPER PREDICATES ===
 
 % Main mkproject implementation
@@ -318,3 +337,338 @@ discover_available_templates(Templates) :-
     findall(TemplateId,
             component(nix(flake(template)), instance, nix(flake(template(TemplateId)))),
             Templates).
+
+% === PROJECT INIT IMPLEMENTATION ===
+
+% Main project init implementation
+project_init_impl(Folder, Options, Result) :-
+    % Resolve to absolute path
+    format('Initializing Grimoire project in folder: ~w with options: ~q~n', [Folder, Options]),
+    grimoire_resolve_path(Folder, ResolvedPath),
+    format('Resolved path: ~w~n', [ResolvedPath]),
+    absolute_file_name(ResolvedPath, AbsPath),
+    format('Absolute path: ~w~n', [AbsPath]),
+
+    % Check if directory exists
+    (exists_directory(AbsPath) ->
+        format('Directory exists: ~w~n', [AbsPath]),
+        true
+    ;   throw(error(directory_not_found(AbsPath), project_init_impl/3))
+    ),
+
+    % Check if semantics.pl already exists
+    directory_file_path(AbsPath, 'semantics.pl', SemanticsPath),
+    (exists_file(SemanticsPath) ->
+        format('semantics.pl already exists at: ~w~n', [SemanticsPath]),
+        (member(force, Options) ->
+            format('Overwriting existing semantics.pl due to force option.~n', []),
+            true  % Overwrite allowed
+        ;   throw(error(semantics_already_exists(SemanticsPath), project_init_impl/3))
+        )
+    ;   true, format('No existing semantics.pl found. Proceeding with initialization.~n', [])
+    ),
+
+    % Sanitize directory name to entity name
+    file_base_name(AbsPath, DirName),
+    sanitize_directory_name(DirName, EntityName),
+    format('Sanitized entity name: ~w~n', [EntityName]),
+
+    % Detect infrastructure
+    detect_infrastructure(AbsPath, Features),
+    format('Detected features: ~q~n', [Features]),
+
+    % Generate semantics.pl
+    generate_init_semantics_pl(AbsPath, EntityName, Features),
+    format('Generated `~w/semantics.pl`~n', [AbsPath]),
+
+    % Load entity to trigger expansion
+    load_entity(semantic(folder(AbsPath))),
+    format('Loaded entity: ~w~n', [project(EntityName)]),
+
+    % Query expanded components to get detailed info
+    Entity = project(EntityName),
+    query_expanded_components(Entity, Features, ExpandedInfo),
+    format('Expanded component info: ~q~n', [ExpandedInfo]),
+
+    % Generate semantics.plt with conditional tests
+    generate_init_semantics_plt(AbsPath, EntityName, ExpandedInfo),
+    format('Generated `~w/semantics.plt`~n', [AbsPath]),
+
+    % If git detected, add files to git and update .gitignore
+    (member(git, Features) ->
+        format('Adding Grimoire files to git: ~w~n', [AbsPath]),
+        add_grimoire_files_to_git(AbsPath)
+    ;   true
+    ),
+
+    % Create/switch to default session
+    ensure_default_session_and_focus(Entity),
+    format('Ensured default session and focused on entity: ~w~n', [Entity]),
+
+    % Get available skills
+    magic_cast(perceive(skills(entity(Entity))), SkillsResult),
+    (SkillsResult = ok(skills_list(Skills)) ->
+        true, format('Derived skills: ~q~n', [Skills])
+    ;   Skills = []
+    ),
+
+    Result = ok(initialized(entity(Entity), path(AbsPath), detected(Features), skills(Skills))).
+
+% Sanitize directory name to valid Prolog atom
+sanitize_directory_name(DirName, SanitizedAtom) :-
+    atom_string(DirName, DirStr),
+    % Convert to lowercase
+    string_lower(DirStr, LowerStr),
+    % Replace hyphens with underscores (using split/join for global replace)
+    split_string(LowerStr, '-', '', Parts1),
+    atomic_list_concat(Parts1, '_', Temp1),
+    % Replace spaces with underscores
+    atom_string(Temp1, Temp1Str),
+    split_string(Temp1Str, ' ', '', Parts2),
+    atomic_list_concat(Parts2, '_', Temp2),
+    % Remove any other non-alphanumeric characters except underscore
+    atom_string(Temp2, Temp2Str),
+    re_replace('[^a-z0-9_]', '', Temp2Str, SanitizedStr, [g]),
+    atom_string(SanitizedAtom, SanitizedStr).
+
+% Detect infrastructure in directory
+detect_infrastructure(Path, Features) :-
+    findall(Feature, (
+        detect_single_feature(Path, Feature)
+    ), Features).
+
+detect_single_feature(Path, git) :-
+    atomic_list_concat([Path, '/.git'], GitDir),
+    exists_directory(GitDir).
+
+detect_single_feature(Path, nix) :-
+    atomic_list_concat([Path, '/flake.nix'], FlakePath),
+    exists_file(FlakePath).
+
+% Generate semantics.pl for init
+generate_init_semantics_pl(Path, EntityName, Features) :-
+    directory_file_path(Path, 'semantics.pl', SemanticsPath),
+    build_init_semantics_content(EntityName, Features, Content),
+    magic_cast(conjure(fs(edit_file(file(SemanticsPath), edits([append(Content)])))), EditResult),
+    (EditResult = ok(_) -> true ; throw(EditResult)).
+
+build_init_semantics_content(EntityName, Features, Content) :-
+    Entity = project(EntityName),
+    EntityLine = {|string(Entity)||
+:- self_entity({Entity}).
+
+|},
+    findall(FeatureLine, (
+        member(Feature, Features),
+        build_feature_component_line(Entity, Feature, FeatureLine)
+    ), FeatureLines),
+    atomic_list_concat(FeatureLines, '', FeatureLinesStr),
+    string_concat(EntityLine, FeatureLinesStr, Content).
+
+build_feature_component_line(Entity, git, Line) :-
+    Line = {|string(Entity)||
+component({Entity}, has(git(repository)), git(repository([]))).
+|}.
+
+build_feature_component_line(Entity, nix, Line) :-
+    Line = {|string(Entity)||
+component({Entity}, has(nix(flake)), nix(flake(ref('.'))).
+|}.
+
+% Query expanded components after loading
+query_expanded_components(Entity, Features, ExpandedInfo) :-
+    findall(info(Feature, Details), (
+        member(Feature, Features),
+        query_feature_details(Entity, Feature, Details)
+    ), ExpandedInfo).
+
+query_feature_details(Entity, git, git_info(Root)) :-
+    catch(
+        component(Entity, git_repository_root, Root),
+        _, Root = unknown
+    ).
+
+query_feature_details(Entity, nix, nix_info(Packages, Checks, Apps)) :-
+    catch(component(Entity, nix_flake_packages, Packages), _, Packages = []),
+    catch(component(Entity, nix_flake_checks, Checks), _, Checks = []),
+    catch(component(Entity, nix_flake_apps, Apps), _, Apps = []).
+
+% Generate semantics.plt with conditional tests
+generate_init_semantics_plt(Path, EntityName, ExpandedInfo) :-
+    directory_file_path(Path, 'semantics.plt', TestPath),
+    build_init_tests_content(EntityName, ExpandedInfo, ContentLines),
+    atomic_list_concat(ContentLines, '', Content),
+    magic_cast(conjure(fs(edit_file(file(TestPath), edits([append(Content)])))), EditResult),
+    (EditResult = ok(_) -> true ; throw(EditResult)).
+
+build_init_tests_content(EntityName, ExpandedInfo, Lines) :-
+    Entity = project(EntityName),
+    format(string(TestSuiteName), '~q', [Entity]),
+
+    % Header and begin_tests
+    Header = {|string(TestSuiteName)||
+        :- use_module(library(plunit)).
+        :- load_entity(semantic(folder('.'))).
+
+        :- begin_tests(TestSuiteName).
+
+    |},
+
+    % Entity exists test
+    EntityTest = {|string(Entity)||
+        % Test entity exists and self component is valid
+        test(entity_exists) :-
+            user:entity({Entity}),
+            user:please_verify(component({Entity}, self, semantic(folder(_Path)))).
+
+    |},
+
+    % Feature tests
+    findall(FeatureTestLines, (
+        member(info(Feature, Details), ExpandedInfo),
+        build_feature_test_lines(Entity, Feature, Details, FeatureTestLines)
+    ), FeatureTestLinesNested),
+    flatten(FeatureTestLinesNested, FeatureTestLines),
+
+    % Skills test
+    SkillsTest = {|string(Entity)||
+        % Test skills are derived
+        test(skills_available) :-
+            user:magic_cast(perceive(skills(entity({Entity}))), Result),
+            Result = ok(skills_list(Skills)),
+            assertion(is_list(Skills)),
+            assertion(Skills \= []).
+
+    |},
+
+    % Footer
+    Footer = {|string(TestSuiteName)||
+        :- end_tests(TestSuiteName).
+    |},
+
+    append([[Header, EntityTest], FeatureTestLines, [SkillsTest, Footer]], Lines).
+
+build_feature_test_lines(Entity, git, git_info(Root), Lines) :-
+    DetectTest = {|string(Entity)||
+        % Test git repository detection and status
+        test(git_detected) :-
+            user:please_verify(component({Entity}, has(git(repository)), _Repo)),
+            user:please_verify(component({Entity}, git_repository_root, _Root)).
+
+    |},
+    (Root \= unknown ->
+        StatusTest = {|string(Entity)||
+        test(git_status_works) :-
+            user:please_verify(component({Entity}, git_repository_root, Root)),
+            user:magic_cast(perceive(git(status(git_root(Root)))), Result),
+            assertion(Result = ok(_Result)).
+
+    |},
+        Lines = [DetectTest, StatusTest]
+    ;   Lines = [DetectTest]
+    ).
+
+build_feature_test_lines(Entity, nix, nix_info(Packages, Checks, Apps), Lines) :-
+    DetectTest = {|string(Entity)||
+        % Test nix flake detection
+        test(nix_flake_detected) :-
+            user:please_verify(component({Entity}, has(nix(flake)), _Flake)),
+            user:please_verify(component({Entity}, nix_flake_ref, _Ref)).
+
+    |},
+
+    findall(PackageTest, (
+        member(Package, Packages),
+        format(atom(TestName), 'nix_build_~w', [Package]),
+        PackageTest = {|string(Package, TestName, Entity)||
+        % Test building nix package: {Package}
+        test({TestName}) :-
+            user:magic_cast(conjure(invoke_skill(entity({Entity}), skill(nix(build({Package}))))), Result),
+            assertion(Result = ok(_BuildResult)).
+
+    |}
+    ), PackageTests),
+
+    findall(CheckTest, (
+        member(Check, Checks),
+        format(atom(TestName), 'nix_check_~w', [Check]),
+        CheckTest = {|string(Check, TestName, Entity)||
+        % Test nix check: {Check}
+        test({TestName}) :-
+            user:magic_cast(conjure(invoke_skill(entity({Entity}), skill(nix(check({Check}))))), Result),
+            assertion(Result = ok(_CheckResult)).
+
+    |}
+    ), CheckTests),
+
+    findall(AppTest, (
+        member(App, Apps),
+        format(atom(TestName), 'nix_run_~w', [App]),
+        AppTest = {|string(App, TestName, Entity)||
+        % Test nix app (blocked for safety): {App}
+        test({TestName}, [blocked(requires_user_review)]) :-
+            user:magic_cast(conjure(invoke_skill(entity({Entity}), skill(nix(run({App}))))), Result),
+            assertion(Result = ok(_RunResult)).
+
+    |}
+    ), AppTests),
+
+    append([[DetectTest], PackageTests, CheckTests, AppTests], Lines).
+
+% Add Grimoire files to git and update .gitignore
+add_grimoire_files_to_git(Path) :-
+    % Add semantics.pl and semantics.plt
+    atomic_list_concat([Path, '/semantics.pl'], SemanticsPath),
+    atomic_list_concat([Path, '/semantics.plt'], TestPath),
+    magic_cast(conjure(git(add(git_root(Path), paths([SemanticsPath, TestPath])))), AddResult),
+    (AddResult = ok(_) -> true ; throw(AddResult)),
+
+    % Add .grimoire directory (session semantics will be tracked)
+    atomic_list_concat([Path, '/.grimoire'], GrimoirePath),
+    (exists_directory(GrimoirePath) ->
+        magic_cast(conjure(git(add(git_root(Path), paths([GrimoirePath])))), GrimoireAddResult),
+        (GrimoireAddResult = ok(_) -> true ; throw(GrimoireAddResult))
+    ;   true
+    ),
+
+    % Update .gitignore to exclude activity logs
+    atomic_list_concat([Path, '/.gitignore'], GitignorePath),
+    update_gitignore(GitignorePath).
+
+% Update .gitignore to exclude activity_log.jsonl files
+update_gitignore(GitignorePath) :-
+    IgnorePattern = '.grimoire/**/activity_log.jsonl',
+
+    % Read existing .gitignore if it exists
+    (exists_file(GitignorePath) ->
+        read_file_to_string(GitignorePath, ExistingContent, [])
+    ;   ExistingContent = ''
+    ),
+
+    % Check if pattern already exists
+    (sub_string(ExistingContent, _, _, _, 'activity_log.jsonl') ->
+        true  % Already there, don't add
+    ;   % Create newline prefix if file has content
+        (ExistingContent = '' ->
+            AppendContent = IgnorePattern
+        ;   string_concat('\n', IgnorePattern, AppendContent)
+        ),
+        % Append pattern using edit_file spell
+        magic_cast(conjure(fs(edit_file(file(GitignorePath), edits([append(AppendContent)])))), EditResult),
+        (EditResult = ok(_) -> true ; throw(EditResult))
+    ).
+
+% Ensure default session exists, switch to it, and focus on entity
+ensure_default_session_and_focus(Entity) :-
+    % Create default session if it doesn't exist
+    magic_cast(conjure(session(create(id(default)))), CreateResult),
+    % Proceed regardless of result (session might already exist)
+    (CreateResult = ok(_) -> true ; CreateResult = error(_) -> true),
+
+    % Switch to default session
+    magic_cast(conjure(session(switch(id(default)))), SwitchResult),
+    (SwitchResult = ok(_) -> true ; throw(SwitchResult)),
+
+    % Focus on entity (the focused_entity expansion will auto-load it)
+    magic_cast(conjure(session(focus_entity(entity(Entity)))), FocusResult),
+    (FocusResult = ok(_) -> true ; throw(FocusResult)).

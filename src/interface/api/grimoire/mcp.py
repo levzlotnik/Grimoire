@@ -231,10 +231,61 @@ def unfocus() -> str:
 
 
 @mcp.tool()
+def do(skill_term: str, entity: Optional[str] = None) -> str:
+    """
+    Invoke a skill on an entity (defaults to focused entity or 'system').
+
+    Skills are operations derived from entity structure (e.g., nix packages become build skills).
+
+    Args:
+        skill_term: Skill term to invoke (e.g., "nix(build(hello))")
+        entity: Optional entity name (defaults to focused entity or 'system')
+
+    Example:
+        do("nix(build(hello))", "my_project")
+    """
+    try:
+        result = grimoire.do(skill_term, entity)
+        return _model_to_string(result)
+    except GrimoireError as e:
+        return f"Error: {e}"
+
+
+@mcp.tool()
+def skills(entity: Optional[str] = None) -> str:
+    """
+    List all available skills for an entity (defaults to focused entity or 'system').
+
+    Skills are operations derived from entity structure (e.g., nix packages, git remotes).
+
+    Args:
+        entity: Optional entity name (defaults to focused entity or 'system')
+
+    Example:
+        skills("my_project")
+    """
+    try:
+        result = grimoire.skills(entity)
+        return _model_to_string(result)
+    except GrimoireError as e:
+        return f"Error: {e}"
+
+
+@mcp.tool()
 def session_status() -> str:
     """Get session status including focused entity"""
     try:
         result = grimoire.session_status()
+        return _model_to_string(result)
+    except GrimoireError as e:
+        return f"Error: {e}"
+
+
+@mcp.tool()
+def get_session_context() -> str:
+    """Get comprehensive session context for LLM state recovery including focused entity components and activity summary"""
+    try:
+        result = grimoire.session_context()
         return _model_to_string(result)
     except GrimoireError as e:
         return f"Error: {e}"

@@ -41,5 +41,25 @@ component(git_complete_test, has(git(repository)), git(repository([
 component(git_complete_test, self, semantic(folder('/tmp/test_git_complete'))).
 component(git_complete_test, core_dump_ignorelist, [git_repository_root]).
 
+% Skill test entities
+entity(git_skill_test).
+component(git_skill_test, self, semantic(folder('/tmp/test_git_skills'))).
+component(git_skill_test, has(git(repository)), git(repository([
+    branch(main),
+    clean(true)
+]))).
+component(git_skill_test, core_dump_ignorelist, [git_repository_root]).
+
+entity(git_skill_remote_test).
+component(git_skill_remote_test, self, semantic(folder('/tmp/test_git_skills_remote'))).
+component(git_skill_remote_test, has(git(repository)), git(repository([
+    branch(main),
+    remote(origin, 'https://example.com/repo.git'),
+    clean(true)
+]))).
+component(git_skill_remote_test, core_dump_ignorelist, [git_repository_root]).
+
 docstring(test_entity(git), "Test entity container for git domain verification tests").
 docstring(test_project, "Test project entity with git repository").
+docstring(git_skill_test, "Test entity for git skill derivation without remote").
+docstring(git_skill_remote_test, "Test entity for git skill derivation with remote").

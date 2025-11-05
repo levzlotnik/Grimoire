@@ -363,6 +363,50 @@ component(Entity, nix_flake_dev_shells, DevShells) :-
     component(Entity, nix_flake_targets, Targets),
     findall(Shell, (member(nix(target(devShell(_, AttrPath))), Targets), Shell = AttrPath), DevShells).
 
+% Checks list generation from targets
+component(Entity, nix_flake_checks, Checks) :-
+    component(Entity, nix_flake_targets, Targets),
+    findall(Check, (member(nix(target(check(_, AttrPath))), Targets), Check = AttrPath), Checks).
+
+% === SKILL DERIVATION ===
+% Skills are derived from entity components and map to spells
+
+% Build skills from packages
+component(E, nix_flake_packages, Packages)
+    ==> (component(E, skill(nix(build(Package))), SpellTerm) :-
+            member(Package, Packages),
+            component(E, nix_flake_ref, Ref),
+            format(atom(Target), '~w#~w', [Ref, Package]),
+            SpellTerm = conjure(nix(build(target(Target))))).
+
+% Run skills from apps
+component(E, nix_flake_apps, Apps)
+    ==> (component(E, skill(nix(run(App))), SpellTerm) :-
+            member(App, Apps),
+            component(E, nix_flake_ref, Ref),
+            format(atom(Installable), '~w#~w', [Ref, App]),
+            SpellTerm = conjure(nix(run(installable(Installable))))).
+
+% Develop skills from dev shells
+component(E, nix_flake_dev_shells, DevShells)
+    ==> (component(E, skill(nix(develop(Shell))), SpellTerm) :-
+            member(Shell, DevShells),
+            component(E, nix_flake_ref, Ref),
+            (Shell = 'default' ->
+                Options = [ref(Ref)]
+            ;   format(atom(ShellPath), '~w#~w', [Ref, Shell]),
+                Options = [ref(ShellPath)]
+            ),
+            SpellTerm = conjure(nix(develop(options(Options))))).
+
+% Check skills from checks
+component(E, nix_flake_checks, Checks)
+    ==> (component(E, skill(nix(check(Check))), SpellTerm) :-
+            member(Check, Checks),
+            component(E, nix_flake_ref, Ref),
+            format(atom(Target), '~w#~w', [Ref, Check]),
+            SpellTerm = conjure(nix(check(target(Target))))).
+
 % === PHASE 3: LEAF VERIFICATIONS ===
 
 % Flake ref verification with filesystem checks for local paths
@@ -525,6 +569,29 @@ register_spell(
             Result = ok(result(StdOut, StdErr))
         ; ShellResult = error(shell_error(_, ExitCode, _StdOut, StdErr)) ->
             Result = error(build_error(ExitCode, StdErr))
+        ;
+            Result = ShellResult
+        )
+    ))
+).
+
+% Run flake checks
+register_spell(
+    conjure(nix(check)),
+    input(nix(check(target('Target')))),
+    output(either(
+        ok(result(stdout('StdOut'), stderr('StdErr'))),
+        error(check_error(exit('ExitCode'), stderr('StdErr')))
+    )),
+    "Run checks for a Nix flake. Target: flake reference to check (e.g., '.#check-name', or '.' to run all checks).",
+    [],
+    implementation(conjure(nix(check(target(Target)))), Result, (
+        Args = ["nix", "flake", "check", Target],
+        magic_cast(conjure(shell(args(Args))), ShellResult),
+        (ShellResult = ok(result(stdout(StdOut), stderr(StdErr))) ->
+            Result = ok(result(StdOut, StdErr))
+        ; ShellResult = error(shell_error(_, ExitCode, _StdOut, StdErr)) ->
+            Result = error(check_error(ExitCode, StdErr))
         ;
             Result = ShellResult
         )

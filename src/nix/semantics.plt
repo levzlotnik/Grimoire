@@ -158,6 +158,16 @@ test(spell_log, [setup(setup_nix_flake_test), cleanup(cleanup_nix_flake_test)]) 
     user:magic_cast(perceive(nix(log(installable("/tmp/test_nix_flake")))), Result),
     assertion((Result = ok(_) ; Result = error(_))).
 
+% Test skill derivation from nix_flake_packages
+test(nix_skills_derived_from_packages) :-
+    % Test that build skills are derived from packages
+    user:magic_cast(perceive(skills(entity(nix_skill_test))), Result),
+    Result = ok(skills_list(Skills)),
+    assertion(is_list(Skills)),
+    % Verify the manually specified packages generate skills
+    assertion(member(skill(nix(build(hello)), _), Skills)),
+    assertion(member(skill(nix(build(cowsay)), _), Skills)).
+
 :- end_tests(nix).
 
 % Setup/cleanup for flake tests

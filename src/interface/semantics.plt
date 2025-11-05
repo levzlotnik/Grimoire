@@ -22,6 +22,9 @@ cast_post_hook(perceive(prove_it(component(E, T, V))), Result, assertz(hit(perce
 % Hook for sauce_me delegation
 cast_post_hook(perceive(sauce_me(spell(Ctor))), Result, assertz(hit(perceive(sauce_me(spell(Ctor))), Result))).
 
+% Hook for session context delegation
+cast_post_hook(perceive(session(context)), Result, assertz(hit(perceive(session(context)), Result))).
+
 :- begin_tests(interface_spells).
 
 % === PERCEIVE SPELLS ===
@@ -129,27 +132,57 @@ test(session_export_import_delegation, [
     format(atom(ArchivePath), '/tmp/session-~w.tar.gz', [SessionId]),
 
     % Create a real session
-    user:magic_cast(conjure(interface(session_create(session_id(SessionId)))), _),
+    user:magic_cast(conjure(interface(session_create(session_id(SessionId)))), CreateResult),
+    assertion(CreateResult = ok(_)),
 
     % Export it and verify delegation (destination is directory, not full path)
     user:magic_cast(conjure(interface(session_export(session_id(SessionId), destination('/tmp')))), ExportExternalResult),
+    assertion(ExportExternalResult = ok(_)),
     user:hit(conjure(session(export(id(ExportSessionId), destination(ExportDest)))), ExportInternalResult),
     assertion(ExportSessionId == SessionId),
     assertion(ExportDest == '/tmp'),
     assertion(ExportExternalResult == ExportInternalResult),
 
     % Delete the session (so we can re-import it)
-    user:magic_cast(conjure(session(delete(id(SessionId)))), _),
+    user:magic_cast(conjure(session(delete(id(SessionId)))), DeleteResult),
+    assertion(DeleteResult = ok(_)),
 
     % Import the created archive and verify delegation
     user:magic_cast(conjure(interface(session_import(archive(ArchivePath)))), ImportExternalResult),
+    assertion(ImportExternalResult = ok(_)),
     user:hit(conjure(session(import(archive(ImportPath)))), ImportInternalResult),
     assertion(ImportPath == ArchivePath),
     assertion(ImportExternalResult == ImportInternalResult),
 
     % Clean up: delete session and archive
-    user:magic_cast(conjure(session(delete(id(SessionId)))), _),
+    user:magic_cast(conjure(session(delete(id(SessionId)))), FinalDeleteResult),
+    assertion(FinalDeleteResult = ok(_)),
     delete_file(ArchivePath), !.
+
+test(session_context_delegation, [
+    cleanup((
+        retractall(user:hit(perceive(session(context)), _))
+    ))
+]) :-
+    get_time(T),
+    TInt is floor(T * 1000000),
+    format(atom(SessionId), 'test_ctx_~w', [TInt]),
+
+    % Create and switch to session
+    user:magic_cast(conjure(interface(session_create(session_id(SessionId)))), CreateResult),
+    assertion(CreateResult = ok(_)),
+    user:magic_cast(conjure(interface(session_switch(session_id(SessionId)))), SwitchResult),
+    assertion(SwitchResult = ok(_)),
+
+    % Get context and verify delegation
+    user:magic_cast(perceive(interface(session_context)), ExternalResult),
+    user:hit(perceive(session(context)), InternalResult),
+    assertion(ExternalResult == InternalResult),
+    assertion(ExternalResult = ok(session(SessionId), _, _)),
+
+    % Cleanup
+    user:magic_cast(conjure(session(delete(id(SessionId)))), DeleteResult),
+    assertion(DeleteResult = ok(_)), !.
 
 % === PYTHON_MAGIC_CAST TESTS ===
 

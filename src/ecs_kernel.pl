@@ -394,6 +394,39 @@ docstring(please_verify,
 %% GET ALL COMPONENTS - BACKTRACKING-AWARE VERIFICATION
 %% ============================================================================
 
+% Ask for component - returns verified and broken separately
+ask(component(E, C, _), Verified, Broken) :-
+    findall(
+        R,
+        (component(E, C, V),
+         catch(
+             (please_verify(component(E, C, V)), R = ok(V)),
+             Error,
+             R = error(Error)
+         )),
+        Rs
+    ),
+    findall(V, member(ok(V), Rs), Verified),
+    findall(Err, member(error(Err), Rs), Broken).
+
+docstring(ask,
+    {|string(_)||
+    Ask for component values - returns verified and broken separately.
+
+    Format: ask(component(Entity, ComponentType, _), Verified, Broken)
+
+    Returns:
+    - Verified: List of values that passed verification
+    - Broken: List of error terms for values that failed verification
+
+    Example:
+        ask(component(session(default), session_semantics_path, _), [Path], [])
+        => Path is verified
+
+        ask(component(session(default), session_semantics_path, _), [], [Error])
+        => Component doesn't exist or verification failed
+    |}).
+
 get_all_components(component(E, C, _), Vs) :-
     findall(V, (component(E, C, V), please_verify(component(E, C, V))), Vs).
 

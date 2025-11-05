@@ -1,8 +1,6 @@
 % Test entities for nix domain
 :- self_entity(test_entities(nix)).
 
-% Basic test entity with flake reference
-entity(test_nix_entity).
 component(test_nix_entity, has(nix(flake)), nix(flake(ref('./src/nix/test_flake')))).
 
 docstring(test_nix_entity, "Test entity with nix flake reference for testing DSL expansion").
@@ -48,3 +46,11 @@ component(test_shell, nix_flake_ref, './src/nix/test_flake').
 component(test_shell, nix_dev_env_shell, 'default').
 
 docstring(test_shell, "Test entity with valid dev shell").
+
+% Skill derivation test entity
+entity(nix_skill_test).
+component(nix_skill_test, nix_flake_ref, './src/nix/test_flake').
+component(nix_skill_test, nix_flake_packages, [hello, cowsay]).
+component(nix_skill_test, core_dump_ignorelist, [nix_flake_packages]).
+
+docstring(nix_skill_test, "Test entity for nix skill derivation from packages").

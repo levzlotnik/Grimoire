@@ -528,6 +528,86 @@ class Grimoire:
             GenericResponse
         )
 
+    def session_context(self) -> GenericResponse:
+        """Get comprehensive session context for LLM state recovery"""
+        return self._magic_cast(
+            "perceive(interface(session_context))",
+            {},
+            GenericResponse
+        )
+
+    # ========================================================================
+    # SKILL SYSTEM
+    # ========================================================================
+
+    def do(self, skill_term: str, entity: Optional[str] = None) -> GenericResponse:
+        """Invoke a skill on an entity (defaults to focused entity or 'system')
+
+        Args:
+            skill_term: Skill term as a string (e.g., "nix(build(foo))")
+            entity: Optional entity name (defaults to focused entity or 'system')
+
+        Returns:
+            GenericResponse with skill execution result
+
+        Example:
+            grimoire.do("nix(build(my_package))", entity="my_project")
+            grimoire.do("git(commit)")  # Uses focused entity
+        """
+        resolved_entity = self._resolve_entity(entity)
+        return self._magic_cast(
+            "conjure(interface(invoke_skill))",
+            {"Entity": resolved_entity, "SkillTerm": skill_term},
+            GenericResponse
+        )
+
+    def skills(self, entity: Optional[str] = None) -> GenericResponse:
+        """List all available skills for an entity (defaults to focused entity or 'system')
+
+        Args:
+            entity: Optional entity name (defaults to focused entity or 'system')
+
+        Returns:
+            GenericResponse with list of skills
+
+        Example:
+            grimoire.skills("my_project")
+            grimoire.skills()  # Uses focused entity
+        """
+        resolved_entity = self._resolve_entity(entity)
+        return self._magic_cast(
+            "perceive(interface(skills))",
+            {"Entity": resolved_entity},
+            GenericResponse
+        )
+
+    # ========================================================================
+    # PROJECT INITIALIZATION
+    # ========================================================================
+
+    def init(self, path: str = '.', force: bool = False) -> GenericResponse:
+        """Initialize Grimoire for existing project
+
+        Creates semantics.pl/.plt files, detects git/nix infrastructure,
+        creates 'default' session, and focuses on the new entity.
+
+        Args:
+            path: Project directory path (default: current directory)
+            force: Overwrite existing semantics.pl if it exists
+
+        Returns:
+            GenericResponse with initialization result
+        """
+        import os
+        abs_path = os.path.abspath(path)
+        options = ['force'] if force else []
+
+        return self._magic_cast(
+            "conjure(interface(init(folder(Folder), options(Options))))",
+            {"Folder": abs_path, "Options": options},
+            GenericResponse
+        )
+
     # ========================================================================
     # META-INTROSPECTION
     # ========================================================================
