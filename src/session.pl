@@ -694,34 +694,40 @@ register_spell(
     "Get comprehensive session context including focused entity components and activity summary",
     [],
     implementation(perceive(session(context)), Result, (
-        % Get current session ID
-        current_session_id(SessionId),
+        % Get current session ID (handle no-session case)
+        (current_session_id(SessionId)
+        -> HasSession = true
+        ; (SessionId = none, HasSession = false)),
 
-        % Get focused entity and its components
-        (component(session(SessionId), focused_entity, Entity)
-        -> (% Collect all component types for the entity
-            findall(C, component(Entity, C, _), AllTypes),
-            sort(AllTypes, UniqueTypes),
+        % Get focused entity and its components (only if session exists)
+        (HasSession = true
+        -> (% Get focused entity if exists
+            (component(session(SessionId), focused_entity, Entity)
+            -> (% Collect all component types for the entity
+                findall(C, component(Entity, C, _), AllTypes),
+                sort(AllTypes, UniqueTypes),
 
-            % For each type, get verified/broken values using ask/3
-            findall(
-                component_value(type(C), verified(Verified), broken(Broken)),
-                (member(C, UniqueTypes),
-                 ask(component(Entity, C, _), Ver, Brok),
-                 % Format verified: unique(V) if single value, set(Vs) otherwise
-                 (Ver = [V], Brok = []
-                  -> (Verified = unique(V), Broken = [])
-                  ; (Verified = set(Ver), Broken = Brok))),
-                ComponentValues),
+                % For each type, get verified/broken values using ask/3
+                findall(
+                    component_value(type(C), verified(Verified), broken(Broken)),
+                    (member(C, UniqueTypes),
+                     ask(component(Entity, C, _), Ver, Brok),
+                     % Format verified: unique(V) if single value, set(Vs) otherwise
+                     (Ver = [V], Brok = []
+                      -> (Verified = unique(V), Broken = [])
+                      ; (Verified = set(Ver), Broken = Brok))),
+                    ComponentValues),
 
-            FocusInfo = focused(entity(Entity), components_values(ComponentValues)))
-        ; FocusInfo = focused(none, components_values([]))),
+                FocusInfo = focused(entity(Entity), components_values(ComponentValues)))
+            ; FocusInfo = focused(none, components_values([]))),
 
-        % Get activity summary using session(activity_log)
-        magic_cast(perceive(session(activity_log)), ActivityResult),
-        (ActivityResult = ok(activity_log(CommonActivity))
-         -> true
-         ; CommonActivity = []),
+            % Get activity summary using session(activity_log)
+            magic_cast(perceive(session(activity_log)), ActivityResult),
+            (ActivityResult = ok(activity_log(CommonActivity))
+             -> true
+             ; CommonActivity = []))
+        ; (FocusInfo = focused(none, components_values([])),
+           CommonActivity = [])),
 
         Result = ok(
             session(SessionId),

@@ -1,94 +1,68 @@
 % Interface domain - clean Python-Prolog bridge for system introspection
-% All operations exposed as spells with template-based parameter filling
+% All operations exposed as spells receiving janus.Term from Python
 
 :- self_entity(interface).
 
 %% ============================================================================
-%% TEMPLATE FILLING SYSTEM
+%% OUR OWN TERM TO JSON CONVERSION
 %% ============================================================================
 
-% fill_input_template(+Template, +UserDict, -FilledTerm)
-% Recursively fill template placeholders from user dictionary
-% Template variables are atoms starting with uppercase (Entity, Type, Value, etc.)
-% Dict keys MUST be quoted atoms like 'Entity', 'Type', etc.
+% our_own_term_to_json(+Term, -Json)
+% Convert Prolog term to JSON structure following documented format:
+% - Atom: {"type":"atom", "value":<string>}
+% - String: {"type":"string", "value":<string>}
+% - Integer: {"type":"integer", "value":<integer>}
+% - Float: {"type":"float", "value":<float>}
+% - List: JSON array (recursive)
+% - Dict: {"type":"dict", "value":<object>} (tag ignored, values recursive)
+% - Compound: {"type":"compound", "functor":<string>, "args":<array>}
 
-fill_input_template(Atom, UserDict, Value) :-
-    atom(Atom),
-    is_placeholder_var(Atom),
-    !,
-    % Look up placeholder in dict - keys are quoted atoms
-    (   get_dict(Atom, UserDict, Value)
-    ->  true
-    ;   throw(error(missing_template_arg(Atom),
-                    context(fill_input_template/3, 'Template variable not provided in args')))
-    ).
+our_own_term_to_json(Term, Json) :-
+    atom(Term), !,
+    Json = json{type: "atom", value: Term}.
 
-fill_input_template(Atom, _UserDict, Atom) :-
-    atom(Atom), !.
+our_own_term_to_json(Term, Json) :-
+    string(Term), !,
+    Json = json{type: "string", value: Term}.
 
-fill_input_template(String, _UserDict, String) :-
-    string(String), !.
+our_own_term_to_json(Term, Json) :-
+    integer(Term), !,
+    Json = json{type: "integer", value: Term}.
 
-fill_input_template(Number, _UserDict, Number) :-
-    number(Number), !.
+our_own_term_to_json(Term, Json) :-
+    float(Term), !,
+    Json = json{type: "float", value: Term}.
 
-fill_input_template(List, UserDict, FilledList) :-
-    is_list(List), !,
-    maplist({UserDict}/[Item, Filled]>>fill_input_template(Item, UserDict, Filled), List, FilledList).
+our_own_term_to_json(Term, JsonArray) :-
+    is_list(Term), !,
+    maplist(our_own_term_to_json, Term, JsonArray).
 
-fill_input_template(Compound, UserDict, Filled) :-
-    compound(Compound), !,
-    Compound =.. [Functor|Args],
-    maplist({UserDict}/[Arg, FilledArg]>>fill_input_template(Arg, UserDict, FilledArg), Args, FilledArgs),
-    Filled =.. [Functor|FilledArgs].
+our_own_term_to_json(Term, Json) :-
+    is_dict(Term), !,
+    dict_pairs(Term, _Tag, Pairs),
+    maplist(pair_to_json_value, Pairs, JsonPairs),
+    dict_create(ValueDict, json, JsonPairs),
+    Json = json{type: "dict", value: ValueDict}.
 
-% Detect placeholder variables - atoms starting with uppercase letter
-is_placeholder_var(Atom) :-
-    atom(Atom),
-    atom_chars(Atom, [FirstChar|_]),
-    char_type(FirstChar, upper).
+our_own_term_to_json(Term, Json) :-
+    compound(Term), !,
+    Term =.. [Functor|Args],
+    maplist(our_own_term_to_json, Args, JsonArgs),
+    Json = json{type: "compound", functor: Functor, args: JsonArgs}.
+
+% Helper for dict pair conversion
+pair_to_json_value(Key-Value, Key-JsonValue) :-
+    our_own_term_to_json(Value, JsonValue).
 
 %% ============================================================================
-%% UNIVERSAL SPELL CASTING WITH TEMPLATE FILLING
+%% SPELL INVOCATION FROM PYTHON
 %% ============================================================================
 
-% python_magic_cast(+SpellSig, +UserDict, -PyResult)
-% Universal spell casting for Python clients:
-% 1. Get input template from spell metadata
-% 2. Fill template with user dictionary
-% 3. Cast filled spell
-% 4. Convert result to Python-friendly dict
-
-python_magic_cast(SpellSigStr, UserDict, PyResult) :-
-    catch(
-        (   % Step 0: Parse spell signature string to term
-            (   atom(SpellSigStr)
-            ->  atom_to_term(SpellSigStr, SpellSig, [])
-            ;   SpellSig = SpellSigStr
-            ),
-            % Step 1: Extract verb (perceive/conjure) from signature
-            SpellSig =.. [Verb|_],
-            % Step 2: Get input format template
-            please_verify(component(SpellSig, format_input, input(InputFormat))),
-            % Step 3: Fill template with user dictionary
-            fill_input_template(InputFormat, UserDict, FilledArgs),
-            % Step 4: Reconstruct full spell term with verb
-            FullSpellTerm =.. [Verb, FilledArgs],
-            % Step 5: Cast the spell
-            magic_cast(FullSpellTerm, Result),
-            % Step 6: Convert to Python dict
-            term_struct_to_python_dict(Result, PyResult), !
-        ),
-        Error,
-        (   % Extract just the error type, ignore context
-            (   Error = error(ErrorType, _)
-            ->  SimplifiedError = error(ErrorType)
-            ;   SimplifiedError = Error
-            ),
-            % Convert simplified error
-            term_struct_to_python_dict(SimplifiedError, PyResult)
-        )
-    ).
+% python_magic_cast(+SpellTerm, -PyResult)
+% Receives fully-constructed janus.Term from Python, casts it, returns JSON result
+python_magic_cast(SpellTerm, PyResult) :-
+    magic_cast(SpellTerm, Result),
+    our_own_term_to_json(Result, PyResult).
 
 %% ============================================================================
 %% INTERFACE OPERATIONS - ECS INTROSPECTION
@@ -123,8 +97,7 @@ register_spell(
     implementation(perceive(interface(components(entity(EntityValue), type(TypeValue)))), Result, (
         get_all_components(component(EntityValue, TypeValue, _), Values),
         (   Values = []
-        ->  throw(error(existence_error(component, component(EntityValue, TypeValue, not_found)),
-                       context(perceive(interface(components)), 'Component does not exist')))
+        ->  Result = error(component_not_found(component(EntityValue, TypeValue)))
         ;   format_component_result(Values, FormattedResult),
             Result = ok(FormattedResult)
         )
@@ -178,10 +151,10 @@ interface_test(Args, Result) :-
         Result = error(tests_failed(Error))
     ).
 
-% Python bridge for test command - converts result to Python dict
+% Python bridge for test command - converts result to JSON
 python_interface_test(Args, PyResult) :-
     interface_test(Args, Result),
-    term_struct_to_python_dict(Result, PyResult).
+    our_own_term_to_json(Result, PyResult).
 
 % Exec - execute arbitrary Prolog query and return string results
 register_spell(
@@ -399,7 +372,11 @@ register_spell(
     "Spell metadata - source location, implementation, formats (delegates to sauce_me spell)",
     [],
     implementation(perceive(interface(sauce_me(spell_ctor(SpellCtorValue)))), Result, (
-        magic_cast(perceive(sauce_me(spell(SpellCtorValue))), Result)
+        % Parse string to term if needed
+        (atom(SpellCtorValue)
+        -> term_string(SpellCtorTerm, SpellCtorValue)
+        ; SpellCtorTerm = SpellCtorValue),
+        magic_cast(perceive(sauce_me(spell(SpellCtorTerm))), Result)
     ))
 ).
 
@@ -415,41 +392,3 @@ register_spell(
     ))
 ).
 
-%% ============================================================================
-%% PYTHON INTERFACE SUPPORT - TERM CONVERSION
-%% ============================================================================
-
-% Convert Prolog term structures to Python dictionaries recursively
-% Used by python_magic_cast/3 to make results Python-friendly
-term_struct_to_python_dict(Term, Dict) :-
-    % Handle empty list first
-    (   Term == [] ->
-        Dict = _{type: "list", elements: []}
-    % Handle primitive types
-    ;   atomic(Term) ->
-        (   atom(Term) ->
-            Dict = _{type: "atom", value: Term}
-        ;   string(Term) ->
-            Dict = _{type: "string", value: Term}
-        ;   number(Term) ->
-            (   integer(Term) ->
-                Dict = _{type: "int", value: Term}
-            ;   Dict = _{type: "float", value: Term}
-            )
-        )
-    % Handle non-empty lists
-    ;   is_list(Term) ->
-        maplist(term_struct_to_python_dict, Term, Elements),
-        Dict = _{type: "list", elements: Elements}
-    % Handle py-tagged dicts - pass through directly to Python via janus
-    ;   is_dict(Term, py) ->
-        Dict = Term
-    % Handle compound terms
-    ;   compound(Term) ->
-        compound_name_arity(Term, Functor, Arity),
-        Term =.. [Functor|Args],
-        maplist(term_struct_to_python_dict, Args, ConvertedArgs),
-        Dict = _{type: "term_struct", functor: Functor, arity: Arity, args: ConvertedArgs}
-    % Fallback for any other types
-    ;   Dict = _{type: "unknown", value: Term}
-    ).

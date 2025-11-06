@@ -7,8 +7,7 @@ Public exports for the grimoire package.
 from .client import (
     Grimoire,
     GrimoireError,
-    PrologTerm,
-    PrologTermRecord,
+    FromPrologTerm,
     # Response models
     ComponentTypesResponse,
     ComponentsResponse,
@@ -16,25 +15,28 @@ from .client import (
     EntitiesResponse,
     TestResponse,
     SystemInstructionsResponse,
+    ExecResponse,
     ConjureResponse,
     PerceiveResponse,
     GenericResponse,
+    SessionContextResponse,
 )
 
 __all__ = [
     'Grimoire',
     'GrimoireError',
-    'PrologTerm',
-    'PrologTermRecord',
+    'FromPrologTerm',
     'ComponentTypesResponse',
     'ComponentsResponse',
     'DocstringResponse',
     'EntitiesResponse',
     'TestResponse',
     'SystemInstructionsResponse',
+    'ExecResponse',
     'ConjureResponse',
     'PerceiveResponse',
     'GenericResponse',
+    'SessionContextResponse',
 ]
 
 __version__ = "0.1.0"

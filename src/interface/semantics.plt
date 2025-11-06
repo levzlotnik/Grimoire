@@ -187,53 +187,61 @@ test(session_context_delegation, [
 % === PYTHON_MAGIC_CAST TESTS ===
 
 test(python_magic_cast_component_types) :-
-    user:python_magic_cast('perceive(interface(component_types))', _{'Entity': system}, PyResult),
-    PyResult.type = "term_struct",
-    PyResult.functor = ok,
+    user:python_magic_cast(perceive(interface(component_types(entity(system)))), PyResult),
+    assertion(PyResult.type = "compound"),
+    assertion(PyResult.functor = ok),
     PyResult.args = [TypesResult],
-    TypesResult.functor = types, !.
+    assertion(TypesResult.type = "compound"),
+    assertion(TypesResult.functor = types).
 
 test(python_magic_cast_entities) :-
-    user:python_magic_cast('perceive(interface(entities))', _{}, PyResult),
-    PyResult.type = "term_struct",
-    PyResult.functor = ok,
+    user:python_magic_cast(perceive(interface(entities)), PyResult),
+    assertion(PyResult.type = "compound"),
+    assertion(PyResult.functor = ok),
     PyResult.args = [EntitiesResult],
-    EntitiesResult.functor = entities,
+    assertion(EntitiesResult.type = "compound"),
+    assertion(EntitiesResult.functor = entities),
     EntitiesResult.args = [ListResult],
-    ListResult.type = "list", !.
+    assertion(is_list(ListResult)).
 
 test(python_magic_cast_components_empty) :-
     % Should return error when component doesn't exist
-    user:python_magic_cast('perceive(interface(components))', _{'Entity': nonexistent_xyz, 'Type': foo}, PyResult),
-    PyResult.functor = error, !.
+    user:python_magic_cast(perceive(interface(components(entity(nonexistent_xyz), type(foo)))), PyResult),
+    assertion(PyResult.functor = error).
 
 test(python_magic_cast_docstring) :-
-    user:python_magic_cast('perceive(interface(docstring))', _{'Entity': system}, PyResult),
-    PyResult.functor = ok,
+    user:python_magic_cast(perceive(interface(docstring(entity(system)))), PyResult),
+    assertion(PyResult.functor = ok),
     PyResult.args = [DocResult],
-    DocResult.functor = doc, !.
+    assertion(DocResult.functor = doc).
 
-test(python_magic_cast_error_missing_arg) :-
-    % Test error handling when template arg is missing
-    user:python_magic_cast('perceive(interface(component_types))', _{}, PyResult),
-    PyResult.functor = error, !.
+test(python_magic_cast_ungrounded_variable) :-
+    % Test that ungrounded variables in spell terms cause proper error
+    % This tests the spell implementation's validation, not template filling
+    catch(
+        user:python_magic_cast(perceive(interface(component_types(entity(_)))), _PyResult),
+        Error,
+        true
+    ),
+    assertion(nonvar(Error)).
 
 test(python_magic_cast_term_conversion_atom) :-
     % Test that atoms are properly converted
-    user:python_magic_cast('perceive(interface(entities))', _{}, PyResult),
+    user:python_magic_cast(perceive(interface(entities)), PyResult),
     PyResult.args = [EntitiesResult],
     EntitiesResult.args = [ListResult],
-    ListResult.elements = [FirstEntity|_],
-    FirstEntity.type = "atom", !.
+    assertion(is_list(ListResult)),
+    ListResult = [FirstEntity|_],
+    assertion(FirstEntity.type = "atom").
 
 test(python_magic_cast_term_conversion_empty_list) :-
     % Test that empty lists are properly converted - use component_types which can return []
-    user:python_magic_cast('perceive(interface(component_types))', _{'Entity': xyz}, PyResult),
-    PyResult.functor = ok,
+    user:python_magic_cast(perceive(interface(component_types(entity(xyz)))), PyResult),
+    assertion(PyResult.functor = ok),
     PyResult.args = [TypesResult],
-    TypesResult.functor = types,
+    assertion(TypesResult.functor = types),
     TypesResult.args = [EmptyList],
-    EmptyList.type = "list",
-    EmptyList.elements = [], !.
+    assertion(is_list(EmptyList)),
+    assertion(EmptyList = []).
 
 :- end_tests(interface_spells).

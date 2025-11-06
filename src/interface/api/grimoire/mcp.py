@@ -11,7 +11,17 @@ from mcp.server import FastMCP
 from typing import Dict, List, Any, Optional
 
 from pydantic import BaseModel
-from grimoire.client import Grimoire, GrimoireError
+from grimoire.client import (
+    Grimoire,
+    GrimoireError,
+    ComponentTypesResponse,
+    ComponentsResponse,
+    DocstringResponse,
+    EntitiesResponse,
+    TestResponse,
+    GenericResponse,
+    SessionContextResponse,
+)
 
 # Create global instance of Grimoire interface
 grimoire = Grimoire()
@@ -26,63 +36,38 @@ except GrimoireError:
 mcp = FastMCP("Grimoire Interface", instructions=system_instructions)
 
 
-def _model_to_string(model: Any) -> str:
-    """Convert a model to YAML string representation for better nested structure readability"""
-    if not isinstance(model, BaseModel):
-        return str(model)
-    # Convert Pydantic model to dict and then to YAML
-    model_dict = model.model_dump()
-    return yaml.dump(model_dict, default_flow_style=False, sort_keys=False)
-
-
 @mcp.tool()
-def component_types(entity: Optional[str] = None) -> str:
+def component_types(entity: Optional[str] = None) -> ComponentTypesResponse:
     """List all component types for an entity (defaults to focused entity or 'system')"""
-    try:
-        result = grimoire.component_types(entity)
-        return _model_to_string(result)
-    except GrimoireError as e:
-        return f"Error: {e}"
+    return grimoire.component_types(entity)
 
 
 @mcp.tool()
-def components(component_type: str, entity: Optional[str] = None) -> str:
+def components(component_type: str, entity: Optional[str] = None) -> ComponentsResponse:
     """Get verified components with smart singleton/set detection (defaults to focused entity or 'system')"""
-    try:
-        result = grimoire.components(entity, component_type)
-        return _model_to_string(result)
-    except GrimoireError as e:
-        return f"Error: {e}"
+    return grimoire.components(entity, component_type)
 
 
 @mcp.tool()
-def docstring(entity: Optional[str] = None) -> str:
+def docstring(entity: Optional[str] = None) -> DocstringResponse:
     """Get entity docstring (defaults to focused entity or 'system')"""
-    try:
-        result = grimoire.docstring(entity)
-        return result.docstring
-    except GrimoireError as e:
-        return f"Error: {e}"
+    return grimoire.docstring(entity)
 
 
 @mcp.tool()
-def entities() -> str:
+def entities() -> EntitiesResponse:
     """List all entities in the system"""
-    try:
-        result = grimoire.entities()
-        return _model_to_string(result)
-    except GrimoireError as e:
-        return f"Error: {e}"
+    return grimoire.entities()
 
 
 @mcp.tool()
-def list_spells() -> str:
+def list_spells() -> Dict[str, Any]:
     """List all registered spells (conjure and perceive)"""
     try:
         spells = grimoire.list_all_spells()
-        return yaml.dump({"spells": spells}, default_flow_style=False)
+        return {"spells": spells}
     except GrimoireError as e:
-        return f"Error: {e}"
+        return {"error": str(e)}
 
 
 @mcp.tool()
@@ -124,18 +109,14 @@ def conjure(spell_sig: str, args: Optional[Dict[str, Any]] = None) -> str:
 
 
 @mcp.tool()
-def test(args: Optional[List[str]] = None) -> str:
+def test(args: Optional[List[str]] = None) -> TestResponse:
     """
     Run test suite with optional args.
 
     Args:
         args: Optional list of test names or flags (e.g., ["--list"])
     """
-    try:
-        result = grimoire.test(args)
-        return _model_to_string(result)
-    except GrimoireError as e:
-        return f"Error: {e}"
+    return grimoire.test(args)
 
 
 @mcp.tool()
@@ -191,47 +172,31 @@ def exec_query(query_str: str) -> str:
 
 
 @mcp.tool()
-def focus_entity(entity: str) -> str:
+def focus_entity(entity: str) -> GenericResponse:
     """Focus on an entity by name for subsequent operations"""
-    try:
-        result = grimoire.session_focus_entity(entity)
-        return _model_to_string(result)
-    except GrimoireError as e:
-        return f"Error: {e}"
+    return grimoire.session_focus_entity(entity)
 
 
 @mcp.tool()
-def focus_path(path: str) -> str:
+def focus_path(path: str) -> GenericResponse:
     """Focus on an entity by path (looks up entity via self component)"""
-    try:
-        result = grimoire.session_focus_path(path)
-        return _model_to_string(result)
-    except GrimoireError as e:
-        return f"Error: {e}"
+    return grimoire.session_focus_path(path)
 
 
 @mcp.tool()
-def get_focused() -> str:
+def get_focused() -> GenericResponse:
     """Get currently focused entity with structured information"""
-    try:
-        result = grimoire.session_get_focused()
-        return _model_to_string(result)
-    except GrimoireError as e:
-        return f"Error: {e}"
+    return grimoire.session_get_focused()
 
 
 @mcp.tool()
-def unfocus() -> str:
+def unfocus() -> GenericResponse:
     """Clear focused entity"""
-    try:
-        result = grimoire.session_unfocus()
-        return _model_to_string(result)
-    except GrimoireError as e:
-        return f"Error: {e}"
+    return grimoire.session_unfocus()
 
 
 @mcp.tool()
-def do(skill_term: str, entity: Optional[str] = None) -> str:
+def do(skill_term: str, entity: Optional[str] = None) -> GenericResponse:
     """
     Invoke a skill on an entity (defaults to focused entity or 'system').
 
@@ -244,15 +209,11 @@ def do(skill_term: str, entity: Optional[str] = None) -> str:
     Example:
         do("nix(build(hello))", "my_project")
     """
-    try:
-        result = grimoire.do(skill_term, entity)
-        return _model_to_string(result)
-    except GrimoireError as e:
-        return f"Error: {e}"
+    return grimoire.do(skill_term, entity)
 
 
 @mcp.tool()
-def skills(entity: Optional[str] = None) -> str:
+def skills(entity: Optional[str] = None) -> GenericResponse:
     """
     List all available skills for an entity (defaults to focused entity or 'system').
 
@@ -264,31 +225,19 @@ def skills(entity: Optional[str] = None) -> str:
     Example:
         skills("my_project")
     """
-    try:
-        result = grimoire.skills(entity)
-        return _model_to_string(result)
-    except GrimoireError as e:
-        return f"Error: {e}"
+    return grimoire.skills(entity)
 
 
 @mcp.tool()
-def session_status() -> str:
+def session_status() -> GenericResponse:
     """Get session status including focused entity"""
-    try:
-        result = grimoire.session_status()
-        return _model_to_string(result)
-    except GrimoireError as e:
-        return f"Error: {e}"
+    return grimoire.session_status()
 
 
 @mcp.tool()
-def get_session_context() -> str:
+def get_session_context() -> SessionContextResponse:
     """Get comprehensive session context for LLM state recovery including focused entity components and activity summary"""
-    try:
-        result = grimoire.session_context()
-        return _model_to_string(result)
-    except GrimoireError as e:
-        return f"Error: {e}"
+    return grimoire.session_context()
 
 
 def main(argv: Optional[List[str]] = None) -> None:
