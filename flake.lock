@@ -48,7 +48,7 @@
       },
       "locked": {
         "lastModified": 1,
-        "narHash": "sha256-Z7N/sgnhWyW1PpsKAj3QzoxG18Lrvrwu7apON0dvOxc=",
+        "narHash": "sha256-5Xp8wTK3AbQXaWiFgidX9YXcA1pamdIMbjooXfLk6Zo=",
         "path": "./src/interface/api",
         "type": "path"
       },

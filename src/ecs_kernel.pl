@@ -402,12 +402,12 @@ ask(component(E, C, _), Verified, Broken) :-
          catch(
              (please_verify(component(E, C, V)), R = ok(V)),
              Error,
-             R = error(Error)
+             R = broken(V, Error)
          )),
         Rs
     ),
     findall(V, member(ok(V), Rs), Verified),
-    findall(Err, member(error(Err), Rs), Broken).
+    findall(broken(V, Err), member(broken(V, Err), Rs), Broken).
 
 docstring(ask,
     {|string(_)||
@@ -417,48 +417,19 @@ docstring(ask,
 
     Returns:
     - Verified: List of values that passed verification
-    - Broken: List of error terms for values that failed verification
+    - Broken: List of broken(Value, Error) terms for values that failed verification
 
     Example:
         ask(component(session(default), session_semantics_path, _), [Path], [])
-        => Path is verified
+        => Path is verified, no broken components
 
-        ask(component(session(default), session_semantics_path, _), [], [Error])
-        => Component doesn't exist or verification failed
+        ask(component(session(default), session_semantics_path, _), [], [broken(Path, Error)])
+        => Component exists but verification failed, returns the problematic value and error
+
+        ask(component(entity, type, _), [V1, V2], [broken(V3, Err)])
+        => V1 and V2 passed verification, V3 failed with Err
     |}).
 
-get_all_components(component(E, C, _), Vs) :-
-    findall(V, (component(E, C, V), please_verify(component(E, C, V))), Vs).
-
-docstring(get_all_components,
-    {|string(_)||
-    Collects all verified component values for a given entity and component type.
-
-    Unlike please_verify/1 which commits to the first solution, this predicate
-    backtracks through all component/3 solutions and verifies each one.
-
-    Format: get_all_components(component(Entity, ComponentType, _), Values)
-
-    Behavior:
-    1. Finds all values V where component(Entity, ComponentType, V) succeeds
-    2. For each V, calls please_verify(component(Entity, ComponentType, V))
-    3. Only includes verified values in the result list
-
-    Use Cases:
-    - Collecting all verified components when multiple values exist
-    - Interface operations that need to return sets of components
-    - Filtering components to only verified ones
-
-    Examples:
-        % Get all verified subsystems
-        ?- get_all_components(component(system, subsystem, _), Subsystems).
-        Subsystems = [git, nix, fs, project, golems].
-
-        % Empty list if no components exist
-        ?- get_all_components(component(nonexistent, foo, _), Vs).
-        Vs = [].
-    |}
-).
 
 %% ============================================================================
 %% PROVE IT: COMPONENT PROVENANCE WITH SELF-RECORDING

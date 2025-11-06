@@ -27,6 +27,42 @@ class GrimoireCLI:
         self.grimoire = Grimoire()
         self.session_id = os.getenv('GRIMOIRE_SESSION_ID')
 
+    @staticmethod
+    def parse_variable_args(args: list[str]) -> dict[str, any]:
+        """Parse Variable=value arguments into a dict.
+
+        Supports:
+        - Simple bindings: Variable=value → {"Variable": "value"}
+        - Repeated variables for lists: Paths=f1 Paths=f2 → {"Paths": ["f1", "f2"]}
+
+        Args:
+            args: List of "Variable=value" strings
+
+        Returns:
+            Dict mapping variable names to values (or lists of values)
+        """
+        result = {}
+        for arg in args:
+            if '=' not in arg:
+                raise ValueError(f"Invalid variable binding: {arg} (expected Variable=value)")
+
+            var, value = arg.split('=', 1)
+
+            # Validate variable name is capitalized (Prolog convention)
+            if not var or not var[0].isupper():
+                raise ValueError(f"Variable name must start with uppercase letter: {var}")
+
+            # Support repeated variables for lists
+            if var in result:
+                # Convert to list on first repeat
+                if not isinstance(result[var], list):
+                    result[var] = [result[var]]
+                result[var].append(value)
+            else:
+                result[var] = value
+
+        return result
+
     def create_parser(self) -> argparse.ArgumentParser:
         """Create argument parser with all subcommands"""
         parser = argparse.ArgumentParser(
@@ -93,13 +129,47 @@ class GrimoireCLI:
         session_context_parser = session_subparsers.add_parser('context', help='Get comprehensive session context')
 
         # conjure command
-        conjure_parser = subparsers.add_parser('conjure', help='Cast conjuration spells')
+        conjure_parser = subparsers.add_parser(
+            'conjure',
+            help='Cast conjuration spells',
+            description='''Cast conjuration spells with template variable binding.
+
+                Examples:
+                  grimoire conjure "git(commit(message(Message)))" Message="Fix bug"
+                  grimoire conjure "git(add(paths(Paths)))" Paths=file1.py Paths=file2.py
+                  grimoire conjure --list
+
+                Variables:
+                  Use Variable=value syntax to bind template variables in spell signatures.
+                  Variable names must be capitalized (Prolog convention).
+                  Repeated variables create lists: Paths=f1 Paths=f2 → {"Paths": ["f1", "f2"]}
+            ''',
+            formatter_class=argparse.RawDescriptionHelpFormatter
+        )
         conjure_parser.add_argument('spell', nargs='?', help='Spell to cast')
+        conjure_parser.add_argument('args', nargs='*', help='Variable bindings (Variable=value)')
         conjure_parser.add_argument('--list', action='store_true', help='List available conjure spells')
 
         # perceive command
-        perceive_parser = subparsers.add_parser('perceive', help='Execute perception queries')
+        perceive_parser = subparsers.add_parser(
+            'perceive',
+            help='Execute perception queries',
+            description='''Execute perception queries with template variable binding.
+
+                Examples:
+                  grimoire perceive "git(status(git_root(Root)))" Root="/path/to/repo"
+                  grimoire perceive "interface(components(entity(Entity), type(Type)))" Entity=git Type=ctor
+                  grimoire perceive --list
+
+                Variables:
+                  Use Variable=value syntax to bind template variables in query signatures.
+                  Variable names must be capitalized (Prolog convention).
+                  Repeated variables create lists.
+            ''',
+            formatter_class=argparse.RawDescriptionHelpFormatter
+        )
         perceive_parser.add_argument('query', nargs='?', help='Query to execute')
+        perceive_parser.add_argument('args', nargs='*', help='Variable bindings (Variable=value)')
         perceive_parser.add_argument('--list', action='store_true', help='List available perceive queries')
 
         # load command
@@ -107,11 +177,79 @@ class GrimoireCLI:
         load_parser.add_argument('entity_spec', help='Entity specification to load')
 
         # serve command
-        serve_parser = subparsers.add_parser('serve', help='Start REST API server')
+        serve_parser = subparsers.add_parser(
+            'serve',
+            help='Start HTTP REST API server',
+            description='''Start Grimoire HTTP REST API server using uvicorn.
+
+                The API provides RESTful endpoints for all Grimoire operations,
+                useful for web applications, integrations, and remote access.
+
+                Examples:
+                  grimoire serve                      # Start on localhost:8000
+                  grimoire serve --port 3000          # Custom port
+                  grimoire serve --host 0.0.0.0       # Expose to network
+                  grimoire serve --reload             # Development mode with auto-reload
+                  grimoire serve --workers 4          # Production with 4 workers
+
+                Uvicorn Options:
+                  --host HOST         Bind to host (default: 127.0.0.1)
+                  --port PORT         Bind to port (default: 8000)
+                  --reload            Enable auto-reload on code changes (development)
+                  --workers N         Number of worker processes (production)
+                  --log-level LEVEL   Logging level (critical, error, warning, info, debug, trace)
+                  --access-log        Enable access log
+                  --no-access-log     Disable access log
+
+                API Documentation:
+                  Once running, visit:
+                  - http://localhost:8000/docs       (Swagger UI)
+                  - http://localhost:8000/redoc      (ReDoc)
+                  - http://localhost:8000/openapi.json
+
+                Security:
+                  By default, the server binds to localhost (127.0.0.1) and is only
+                  accessible from the local machine. Use --host 0.0.0.0 to expose to
+                  network, but ensure proper authentication is configured.
+            ''',
+            formatter_class=argparse.RawDescriptionHelpFormatter
+        )
         serve_parser.add_argument('args', nargs='*', help='Additional uvicorn arguments')
 
         # mcp command
-        mcp_parser = subparsers.add_parser('mcp', help='Start MCP server')
+        mcp_parser = subparsers.add_parser(
+            'mcp',
+            help='Start MCP server for IDE integration',
+            description='''Start Grimoire MCP (Model Context Protocol) server.
+
+                The MCP server runs over stdio by default, allowing integration with
+                IDEs like Claude Code, Cursor, and other MCP-compatible tools.
+
+                Examples:
+                  grimoire mcp                    # Start with stdio (default)
+                  grimoire mcp --log-level debug  # Enable debug logging
+
+                MCP Server Options:
+                  --log-level LEVEL    Set logging level (debug, info, warning, error)
+                                       Default: info
+
+                IDE Integration:
+                  Add to your IDE's MCP configuration (.mcp.json):
+                  {
+                    "mcpServers": {
+                      "grimoire": {
+                        "command": "grimoire",
+                        "args": ["mcp"]
+                      }
+                    }
+                  }
+
+                Environment Variables:
+                  GRIMOIRE_ROOT       Path to Grimoire installation (auto-detected)
+                  GRIMOIRE_DATA       Path to session data (default: ./.grimoire)
+            ''',
+            formatter_class=argparse.RawDescriptionHelpFormatter
+        )
         mcp_parser.add_argument('args', nargs='*', help='Additional MCP server arguments')
 
         # repl command
@@ -329,10 +467,16 @@ class GrimoireCLI:
             return 1
 
         try:
-            # Parse spell signature - assume no args for now (can be extended later)
-            result = self.grimoire.conjure(args.spell, {})
+            # Parse Variable=value arguments
+            spell_args = self.parse_variable_args(args.args) if args.args else {}
+
+            # Cast spell with parsed arguments
+            result = self.grimoire.conjure(args.spell, spell_args)
             print(result.result)
             return 0
+        except ValueError as e:
+            print(f"Error parsing arguments: {e}", file=sys.stderr)
+            return 1
         except GrimoireError as e:
             print(f"Error: {e}", file=sys.stderr)
             return 1
@@ -358,10 +502,16 @@ class GrimoireCLI:
             return 1
 
         try:
-            # Parse query signature - assume no args for now (can be extended later)
-            result = self.grimoire.perceive(args.query, {})
+            # Parse Variable=value arguments
+            query_args = self.parse_variable_args(args.args) if args.args else {}
+
+            # Execute query with parsed arguments
+            result = self.grimoire.perceive(args.query, query_args)
             print(result.result)
             return 0
+        except ValueError as e:
+            print(f"Error parsing arguments: {e}", file=sys.stderr)
+            return 1
         except GrimoireError as e:
             print(f"Error: {e}", file=sys.stderr)
             return 1

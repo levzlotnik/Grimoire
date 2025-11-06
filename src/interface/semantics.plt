@@ -35,14 +35,14 @@ test(component_types_spell) :-
     is_list(Types), !.
 
 test(components_spell_unique) :-
-    % Test with a component that should have exactly one value
+    % Test with a component that should have exactly one value (and no broken)
     user:magic_cast(perceive(interface(components(entity(system), type(self)))), Result),
-    Result = ok(unique(semantic(_))), !.
+    Result = ok(components(verified(unique(semantic(_))), broken([]))), !.
 
 test(components_spell_set) :-
-    % Test with a component that has multiple values
+    % Test with a component that has multiple values (and no broken)
     user:magic_cast(perceive(interface(components(entity(system), type(subsystem)))), Result),
-    Result = ok(set(Values)),
+    Result = ok(components(verified(set(Values)), broken([]))),
     is_list(Values),
     length(Values, Len),
     Len > 1, !.

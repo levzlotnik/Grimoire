@@ -268,4 +268,53 @@ test(prove_it_runtime_assertion) :-
                           discriminated_by(no_verifier))),
     retractall(user:component(runtime_test_entity, runtime_prop, _)).
 
+%% ============================================================================
+%% Test Case: ask/3 - Component verification with broken tracking
+%% ============================================================================
+
+test(ask_verified_only) :-
+    % Test with only verified components
+    user:ask(component(test_entity_1, test_leaf_atom, _), Verified, Broken),
+    assertion(Verified = [hello]),
+    assertion(Broken = []).
+
+test(ask_broken_format) :-
+    % Test broken components return broken(Value, Error) format
+    user:ask(component(test_entity_2, test_leaf_atom, _), Verified, Broken),
+    assertion(Verified = []),
+    % Broken should contain broken(Value, Error) terms
+    assertion(Broken = [broken('', _)]).
+
+test(ask_mixed_verified_and_broken) :-
+    % Add test components with mixed verification results
+    assertz(user:component(ask_test_entity, ask_test_type, valid1)),
+    assertz(user:component(ask_test_entity, ask_test_type, '')),
+    assertz(user:component(ask_test_entity, ask_test_type, valid2)),
+
+    % Test component verification (fails on empty atom)
+    assertz((user:verify(component(_, ask_test_type, Value)) :-
+        (atom(Value), Value \= '' -> true
+        ; throw(error(verification_failed(empty_atom), _))))),
+
+    user:ask(component(ask_test_entity, ask_test_type, _), Verified, Broken),
+
+    % Should have 2 verified and 1 broken
+    assertion(length(Verified, 2)),
+    assertion(length(Broken, 1)),
+    assertion(member(valid1, Verified)),
+    assertion(member(valid2, Verified)),
+    % Broken should contain the empty atom with its error
+    Broken = [broken(BrokenValue, _Error)],
+    assertion(BrokenValue = ''),
+
+    % Cleanup
+    retractall(user:component(ask_test_entity, ask_test_type, _)),
+    retractall(user:verify(component(_, ask_test_type, _))).
+
+test(ask_no_components) :-
+    % Test with entity that has no components of this type
+    user:ask(component(nonexistent_entity, nonexistent_type, _), Verified, Broken),
+    assertion(Verified = []),
+    assertion(Broken = []).
+
 :- end_tests(ecs_kernel).

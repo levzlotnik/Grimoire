@@ -68,10 +68,21 @@ python_magic_cast(SpellTerm, PyResult) :-
 %% INTERFACE OPERATIONS - ECS INTROSPECTION
 %% ============================================================================
 
-% Helper: format component results with smart singleton/set detection
+% Helper: format component results with smart singleton/set detection (deprecated - use format_component_result_with_status/3)
 format_component_result([], set([])).
 format_component_result([V], unique(V)) :- !.
 format_component_result(Vs, set(Vs)).
+
+% Helper: format component results with verification status
+% unique(V) only when exactly one value total AND it's verified (no broken)
+% set(Vs) in all other cases
+format_component_result_with_status(Verified, Broken, components(VerifiedFormat, BrokenFormat)) :-
+    length(Verified, VLen),
+    length(Broken, BLen),
+    (VLen =:= 1, BLen =:= 0
+    -> (Verified = [V], VerifiedFormat = verified(unique(V)))
+    ; VerifiedFormat = verified(set(Verified))),
+    BrokenFormat = broken(Broken).
 
 % Component types - list all component types for entity
 register_spell(
@@ -87,18 +98,21 @@ register_spell(
     ))
 ).
 
-% Components - get verified components with singleton/set detection
+% Components - get verified and broken components with singleton/set detection
 register_spell(
     perceive(interface(components)),
     input(interface(components(entity('Entity'), type('Type')))),
-    output(either(ok(unique('Value')), ok(set('Values')), error(component_not_found))),
-    "Get verified components with smart singleton/set detection",
+    output(either(
+        ok(components(verified(either(unique('Value'), set('Values'))), broken('Broken'))),
+        error(component_not_found)
+    )),
+    "Get verified and broken components with smart singleton/set detection and verification status",
     [],
     implementation(perceive(interface(components(entity(EntityValue), type(TypeValue)))), Result, (
-        get_all_components(component(EntityValue, TypeValue, _), Values),
-        (   Values = []
+        ask(component(EntityValue, TypeValue, _), Verified, Broken),
+        (   Verified = [], Broken = []
         ->  Result = error(component_not_found(component(EntityValue, TypeValue)))
-        ;   format_component_result(Values, FormattedResult),
+        ;   format_component_result_with_status(Verified, Broken, FormattedResult),
             Result = ok(FormattedResult)
         )
     ))
