@@ -27,10 +27,7 @@
     # Expose grimoire environment for dependent flakes (top-level, not in packages)
     grimoireEnv = forAllSystems (system:
       let
-        # First get base pkgs without overlay
-        basePkgs = nixpkgs.legacyPackages.${system};
-
-        # Then apply overlays to get pkgs with grimoire-golems and grimoire-py available
+        # Apply overlays to get pkgs with grimoire-golems and grimoire-py available
         pkgs = import nixpkgs {
           inherit system;
           overlays = [
@@ -38,46 +35,14 @@
             grimoire-py.overlays.default
           ];
         };
-
-        # Create base grimoire environment with overlay-enabled pkgs
-        baseGrimoireEnv = import ./deps/grimoire.nix { inherit pkgs; };
-
-        # Extend the Python environment to include grimoire-golems and grimoire-py while preserving all base packages
-        extendedPython = pkgs.python313.withPackages (ps: with ps; [
-          # Core Python packages (from deps/grimoire.nix)
-          requests
-          python-dotenv
-          gitpython
-          baseGrimoireEnv.janus-swi
-          baseGrimoireEnv.pydantic-ai
-          # API/Server packages
-          fastapi
-          uvicorn
-          pydantic
-          fastmcp  # FastMCP - Pythonic MCP client and server
-          # Testing packages
-          httpx
-          pytest
-          pytest-asyncio
-          # Development packages
-          black
-          # Web framework
-          flask
-          # YAML support (needed by MCP server)
-          pyyaml
-          # Scientific computing
-          numpy
-          scipy
-          # ML/Generative models
-          huggingface-hub
-          # Additional grimoire packages
+      in
+      # Create grimoire environment with base packages + grimoire-golems and grimoire-py
+      import ./deps/grimoire.nix {
+        inherit pkgs;
+        extraPythonPackages = ps: with ps; [
           grimoire-golems
           grimoire-py
-        ]);
-      in
-      baseGrimoireEnv // {
-        python = extendedPython;
-        buildInputs = baseGrimoireEnv.buildInputs ++ [ extendedPython ];
+        ];
       }
     );
 
@@ -158,9 +123,28 @@ EOF
     let
       pkgs = nixpkgs.legacyPackages.${system};
       grimoireEnv = self.grimoireEnv.${system};
+
+      # Apply overlays to get pkgs with dev packages available
+      pkgsWithOverlays = import nixpkgs {
+        inherit system;
+        overlays = [
+          grimoire-py.overlays.default
+          golems.overlays.default
+        ];
+      };
+
+      # Development environment with base packages + dev versions of grimoire packages
+      devGrimoireEnv = import ./deps/grimoire.nix {
+        pkgs = pkgsWithOverlays;
+        extraPythonPackages = ps: [
+          ps.grimoire-py-dev
+          ps.grimoire-golems-dev
+        ];
+      };
     in
     {
-      default = pkgs.mkShell {
+      # Production shell - fully hardened with immutable grimoire packages (for Docker/deployment)
+      production = pkgs.mkShell {
         buildInputs = [
           grimoireEnv.swipl
           grimoireEnv.python
@@ -175,7 +159,7 @@ EOF
         # Set templates tools path
         GRIMOIRE_TEMPLATES_TOOLS = "${self.packages.${system}.grimoire-templates-tools}/bin";
 
-        # Set Python executable to our extended environment
+        # Set Python executable to production environment
         PYTHON_EXECUTABLE = "${grimoireEnv.python}/bin/python";
 
         # Inherit other environment variables from grimoireEnv
@@ -190,11 +174,58 @@ EOF
             set +a
           fi
 
-          echo "Grimoire development environment loaded"
-          echo "GRIMOIRE_ROOT=$GRIMOIRE_ROOT"
-          echo "Python with grimoire-golems: ${grimoireEnv.python}/bin/python"
+          echo "✓ Grimoire production environment loaded"
+          echo "  GRIMOIRE_ROOT=$GRIMOIRE_ROOT"
+          echo "  Python with immutable grimoire packages"
         '';
       };
+
+      # Development shell - editable grimoire packages (default)
+      dev = pkgs.mkShell {
+        buildInputs = [
+          devGrimoireEnv.swipl
+          devGrimoireEnv.python
+          devGrimoireEnv.sqlite
+          self.packages.${system}.grimoire
+          self.packages.${system}.grimoire-templates-tools
+        ];
+
+        # Set GRIMOIRE_ROOT as a direct environment variable (works with -c)
+        GRIMOIRE_ROOT = toString self.packages.${system}.grimoire;
+
+        # Set templates tools path
+        GRIMOIRE_TEMPLATES_TOOLS = "${self.packages.${system}.grimoire-templates-tools}/bin";
+
+        # Set Python executable to dev environment
+        PYTHON_EXECUTABLE = "${devGrimoireEnv.python}/bin/python";
+
+        # Inherit other environment variables from devGrimoireEnv
+        inherit (devGrimoireEnv.env) SWIPL_BIN LLM_DB_SCHEMA_PATH;
+
+        shellHook = ''
+          # Load .env if it exists
+          if [ -f .env ]; then
+            echo "Loading environment variables from .env..."
+            set -a  # automatically export all variables
+            source .env
+            set +a
+          fi
+
+          # Set editable package roots to actual working directory (mutable!)
+          export GRIMOIRE_PY_ROOT="$PWD/src/interface/api"
+          export GRIMOIRE_GOLEMS_ROOT="$PWD/src/golems/python"
+
+          echo "✓ Grimoire development environment loaded"
+          echo "  GRIMOIRE_ROOT=$GRIMOIRE_ROOT"
+          echo "  GRIMOIRE_PY_ROOT=$GRIMOIRE_PY_ROOT"
+          echo "  GRIMOIRE_GOLEMS_ROOT=$GRIMOIRE_GOLEMS_ROOT"
+          echo "  Python packages: grimoire-py and grimoire-golems are editable"
+          echo "  Changes to Python source will be reflected immediately"
+        '';
+      };
+
+      # Default to dev shell
+      default = self.devShells.${system}.dev;
     });
 
     # Apps for running Grimoire
@@ -220,7 +251,7 @@ EOF
     checks = forAllSystems (system:
     let
       pkgs = nixpkgs.legacyPackages.${system};
-      grimoireEnv = import ./deps/grimoire.nix { inherit pkgs; };
+      grimoireEnv = self.grimoireEnv.${system};
     in
     {
       # Run Grimoire system tests

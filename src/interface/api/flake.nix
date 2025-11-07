@@ -9,44 +9,25 @@
 
   outputs = { self, nixpkgs, flake-utils, grimoire-flake }:
     let
-      # Provide overlay for parent flake to consume
+      # Provide overlay for parent flake to consume (production package only)
       overlay = final: prev: {
         pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
-          (python-final: python-prev: {
-            grimoire-py = python-final.callPackage ({
-              buildPythonPackage,
-              setuptools,
-              wheel,
-              fastapi,
-              uvicorn,
-              pydantic,
-              pyyaml,
-              mcp,
-              janus-swi
-            }: buildPythonPackage {
-              pname = "grimoire-py";
-              version = "0.1.0";
-              src = ./.;
-              format = "pyproject";
-
-              nativeBuildInputs = [ setuptools wheel ];
-
-              propagatedBuildInputs = [
-                fastapi
-                uvicorn
-                pydantic
-                pyyaml
-                mcp
-                janus-swi
-              ];
-
-              # Set build environment
-              SWIPL_BIN = "${(grimoire-flake.lib.getGrimoireEnv final.system).swipl}/bin/swipl";
-              LLM_DB_SCHEMA_PATH = (grimoire-flake.lib.getGrimoireEnv final.system).env.LLM_DB_SCHEMA_PATH;
-            }) {
-              janus-swi = (grimoire-flake.lib.getGrimoireEnv final.system).janus-swi;
-            };
-          })
+          (python-final: python-prev:
+            let
+              packages = python-final.callPackage ./package.nix {
+                grimoire-flake = grimoire-flake;
+                system = final.system;
+                fastmcp = python-final.fastmcp;
+                janus-swi = (grimoire-flake.lib.getGrimoireEnv final.system).janus-swi;
+              };
+            in
+            {
+              # Production package in overlay
+              grimoire-py = packages.grimoirePy;
+              # Dev package also available
+              grimoire-py-dev = packages.grimoirePyDev;
+            }
+          )
         ];
       };
     in
@@ -57,45 +38,59 @@
       let
         pkgs = nixpkgs.legacyPackages.${system};
 
-        # Get grimoireEnv from parent flake - this has the extended Python environment
+        # Get grimoireEnv from parent flake
         grimoireEnv = grimoire-flake.lib.getGrimoireEnv system;
-        
-        # Use the Python from grimoireEnv which already has all packages including MCP
+
+        # Use the Python from grimoireEnv
         python = grimoireEnv.python;
 
-        # Build the Python package using the grimoire Python environment
-        grimoirePyPackage = python.pkgs.buildPythonPackage {
-          pname = "grimoire-py";
-          version = "0.1.0";
-          src = ./.;
-          format = "pyproject";
-
-          nativeBuildInputs = with python.pkgs; [
-            setuptools
-            wheel
-          ];
-
-          propagatedBuildInputs = with python.pkgs; [
-            fastapi
-            uvicorn
-            pydantic
-            pyyaml
-            mcp
-            # Include janus-swi from grimoireEnv
-            grimoireEnv.janus-swi
-          ];
-
-          # Set build environment
-          SWIPL_BIN = "${grimoireEnv.swipl}/bin/swipl";
-          LLM_DB_SCHEMA_PATH = grimoireEnv.env.LLM_DB_SCHEMA_PATH;
+        # Import both packages from package.nix
+        packages = python.pkgs.callPackage ./package.nix {
+          grimoire-flake = grimoire-flake;
+          system = system;
+          fastmcp = python.pkgs.fastmcp;
         };
-
 
       in
       {
         packages = {
-          default = grimoirePyPackage;
-          python-package = grimoirePyPackage;
+          default = packages.grimoirePy;
+          grimoire-py = packages.grimoirePy;
+          grimoire-py-dev = packages.grimoirePyDev;
+        };
+
+        devShells = {
+          # Production shell - immutable package
+          production = pkgs.mkShell {
+            buildInputs = [
+              (python.withPackages (ps: [ packages.grimoirePy ]))
+            ];
+
+            shellHook = ''
+              echo "✓ Grimoire API production environment"
+              echo "  Using immutable grimoire-py package"
+            '';
+          };
+
+          # Development shell - editable package
+          dev = pkgs.mkShell {
+            buildInputs = [
+              (python.withPackages (ps: [ packages.grimoirePyDev ]))
+            ];
+
+            # Set environment variable for editable root
+            GRIMOIRE_PY_ROOT = toString ./.;
+
+            shellHook = ''
+              echo "✓ Grimoire API development environment"
+              echo "  GRIMOIRE_PY_ROOT=$GRIMOIRE_PY_ROOT"
+              echo "  Using editable grimoire-py package"
+              echo "  Changes to source will be reflected immediately"
+            '';
+          };
+
+          # Default to dev
+          default = self.devShells.${system}.dev;
         };
 
         checks = {

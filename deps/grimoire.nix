@@ -1,4 +1,4 @@
-{ pkgs }:
+{ pkgs, extraPythonPackages ? (ps: []) }:
 
 let
   # Import janus-swi Python package
@@ -22,37 +22,40 @@ let
     inherit python3Packages;
   };
 
-  # Create Python environment with all packages
+  # Base Python packages - single source of truth
+  basePythonPackages = ps: with ps; [
+    # Core Python packages
+    requests
+    python-dotenv
+    gitpython
+    janus-swi
+    # API/Server packages
+    fastapi
+    uvicorn
+    pydantic
+    fastmcp  # FastMCP - Pythonic MCP client and server
+    # Testing packages
+    httpx
+    pytest
+    pytest-asyncio
+    # Development packages
+    black
+    # LLM packages
+    pydantic-ai
+    # Web framework
+    flask
+    # YAML support
+    pyyaml
+    # Scientific computing
+    numpy
+    scipy
+    # ML/Generative models
+    huggingface-hub
+  ];
+
+  # Create Python environment with base + extra packages
   pythonEnv = python.withPackages (
-    p: with p; [
-      # Core Python packages
-      requests
-      python-dotenv
-      gitpython
-      janus-swi
-      # API/Server packages
-      fastapi
-      uvicorn
-      pydantic
-      mcp  # Model Context Protocol SDK
-      # Testing packages
-      httpx
-      pytest
-      pytest-asyncio
-      # Development packages
-      black
-      # LLM packages
-      pydantic-ai
-      # Web framework
-      flask
-      # YAML support
-      pyyaml
-      # Scientific computing
-      numpy
-      scipy
-      # ML/Generative models
-      huggingface-hub
-    ]
+    ps: basePythonPackages ps ++ extraPythonPackages ps
   );
 
   # Schema file path

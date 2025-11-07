@@ -27,7 +27,7 @@
       },
       "locked": {
         "lastModified": 1,
-        "narHash": "sha256-V9KuoRhzS3WH4U13dVICj+iuKOH7kqGUNkqZRfYFMDI=",
+        "narHash": "sha256-ral72QsiNEiPfm/J3OJaPInFF29N2W7ehVJKPMn4ERc=",
         "path": "./src/golems",
         "type": "path"
       },
@@ -48,7 +48,7 @@
       },
       "locked": {
         "lastModified": 1,
-        "narHash": "sha256-5Xp8wTK3AbQXaWiFgidX9YXcA1pamdIMbjooXfLk6Zo=",
+        "narHash": "sha256-0QP6iCkX75oNkhEOgPkk6FyqHywWzSV5fAZrforw/7Q=",
         "path": "./src/interface/api",
         "type": "path"
       },
@@ -74,11 +74,11 @@
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1762111121,
-        "narHash": "sha256-4vhDuZ7OZaZmKKrnDpxLZZpGIJvAeMtK6FKLJYUtAdw=",
+        "lastModified": 1762363567,
+        "narHash": "sha256-YRqMDEtSMbitIMj+JLpheSz0pwEr0Rmy5mC7myl17xs=",
         "owner": "nixos",
         "repo": "nixpkgs",
-        "rev": "b3d51a0365f6695e7dd5cdf3e180604530ed33b4",
+        "rev": "ae814fd3904b621d8ab97418f1d0f2eb0d3716f4",
         "type": "github"
       },
       "original": {
