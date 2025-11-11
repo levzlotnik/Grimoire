@@ -84,6 +84,20 @@ class GrimoireCLI:
         comp_parser.add_argument('-e', '--entity', default=None,
                                 help='Entity to query (default: focused entity or system)')
 
+        # add command
+        add_parser = subparsers.add_parser('add', help='Add component to entity')
+        add_parser.add_argument('component_type', help='Component type to add')
+        add_parser.add_argument('value', help='Component value (Prolog term)')
+        add_parser.add_argument('-e', '--entity', default=None,
+                               help='Entity to add component to (default: focused entity)')
+
+        # remove command
+        remove_parser = subparsers.add_parser('remove', help='Remove component from entity')
+        remove_parser.add_argument('component_type', help='Component type to remove')
+        remove_parser.add_argument('value', help='Component value (Prolog term)')
+        remove_parser.add_argument('-e', '--entity', default=None,
+                                  help='Entity to remove component from (default: focused entity)')
+
         # doc command
         doc_parser = subparsers.add_parser('doc', help='Show entity documentation')
         doc_parser.add_argument('-e', '--entity', default=None,
@@ -327,6 +341,38 @@ class GrimoireCLI:
                 for comp in result.values:
                     print(f"  {comp}")
 
+            return 0
+        except GrimoireError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            return 1
+
+    def handle_add(self, args: argparse.Namespace) -> int:
+        """Handle add command - add component to entity"""
+        try:
+            result = self.grimoire.add_component(
+                args.component_type,
+                args.value,
+                entity=args.entity
+            )
+
+            entity_display = args.entity if args.entity else "(focused entity)"
+            print(f"✓ Added component to {entity_display}: {args.component_type} = {args.value}")
+            return 0
+        except GrimoireError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            return 1
+
+    def handle_remove(self, args: argparse.Namespace) -> int:
+        """Handle remove command - remove component from entity"""
+        try:
+            result = self.grimoire.remove_component(
+                args.component_type,
+                args.value,
+                entity=args.entity
+            )
+
+            entity_display = args.entity if args.entity else "(focused entity)"
+            print(f"✓ Removed component from {entity_display}: {args.component_type} = {args.value}")
             return 0
         except GrimoireError as e:
             print(f"Error: {e}", file=sys.stderr)
@@ -750,6 +796,8 @@ class GrimoireCLI:
         handlers = {
             'compt': self.handle_compt,
             'comp': self.handle_comp,
+            'add': self.handle_add,
+            'remove': self.handle_remove,
             'doc': self.handle_doc,
             'entities': self.handle_entities,
             'status': self.handle_status,

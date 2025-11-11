@@ -406,3 +406,51 @@ register_spell(
     ))
 ).
 
+%% ============================================================================
+%% INTERFACE OPERATIONS - CRUD COMPONENT OPERATIONS
+%% ============================================================================
+
+% Helper: Resolve entity name, handling focused_entity special case
+resolve_entity_name(focused_entity, ActualEntity) :- !,
+    catch(
+        (current_session_id(SessionId),
+         please_verify(component(session(SessionId), focused_entity, ActualEntity))),
+        _,
+        fail
+    ).
+resolve_entity_name(Entity, Entity).
+
+% Add component - smart wrapper that resolves focused_entity
+register_spell(
+    conjure(interface(add_component)),
+    input(interface(add_component(entity('Entity'), component_type('Type'), value('Value')))),
+    output(either(
+        ok(component_added(component_type('Type'), value('Value'))),
+        error(add_error('Reason'))
+    )),
+    "Add component to entity (resolves focused_entity from session)",
+    [],
+    implementation(conjure(interface(add_component(entity(EntitySpec), component_type(Type), value(Value)))), Result, (
+        (resolve_entity_name(EntitySpec, ActualEntity)
+        -> magic_cast(conjure(add_component(entity(ActualEntity), component_type(Type), value(Value))), Result)
+        ; Result = error(add_error(no_focused_entity)))
+    ))
+).
+
+% Remove component - smart wrapper that resolves focused_entity
+register_spell(
+    conjure(interface(remove_component)),
+    input(interface(remove_component(entity('Entity'), component_type('Type'), value('Value')))),
+    output(either(
+        ok(component_removed(component_type('Type'), value('Value'))),
+        error(remove_error('Reason'))
+    )),
+    "Remove component from entity (resolves focused_entity from session)",
+    [],
+    implementation(conjure(interface(remove_component(entity(EntitySpec), component_type(Type), value(Value)))), Result, (
+        (resolve_entity_name(EntitySpec, ActualEntity)
+        -> magic_cast(conjure(remove_component(entity(ActualEntity), component_type(Type), value(Value))), Result)
+        ; Result = error(remove_error(no_focused_entity)))
+    ))
+).
+

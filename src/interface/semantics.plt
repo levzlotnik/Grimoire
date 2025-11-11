@@ -244,4 +244,83 @@ test(python_magic_cast_term_conversion_empty_list) :-
     assertion(is_list(EmptyList)),
     assertion(EmptyList = []).
 
+% === CRUD OPERATION TESTS ===
+
+test(interface_add_component_explicit_entity) :-
+    % Create test entity file
+    TestEntityContent = {|string||
+        :- self_entity(interface_test_add).
+    |},
+    user:magic_cast(conjure(fs(edit_file(file('/tmp/interface_test_add.pl'), edits([append(TestEntityContent)])))), WriteResult),
+    assertion(WriteResult = ok(_)),
+    load_entity(semantic(file('/tmp/interface_test_add.pl'))),
+
+    % Add component using interface with explicit entity
+    user:magic_cast(conjure(interface(add_component(entity(interface_test_add), component_type(test_comp), value(test_val)))), AddResult),
+    assertion(AddResult = ok(component_added(component_type(test_comp), value(test_val)))),
+    user:please_verify(component(interface_test_add, test_comp, test_val)),
+
+    % Cleanup
+    (exists_file('/tmp/interface_test_add.pl') -> delete_file('/tmp/interface_test_add.pl') ; true), !.
+
+test(interface_add_component_focused_entity) :-
+    % Create test entity and session
+    TestEntityContent = {|string||
+        :- self_entity(interface_test_focused).
+    |},
+    user:magic_cast(conjure(fs(edit_file(file('/tmp/interface_test_focused.pl'), edits([append(TestEntityContent)])))), WriteResult),
+    assertion(WriteResult = ok(_)),
+    load_entity(semantic(file('/tmp/interface_test_focused.pl'))),
+
+    % Create session and focus on entity
+    user:magic_cast(conjure(session(create(id(test_interface_focused)))), CreateResult),
+    assertion(CreateResult = ok(_)),
+    user:magic_cast(conjure(session(switch(id(test_interface_focused)))), SwitchResult),
+    assertion(SwitchResult = ok(_)),
+    user:magic_cast(conjure(session(focus_entity(entity(interface_test_focused)))), FocusResult),
+    assertion(FocusResult = ok(_)),
+
+    % Add component using interface with focused_entity
+    user:magic_cast(conjure(interface(add_component(entity(focused_entity), component_type(focused_comp), value(focused_val)))), AddResult),
+    assertion(AddResult = ok(component_added(component_type(focused_comp), value(focused_val)))),
+    user:please_verify(component(interface_test_focused, focused_comp, focused_val)),
+
+    % Cleanup
+    user:magic_cast(conjure(session(delete(id(test_interface_focused)))), _),
+    (exists_file('/tmp/interface_test_focused.pl') -> delete_file('/tmp/interface_test_focused.pl') ; true), !.
+
+test(interface_add_component_no_focus_error) :-
+    % Create session without focusing
+    user:magic_cast(conjure(session(delete(id(test_interface_nofocus)))), DeleteResult),
+    assertion((DeleteResult = ok(_) ; DeleteResult = error(session_error(session_not_found(_))))),
+    user:magic_cast(conjure(session(create(id(test_interface_nofocus)))), CreateResult),
+    assertion(CreateResult = ok(_)),
+    user:magic_cast(conjure(session(switch(id(test_interface_nofocus)))), SwitchResult),
+    assertion(SwitchResult = ok(_)),
+
+    % Try to add with focused_entity when nothing is focused
+    user:magic_cast(conjure(interface(add_component(entity(focused_entity), component_type(test), value(val)))), AddResult),
+    assertion(AddResult = error(add_error(no_focused_entity))),
+
+    % Cleanup
+    user:magic_cast(conjure(session(delete(id(test_interface_nofocus)))), _), !.
+
+test(interface_remove_component_explicit_entity) :-
+    % Create test entity file
+    TestEntityContent = {|string||
+        :- self_entity(interface_test_remove).
+    |},
+    user:magic_cast(conjure(fs(edit_file(file('/tmp/interface_test_remove.pl'), edits([append(TestEntityContent)])))), WriteResult),
+    assertion(WriteResult = ok(_)),
+    load_entity(semantic(file('/tmp/interface_test_remove.pl'))),
+
+    % Add then remove using interface
+    user:magic_cast(conjure(interface(add_component(entity(interface_test_remove), component_type(temp_comp), value(temp_val)))), AddResult),
+    assertion(AddResult = ok(_)),
+    user:magic_cast(conjure(interface(remove_component(entity(interface_test_remove), component_type(temp_comp), value(temp_val)))), RemoveResult),
+    assertion(RemoveResult = ok(component_removed(component_type(temp_comp), value(temp_val)))),
+
+    % Cleanup
+    (exists_file('/tmp/interface_test_remove.pl') -> delete_file('/tmp/interface_test_remove.pl') ; true), !.
+
 :- end_tests(interface_spells).

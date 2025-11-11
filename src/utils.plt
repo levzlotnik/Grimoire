@@ -154,5 +154,65 @@ cleanup_hierarchy :-
 cleanup_core_dump_tsv :-
     (exists_file('/tmp/test_core_dump.tsv') -> delete_file('/tmp/test_core_dump.tsv') ; true).
 
+% === CRUD OPERATIONS TESTS ===
+
+% Test adding a component to entity
+test(crud_add_component) :-
+    % Create test entity file using fs spell
+    TestEntityContent = {|string||
+        :- self_entity(crud_test_add).
+
+        component(crud_test_add, test_config, initial_value).
+    |},
+    user:magic_cast(conjure(fs(edit_file(file('/tmp/crud_test_add.pl'), edits([append(TestEntityContent)])))), WriteResult),
+    assertion(WriteResult = ok(_)),
+
+    % Load the entity
+    load_entity(semantic(file('/tmp/crud_test_add.pl'))),
+
+    % Add component directly using entity parameter
+    user:magic_cast(conjure(add_component(entity(crud_test_add), component_type(test_new), value(new_val))), AddResult),
+    assertion(AddResult = ok(component_added(component_type(test_new), value(new_val)))),
+    user:please_verify(component(crud_test_add, test_new, new_val)),
+
+    % Cleanup
+    (exists_file('/tmp/crud_test_add.pl') -> delete_file('/tmp/crud_test_add.pl') ; true), !.
+
+% Test removing a fact component
+test(crud_remove_fact) :-
+    % Create test entity file
+    TestEntityContent = {|string||
+        :- self_entity(crud_test_remove).
+    |},
+    user:magic_cast(conjure(fs(edit_file(file('/tmp/crud_test_remove.pl'), edits([append(TestEntityContent)])))), WriteResult),
+    assertion(WriteResult = ok(_)),
+    load_entity(semantic(file('/tmp/crud_test_remove.pl'))),
+
+    % Add then remove
+    user:magic_cast(conjure(add_component(entity(crud_test_remove), component_type(temp_comp), value(temp_val))), AddResult),
+    assertion(AddResult = ok(_)),
+    user:please_verify(component(crud_test_remove, temp_comp, temp_val)),
+    user:magic_cast(conjure(remove_component(entity(crud_test_remove), component_type(temp_comp), value(temp_val))), RemoveResult),
+    assertion(RemoveResult = ok(component_removed(component_type(temp_comp), value(temp_val)))),
+
+    % Verify component is gone by checking please_verify throws
+    catch(
+        user:please_verify(component(crud_test_remove, temp_comp, temp_val)),
+        error(sus(component_not_found(_)), _),
+        true
+    ),
+
+    % Cleanup
+    (exists_file('/tmp/crud_test_remove.pl') -> delete_file('/tmp/crud_test_remove.pl') ; true), !.
+
+% Test cannot remove derived component
+test(crud_cannot_remove_derived) :-
+    % Load test entity with derived component
+    load_entity(semantic(file('@/src/tests/crud_test_entities.pl'))),
+
+    % Try to remove derived component - should fail with specific error
+    user:magic_cast(conjure(remove_component(entity(crud_test_entity_with_derived), component_type(test_derived_comp), value(test_value))), RemoveResult),
+    assertion(RemoveResult = error(remove_error(cannot_remove_derived))), !.
+
 
 :- end_tests(utils).

@@ -365,6 +365,131 @@ read_core_dump_from_tsv(TsvPath, core_dump(verified(Verified), broken(Broken), i
         Ignored
     ).
 
+%% ============================================================================
+%% COMPONENT CRUD OPERATIONS
+%% ============================================================================
+
+% Helper: Get semantics file path for an entity
+entity_semantics_file(Entity, FilePath) :-
+    component(Entity, self, semantic(file(FilePath))), !.
+entity_semantics_file(Entity, FilePath) :-
+    component(Entity, self, semantic(folder(FolderPath))),
+    atomic_list_concat([FolderPath, '/semantics.pl'], FilePath).
+
+% Add component to entity
+register_spell(
+    conjure(add_component),
+    input(add_component(entity('Entity'), component_type('Type'), value('Value'))),
+    output(either(
+        ok(component_added(component_type('Type'), value('Value'))),
+        error(add_error('Reason'))
+    )),
+    "Add verified component to entity",
+    [],
+    implementation(conjure(add_component(entity(Entity), component_type(Type), value(Value))), Result, (
+        catch(
+            (% Get entity's semantics file
+             entity_semantics_file(Entity, FilePath),
+
+             % Append component to file
+             format(string(ComponentStr), '~n% Added by grimoire add~ncomponent(~q, ~q, ~q).~n',
+                    [Entity, Type, Value]),
+             magic_cast(conjure(fs(edit_file(file(FilePath), edits([append(ComponentStr)])))), EditResult),
+             (EditResult = ok(_) -> true ; throw(EditResult)),
+
+             % Reload entity file
+             reload_entity(semantic(file(FilePath))),
+
+             % Verify the new component
+             please_verify(component(Entity, Type, Value)),
+
+             Result = ok(component_added(component_type(Type), value(Value)))),
+            Exception,
+            (   Exception = error(sus(verification_failed(_)), _)
+            ->  Result = error(add_error(verification_failed))
+            ;   term_string(Exception, ExceptionStr),
+                Result = error(add_error(ExceptionStr))
+            )
+        )
+    ))
+).
+
+% Remove component from entity (only fact components)
+register_spell(
+    conjure(remove_component),
+    input(remove_component(entity('Entity'), component_type('Type'), value('Value'))),
+    output(either(
+        ok(component_removed(component_type('Type'), value('Value'))),
+        error(remove_error('Reason'))
+    )),
+    "Remove component from entity (only fact components, not derived)",
+    [],
+    implementation(conjure(remove_component(entity(Entity), component_type(Type), value(Value))), Result, (
+        catch(
+            (% Check if component exists and is deletable
+             % prove_it will throw if component doesn't exist
+             prove_it(component(Entity, Type, Value),
+                      qed(_, generated_by(Generation), _)),
+
+             (   Generation = fact(file(File), line(_Line))
+             ->  % It's a fact, read file and remove it
+                 read_file_to_terms(File, AllTerms, []),
+                 ComponentTerm = component(Entity, Type, Value),
+                 exclude(=(ComponentTerm), AllTerms, FilteredTerms),
+
+                 % Check if anything was actually removed
+                 length(AllTerms, OrigLen),
+                 length(FilteredTerms, NewLen),
+                 (OrigLen =:= NewLen
+                 -> throw(error(component_not_found_in_file, _))
+                 ; true),
+
+                 % Rebuild file content
+                 findall(TermStr,
+                         (member(Term, FilteredTerms),
+                          format(string(TermStr), '~q.~n', [Term])),
+                         TermStrs),
+                 atomic_list_concat(TermStrs, '', NewContent),
+
+                 % Count lines in original file
+                 read_file_to_string(File, FileContent, []),
+                 split_string(FileContent, "\n", "", AllLines),
+                 % Remove trailing empty lines
+                 reverse(AllLines, ReversedLines),
+                 (ReversedLines = [""|Rest] -> reverse(Rest, Lines) ; Lines = AllLines),
+                 length(Lines, LineCount),
+
+                 % Replace entire file content
+                 (LineCount > 0
+                 -> Edits = [replace(1, LineCount, NewContent)]
+                 ; Edits = [append(NewContent)]),
+                 magic_cast(conjure(fs(edit_file(file(File), edits(Edits)))), EditResult),
+                 (EditResult = ok(_) -> true ; throw(EditResult)),
+
+                 % Reload entity file
+                 reload_entity(semantic(file(File)))
+
+             ;   Generation = runtime_assertion
+             ->  % Runtime assertion, can retract
+                 retract(component(Entity, Type, Value))
+
+             ;   % It's derived - cannot remove
+                 throw(error(cannot_remove_derived_component(component(Entity, Type, Value)), _))
+             ),
+
+             Result = ok(component_removed(component_type(Type), value(Value)))),
+            Exception,
+            (   Exception = error(sus(component_not_found(_)), _)
+            ->  Result = error(remove_error(component_not_found))
+            ;   Exception = error(cannot_remove_derived_component(_), _)
+            ->  Result = error(remove_error(cannot_remove_derived))
+            ;   term_string(Exception, ExceptionStr),
+                Result = error(remove_error(ExceptionStr))
+            )
+        )
+    ))
+).
+
 % === ENTITY-SPECIFIC DOCSTRINGS ===
 docstring(entity_hierarchy, "Build a hierarchical tree structure from entity child relationships.
     Format: perceive(entity_hierarchy(RootEntity))

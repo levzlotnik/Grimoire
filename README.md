@@ -610,7 +610,7 @@ Key rules:
 
 ## License
 
-MIT License
+AGPL
 
 ## Developer Command
 

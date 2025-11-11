@@ -1058,6 +1058,56 @@ class Grimoire:
         )
 
     # ========================================================================
+    # CRUD COMPONENT OPERATIONS
+    # ========================================================================
+
+    def add_component(self, component_type: str, value: str, entity: Optional[str] = None) -> GenericResponse:
+        """Add component to entity (defaults to focused entity)
+
+        Args:
+            component_type: Component type to add
+            value: Component value (Prolog term as string)
+            entity: Optional entity name (defaults to focused entity)
+
+        Returns:
+            GenericResponse with operation result
+
+        Example:
+            grimoire.add_component("config_key", "value123")
+            grimoire.add_component("config_key", "value123", entity="my_entity")
+        """
+        # Use focused_entity if no entity specified
+        target_entity = entity if entity else "focused_entity"
+        return self._magic_cast(
+            "conjure(interface(add_component(entity(Entity), component_type(Type), value(Value))))",
+            {"Entity": target_entity, "Type": component_type, "Value": value},
+            GenericResponse
+        )
+
+    def remove_component(self, component_type: str, value: str, entity: Optional[str] = None) -> GenericResponse:
+        """Remove component from entity (defaults to focused entity)
+
+        Args:
+            component_type: Component type to remove
+            value: Component value (Prolog term as string)
+            entity: Optional entity name (defaults to focused entity)
+
+        Returns:
+            GenericResponse with operation result
+
+        Example:
+            grimoire.remove_component("config_key", "value123")
+            grimoire.remove_component("config_key", "value123", entity="my_entity")
+        """
+        # Use focused_entity if no entity specified
+        target_entity = entity if entity else "focused_entity"
+        return self._magic_cast(
+            "conjure(interface(remove_component(entity(Entity), component_type(Type), value(Value))))",
+            {"Entity": target_entity, "Type": component_type, "Value": value},
+            GenericResponse
+        )
+
+    # ========================================================================
     # METADATA HELPERS
     # ========================================================================
 

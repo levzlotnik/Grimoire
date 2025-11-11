@@ -76,11 +76,16 @@ def perceive(query_sig: str, args: Optional[Dict[str, Any]] = None) -> str:
     Execute perception query.
 
     Args:
-        query_sig: Query signature (e.g., "git(status)")
-        args: Optional dict of arguments for template filling
+        query_sig: Query signature with template variables (e.g., "git(status(git_root(Root)))")
+        args: Dict of arguments to fill template variables (e.g., {"Root": "/path/to/repo"})
 
-    Example:
-        perceive("git(status)", {})
+    The signature shows WHERE variables go, making it self-documenting.
+    Capitalized names in the signature (Root, Entity, etc.) are template variables.
+
+    Examples:
+        perceive("interface(entities)", {})
+        perceive("git(status(git_root(Root)))", {"Root": "/tmp/repo"})
+        perceive("interface(components(entity(Entity), type(Type)))", {"Entity": "git", "Type": "ctor"})
     """
     try:
         result = grimoire.perceive(query_sig, args or {})
@@ -95,11 +100,16 @@ def conjure(spell_sig: str, args: Optional[Dict[str, Any]] = None) -> str:
     Execute conjuration spell.
 
     Args:
-        spell_sig: Spell signature (e.g., "git(commit)")
-        args: Dict of arguments for template filling
+        spell_sig: Spell signature with template variables (e.g., "git(commit(message(Message)))")
+        args: Dict of arguments to fill template variables (e.g., {"Message": "Fix bug"})
 
-    Example:
-        conjure("git(commit)", {"Message": "Initial commit"})
+    The signature shows WHERE variables go, making it self-documenting.
+    Capitalized names in the signature (Message, Path, etc.) are template variables.
+
+    Examples:
+        conjure("git(commit(message(Message)))", {"Message": "Initial commit"})
+        conjure("git(add(git_root(Root), paths(Paths)))", {"Root": "/tmp/repo", "Paths": ["file1.py", "file2.py"]})
+        conjure("session(focus_entity(entity(Entity)))", {"Entity": "my_project"})
     """
     try:
         result = grimoire.conjure(spell_sig, args or {})
@@ -193,6 +203,40 @@ def get_focused() -> GenericResponse:
 def unfocus() -> GenericResponse:
     """Clear focused entity"""
     return grimoire.session_unfocus()
+
+
+@mcp.tool()
+def add_component(component_type: str, value: str, entity: Optional[str] = None) -> GenericResponse:
+    """
+    Add component to entity (defaults to focused entity).
+
+    Args:
+        component_type: Component type to add
+        value: Component value (Prolog term as string)
+        entity: Optional entity name (defaults to focused entity)
+
+    Example:
+        add_component("config_key", "value123")
+        add_component("config_key", "value123", entity="my_entity")
+    """
+    return grimoire.add_component(component_type, value, entity)
+
+
+@mcp.tool()
+def remove_component(component_type: str, value: str, entity: Optional[str] = None) -> GenericResponse:
+    """
+    Remove component from entity (defaults to focused entity).
+
+    Args:
+        component_type: Component type to remove
+        value: Component value (Prolog term as string)
+        entity: Optional entity name (defaults to focused entity)
+
+    Example:
+        remove_component("config_key", "value123")
+        remove_component("config_key", "value123", entity="my_entity")
+    """
+    return grimoire.remove_component(component_type, value, entity)
 
 
 @mcp.tool()
