@@ -82,77 +82,85 @@ component(db, subcommand, tables).
 % that branches based on schema(file(...)) vs schema(sql(...))
 register_spell(
     conjure(db(create)),
-    input(db(create(file('DbPath'), schema('SchemaSpec')))),
+    input(conjure(db(create(file(DbPath:atom), schema(SchemaSpec:term))))),
     output(either(
-        ok(db(sqlite(file('DbPath')))),
-        error(db_error('Reason'))
+        ok(db(sqlite(file(DbPath:atom)))),
+        error(db_error(Reason:term), Context:term)
     )),
     "Create a new SQLite database from a schema file or SQL string. Returns a database object.",
     [session_persistent(has(db(sqlite)))],
     implementation(conjure(db(create(file(DbPath), schema(SchemaSpec)))), Result, (
-        % Validate path
-        ((atom(DbPath) ; string(DbPath)) -> true ; throw(error(db_error(invalid_db_path(DbPath))))),
-        (atom(DbPath) -> atom_string(DbPath, DbPathStr) ; DbPathStr = DbPath),
+        catch(
+            (% Validate path
+             ((atom(DbPath) ; string(DbPath)) -> true ; throw(error(db_error(invalid_db_path(DbPath)), context(db(create), 'Invalid path')))),
+             (atom(DbPath) -> atom_string(DbPath, DbPathStr) ; DbPathStr = DbPath),
 
-        % Validate directory exists and is writable
-        file_directory_name(DbPathStr, DbDir),
-        (exists_directory(DbDir) ->
-            access_file(DbDir, write)
-        ;
-            throw(error(db_error(directory_not_found(DbDir))))
-        ),
+             % Validate directory exists and is writable
+             file_directory_name(DbPathStr, DbDir),
+             (exists_directory(DbDir) ->
+                 access_file(DbDir, write)
+             ;
+                 throw(error(db_error(directory_not_found(DbDir)), context(db(create), 'Directory not found')))
+             ),
 
-        % Check DB doesn't already exist
-        (exists_file(DbPathStr) ->
-            throw(error(db_error(database_already_exists(DbPathStr))))
-        ;
-            true
-        ),
+             % Check DB doesn't already exist
+             (exists_file(DbPathStr) ->
+                 throw(error(db_error(database_already_exists(DbPathStr)), context(db(create), 'Database exists')))
+             ;
+                 true
+             ),
 
-        % Process schema (file or SQL)
-        process_schema_spec(SchemaSpec, DbPathStr, _ActualSchemaFile),
+             % Process schema (file or SQL)
+             process_schema_spec(SchemaSpec, DbPathStr, _ActualSchemaFile),
 
-        % Verify DB was created
-        (exists_file(DbPathStr) ->
-            validate_database(DbPathStr)
-        ;
-            throw(error(db_error(creation_failed(DbPathStr))))
-        ),
+             % Verify DB was created
+             (exists_file(DbPathStr) ->
+                 validate_database(DbPathStr)
+             ;
+                 throw(error(db_error(creation_failed(DbPathStr)), context(db(create), 'Creation failed')))
+             ),
 
-        Result = ok(db(sqlite(file(DbPath))))
+             Result = ok(db(sqlite(file(DbPath))))),
+            error(Reason, Context),
+            Result = error(db_error(Reason), Context)
+        )
     ))
 ).
 
 % Execute SQL statement (mutation)
 register_spell(
     conjure(db(execute)),
-    input(db(execute(database('DbPath'), sql('SQL')))),
+    input(conjure(db(execute(database(DbPath:stringy), sql(SQL:string))))),
     output(either(
-        ok(executed('SQL')),
-        error(db_error('Reason'))
+        ok(executed(SQL:string)),
+        error(db_error(Reason:term), Context:term)
     )),
     "Execute a SQL statement that modifies the database (INSERT, UPDATE, DELETE, etc.).",
     [],
     implementation(conjure(db(execute(database(DbPath), sql(SQL)))), Result, (
-        % Validation
-        string(SQL),
-        (atom(DbPath) -> atom_string(DbPath, DbPathStr) ; DbPathStr = DbPath),
+        catch(
+            (% Validation
+             string(SQL),
+             (atom(DbPath) -> atom_string(DbPath, DbPathStr) ; DbPathStr = DbPath),
 
-        % Verify file exists and is accessible
-        (exists_file(DbPathStr) ->
-            (access_file(DbPathStr, write) ->
-                (validate_database(DbPathStr) ->
-                    % Execute
-                    sqlite3_exec(DbPathStr, SQL),
-                    Result = ok(executed(SQL))
-                ;
-                    Result = error(db_error(invalid_database(DbPath)))
-                )
-            ;
-                Result = error(db_error(database_not_writable(DbPath)))
-            )
-        ;
-            Result = error(db_error(database_file_not_found(DbPath)))
+             % Verify file exists and is accessible
+             (exists_file(DbPathStr) ->
+                 (access_file(DbPathStr, write) ->
+                     (validate_database(DbPathStr) ->
+                         % Execute
+                         sqlite3_exec(DbPathStr, SQL),
+                         Result = ok(executed(SQL))
+                     ;
+                         Result = error(db_error(invalid_database(DbPath)), context(db(execute), 'Invalid database'))
+                     )
+                 ;
+                     Result = error(db_error(database_not_writable(DbPath)), context(db(execute), 'Not writable'))
+                 )
+             ;
+                 Result = error(db_error(database_file_not_found(DbPath)), context(db(execute), 'File not found'))
+             )),
+            error(Reason, Context),
+            Result = error(db_error(Reason), Context)
         )
     ))
 ).
@@ -160,34 +168,38 @@ register_spell(
 % Execute parameterized SQL statement (mutation, SQL injection safe)
 register_spell(
     conjure(db(execute_params)),
-    input(db(execute_params(database('DbPath'), sql('SQL'), params('Params')))),
+    input(conjure(db(execute_params(database(DbPath:stringy), sql(SQL:string), params(Params:list(term)))))),
     output(either(
-        ok(executed('SQL')),
-        error(db_error('Reason'))
+        ok(executed(SQL:string)),
+        error(db_error(Reason:term), Context:term)
     )),
     "Execute a parameterized SQL statement. Use ? placeholders for parameters (SQL injection safe).",
     [],
     implementation(conjure(db(execute_params(database(DbPath), sql(SQL), params(Params)))), Result, (
-        % Validation
-        string(SQL),
-        is_list(Params),
-        (atom(DbPath) -> atom_string(DbPath, DbPathStr) ; DbPathStr = DbPath),
+        catch(
+            (% Validation
+             string(SQL),
+             is_list(Params),
+             (atom(DbPath) -> atom_string(DbPath, DbPathStr) ; DbPathStr = DbPath),
 
-        % Verify file exists and is accessible
-        (exists_file(DbPathStr) ->
-            (access_file(DbPathStr, write) ->
-                (validate_database(DbPathStr) ->
-                    % Execute with parameters
-                    sqlite3_exec_params(DbPathStr, SQL, Params),
-                    Result = ok(executed(SQL))
-                ;
-                    Result = error(db_error(invalid_database(DbPath)))
-                )
-            ;
-                Result = error(db_error(database_not_writable(DbPath)))
-            )
-        ;
-            Result = error(db_error(database_file_not_found(DbPath)))
+             % Verify file exists and is accessible
+             (exists_file(DbPathStr) ->
+                 (access_file(DbPathStr, write) ->
+                     (validate_database(DbPathStr) ->
+                         % Execute with parameters
+                         sqlite3_exec_params(DbPathStr, SQL, Params),
+                         Result = ok(executed(SQL))
+                     ;
+                         Result = error(db_error(invalid_database(DbPath)), context(db(execute_params), 'Invalid database'))
+                     )
+                 ;
+                     Result = error(db_error(database_not_writable(DbPath)), context(db(execute_params), 'Not writable'))
+                 )
+             ;
+                 Result = error(db_error(database_file_not_found(DbPath)), context(db(execute_params), 'File not found'))
+             )),
+            error(Reason, Context),
+            Result = error(db_error(Reason), Context)
         )
     ))
 ).
@@ -195,33 +207,37 @@ register_spell(
 % Query database and return results
 register_spell(
     perceive(db(query)),
-    input(db(query(database('DbPath'), sql('SQL')))),
+    input(perceive(db(query(database(DbPath:stringy), sql(SQL:string))))),
     output(either(
-        ok(query_results('Results')),
-        error(query_error('Reason'))
+        ok(query_results(QueryResults:list(term))),
+        error(query_error(Reason:term), Context:term)
     )),
     "Execute a SQL query and return the results. Use for SELECT statements.",
     [],
     implementation(perceive(db(query(database(DbPath), sql(SQL)))), Result, (
-        % Validation
-        string(SQL),
-        (atom(DbPath) -> atom_string(DbPath, DbPathStr) ; DbPathStr = DbPath),
+        catch(
+            (% Validation
+             string(SQL),
+             (atom(DbPath) -> atom_string(DbPath, DbPathStr) ; DbPathStr = DbPath),
 
-        % Verify file exists and is readable
-        (exists_file(DbPathStr) ->
-            (access_file(DbPathStr, read) ->
-                (validate_database(DbPathStr) ->
-                    % Query
-                    sqlite3_query(DbPathStr, SQL, QueryResults),
-                    Result = ok(query_results(QueryResults))
-                ;
-                    Result = error(query_error(invalid_database(DbPath)))
-                )
-            ;
-                Result = error(query_error(database_not_readable(DbPath)))
-            )
-        ;
-            Result = error(query_error(database_file_not_found(DbPath)))
+             % Verify file exists and is readable
+             (exists_file(DbPathStr) ->
+                 (access_file(DbPathStr, read) ->
+                     (validate_database(DbPathStr) ->
+                         % Query
+                         sqlite3_query(DbPathStr, SQL, QueryResults),
+                         Result = ok(query_results(QueryResults))
+                     ;
+                         Result = error(query_error(invalid_database(DbPath)), context(db(query), 'Invalid database'))
+                     )
+                 ;
+                     Result = error(query_error(database_not_readable(DbPath)), context(db(query), 'Not readable'))
+                 )
+             ;
+                 Result = error(query_error(database_file_not_found(DbPath)), context(db(query), 'File not found'))
+             )),
+            error(Reason, Context),
+            Result = error(query_error(Reason), Context)
         )
     ))
 ).
@@ -229,34 +245,38 @@ register_spell(
 % Query database with parameters (SQL injection safe)
 register_spell(
     perceive(db(query_params)),
-    input(db(query_params(database('DbPath'), sql('SQL'), params('Params')))),
+    input(perceive(db(query_params(database(DbPath:stringy), sql(SQL:string), params(Params:list(term)))))),
     output(either(
-        ok(query_results('Results')),
-        error(query_error('Reason'))
+        ok(query_results(QueryResults:list(term))),
+        error(query_error(Reason:term), Context:term)
     )),
     "Execute a parameterized SQL query. Use ? placeholders for parameters (SQL injection safe).",
     [],
     implementation(perceive(db(query_params(database(DbPath), sql(SQL), params(Params)))), Result, (
-        % Validation
-        string(SQL),
-        is_list(Params),
-        (atom(DbPath) -> atom_string(DbPath, DbPathStr) ; DbPathStr = DbPath),
+        catch(
+            (% Validation
+             string(SQL),
+             is_list(Params),
+             (atom(DbPath) -> atom_string(DbPath, DbPathStr) ; DbPathStr = DbPath),
 
-        % Verify file exists and is readable
-        (exists_file(DbPathStr) ->
-            (access_file(DbPathStr, read) ->
-                (validate_database(DbPathStr) ->
-                    % Query with parameters
-                    sqlite3_query_params(DbPathStr, SQL, Params, QueryResults),
-                    Result = ok(query_results(QueryResults))
-                ;
-                    Result = error(query_error(invalid_database(DbPath)))
-                )
-            ;
-                Result = error(query_error(database_not_readable(DbPath)))
-            )
-        ;
-            Result = error(query_error(database_file_not_found(DbPath)))
+             % Verify file exists and is readable
+             (exists_file(DbPathStr) ->
+                 (access_file(DbPathStr, read) ->
+                     (validate_database(DbPathStr) ->
+                         % Query with parameters
+                         sqlite3_query_params(DbPathStr, SQL, Params, QueryResults),
+                         Result = ok(query_results(QueryResults))
+                     ;
+                         Result = error(query_error(invalid_database(DbPath)), context(db(query_params), 'Invalid database'))
+                     )
+                 ;
+                     Result = error(query_error(database_not_readable(DbPath)), context(db(query_params), 'Not readable'))
+                 )
+             ;
+                 Result = error(query_error(database_file_not_found(DbPath)), context(db(query_params), 'File not found'))
+             )),
+            error(Reason, Context),
+            Result = error(query_error(Reason), Context)
         )
     ))
 ).
@@ -264,32 +284,36 @@ register_spell(
 % Get list of tables in database
 register_spell(
     perceive(db(tables)),
-    input(db(tables(database('DbPath')))),
+    input(perceive(db(tables(database(DbPath:stringy))))),
     output(either(
-        ok(tables('TableList')),
-        error(tables_error('Reason'))
+        ok(tables(TableList:list(atom))),
+        error(tables_error(Reason:term), Context:term)
     )),
     "Get a list of all tables in the specified database.",
     [],
     implementation(perceive(db(tables(database(DbPath)))), Result, (
-        % Validation
-        (atom(DbPath) -> atom_string(DbPath, DbPathStr) ; DbPathStr = DbPath),
+        catch(
+            (% Validation
+             (atom(DbPath) -> atom_string(DbPath, DbPathStr) ; DbPathStr = DbPath),
 
-        % Verify file exists and is readable
-        (exists_file(DbPathStr) ->
-            (access_file(DbPathStr, read) ->
-                (validate_database(DbPathStr) ->
-                    % Get tables
-                    get_database_tables(DbPathStr, TableList),
-                    Result = ok(tables(TableList))
-                ;
-                    Result = error(tables_error(invalid_database(DbPath)))
-                )
-            ;
-                Result = error(tables_error(database_not_readable(DbPath)))
-            )
-        ;
-            Result = error(tables_error(database_file_not_found(DbPath)))
+             % Verify file exists and is readable
+             (exists_file(DbPathStr) ->
+                 (access_file(DbPathStr, read) ->
+                     (validate_database(DbPathStr) ->
+                         % Get tables
+                         get_database_tables(DbPathStr, TableList),
+                         Result = ok(tables(TableList))
+                     ;
+                         throw(error(invalid_database(DbPath), context(db(tables), 'Database validation failed')))
+                     )
+                 ;
+                     throw(error(database_not_readable(DbPath), context(db(tables), 'Database not readable')))
+                 )
+             ;
+                 throw(error(database_file_not_found(DbPath), context(db(tables), 'Database file not found')))
+             )),
+            error(Reason, Context),
+            Result = error(tables_error(Reason), Context)
         )
     ))
 ).
@@ -297,10 +321,10 @@ register_spell(
 % Write table data - rows are Prolog compound terms
 register_spell(
     conjure(db(write_table)),
-    input(db(write_table(database('DbPath'), table('TableName'), rows('Rows')))),
+    input(conjure(db(write_table(database(DbPath:stringy), table(TableName:atom), rows(Rows:list(term)))))),
     output(either(
-        ok(written(count('Count'))),
-        error(write_error('Reason'))
+        ok(written(count(Count:integer))),
+        error(write_error(Reason:term), Context:term)
     )),
     "Write rows (as Prolog compound terms) to a database table. Creates table if needed.",
     [],
@@ -308,8 +332,8 @@ register_spell(
         catch(
             (write_rows_to_table(DbPath, TableName, Rows, Count),
              Result = ok(written(count(Count)))),
-            Error,
-            Result = error(write_error(Error))
+            error(Reason, Context),
+            Result = error(write_error(Reason), Context)
         )
     ))
 ).
@@ -317,10 +341,10 @@ register_spell(
 % Read table data - returns rows as Prolog compound terms
 register_spell(
     perceive(db(read_table)),
-    input(db(read_table(database('DbPath'), table('TableName')))),
+    input(perceive(db(read_table(database(DbPath:stringy), table(TableName:atom))))),
     output(either(
-        ok(rows('Rows')),
-        error(read_error('Reason'))
+        ok(rows(Rows:list(term))),
+        error(read_error(Reason:term), Context:term)
     )),
     "Read rows from a database table as Prolog compound terms.",
     [],
@@ -328,8 +352,8 @@ register_spell(
         catch(
             (read_rows_from_table(DbPath, TableName, Rows),
              Result = ok(rows(Rows))),
-            Error,
-            Result = error(read_error(Error))
+            error(Reason, Context),
+            Result = error(read_error(Reason), Context)
         )
     ))
 ).

@@ -11,7 +11,8 @@ entity(fail_entity).
 % Main test entity with fs(structure) component
 component(test_entity(fs), has(fs(structure)), fs(structure([
     file('test_file.txt'),
-    folder('test_dir', [file('nested_file.txt')])
+    file('test_dir/nested_file.txt'),
+    folder('test_dir')
 ]))).
 component(test_entity(fs), core_dump_ignorelist, [fs_structure_file, fs_structure_folder, has(fs(structure))]).
 

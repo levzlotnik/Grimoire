@@ -472,7 +472,10 @@ test(session_focus_nonexistent_entity_fails, [
 
     % Try to focus on nonexistent entity - should return error
     user:magic_cast(conjure(session(focus_entity(entity(nonexistent_entity_xyz)))), FocusResult),
-    assertion(FocusResult = error(focus_error(entity_not_found(nonexistent_entity_xyz)))),
+    assertion(FocusResult = error(
+        focus_error(entity_not_found(nonexistent_entity_xyz)),
+        context(session(focus_entity), 'Entity not found')
+    )),
 
     % Cleanup
     user:magic_cast(conjure(session(delete(id(SessionId)))), DeleteResult),
@@ -496,7 +499,10 @@ test(session_focus_path_no_entity_fails, [
 
     % Try to focus by path - should return error
     user:magic_cast(conjure(session(focus_path(path(TestDir)))), FocusResult),
-    assertion(FocusResult = error(focus_error(no_entity_for_path(TestDir)))),
+    assertion(FocusResult = error(
+        focus_error(no_entity_for_path(TestDir)),
+        context(session(focus_path), 'No entity found for path')
+    )),
 
     % Cleanup
     delete_directory_and_contents(TestDir),

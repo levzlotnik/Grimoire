@@ -87,12 +87,13 @@ format_component_result_with_status(Verified, Broken, components(VerifiedFormat,
 % Component types - list all component types for entity
 register_spell(
     perceive(interface(component_types)),
-    input(interface(component_types(entity('Entity')))),
-    output(ok(types('Types'))),
+    input(perceive(interface(component_types(entity(Entity:term))))),
+    output(ok(types(Types:list(term)))),
     "List all component types for an entity",
     [],
-    implementation(perceive(interface(component_types(entity(EntityValue)))), Result, (
-        findall(Type, component(EntityValue, Type, _), AllTypes),
+    implementation(perceive(interface(component_types(entity(Entity)))), Result, (
+        normalize_entity_arg(Entity, NormalizedEntity),
+        findall(Type, component(NormalizedEntity, Type, _), AllTypes),
         sort(AllTypes, Types),
         Result = ok(types(Types))
     ))
@@ -101,19 +102,23 @@ register_spell(
 % Components - get verified and broken components with singleton/set detection
 register_spell(
     perceive(interface(components)),
-    input(interface(components(entity('Entity'), type('Type')))),
+    input(perceive(interface(components(entity(Entity:term), type(Type:term))))),
     output(either(
-        ok(components(verified(either(unique('Value'), set('Values'))), broken('Broken'))),
-        error(component_not_found)
+        ok(components(verified(either(unique(_Value:term), set(_Values:list(term)))), broken(_Broken:list(term)))),
+        error(component_not_found, _Context:term)
     )),
     "Get verified and broken components with smart singleton/set detection and verification status",
     [],
-    implementation(perceive(interface(components(entity(EntityValue), type(TypeValue)))), Result, (
-        ask(component(EntityValue, TypeValue, _), Verified, Broken),
-        (   Verified = [], Broken = []
-        ->  Result = error(component_not_found(component(EntityValue, TypeValue)))
-        ;   format_component_result_with_status(Verified, Broken, FormattedResult),
-            Result = ok(FormattedResult)
+    implementation(perceive(interface(components(entity(Entity), type(Type)))), Result, (
+        normalize_entity_arg(Entity, NormalizedEntity),
+        catch(
+            (ask(component(NormalizedEntity, Type, _), Verified, Broken),
+             (Verified = [], Broken = []
+             -> throw(error(component_not_found(component(Entity, Type)), context(interface(components), 'Component not found')))
+             ; (format_component_result_with_status(Verified, Broken, FormattedResult),
+                Result = ok(FormattedResult)))),
+            error(Reason, Context),
+            Result = error(Reason, Context)
         )
     ))
 ).
@@ -121,12 +126,13 @@ register_spell(
 % Docstring - get entity documentation
 register_spell(
     perceive(interface(docstring)),
-    input(interface(docstring(entity('Entity')))),
-    output(ok(doc('Doc'))),
+    input(perceive(interface(docstring(entity(Entity:term))))),
+    output(ok(doc(Doc:string))),
     "Get entity docstring",
     [],
-    implementation(perceive(interface(docstring(entity(EntityValue)))), Result, (
-        docstring(EntityValue, Doc),
+    implementation(perceive(interface(docstring(entity(Entity)))), Result, (
+        normalize_entity_arg(Entity, NormalizedEntity),
+        docstring(NormalizedEntity, Doc),
         Result = ok(doc(Doc))
     ))
 ).
@@ -134,8 +140,8 @@ register_spell(
 % Entities - list all entities in system
 register_spell(
     perceive(interface(entities)),
-    input(interface(entities)),
-    output(ok(entities('Entities'))),
+    input(perceive(interface(entities))),
+    output(ok(entities(Entities:list(entity)))),
     "List all entities in the system",
     [],
     implementation(perceive(interface(entities)), Result, (
@@ -173,16 +179,16 @@ python_interface_test(Args, PyResult) :-
 % Exec - execute arbitrary Prolog query and return string results
 register_spell(
     conjure(interface(exec)),
-    input(interface(exec(query('QueryString')))),
-    output(ok(solutions('Solutions'))),
+    input(conjure(interface(exec(query(QueryString:string))))),
+    output(ok(solutions(Solutions:list(term)))),
     "Execute arbitrary Prolog query and return string-formatted solutions",
     [],
     implementation(conjure(interface(exec(query(QueryString)))), Result, (
         term_string(Goal, QueryString, [variable_names(VarNames)]),
         findall(VarNames, call(Goal), AllSolutions),
         % Convert to Python-tagged dicts for serialization
-        maplist(solution_to_py_dict, AllSolutions, PySolutions),
-        Result = ok(solutions(PySolutions))
+        maplist(solution_to_py_dict, AllSolutions, Solutions),
+        Result = ok(solutions(Solutions))
     ))
 ).
 
@@ -204,85 +210,86 @@ binding_to_pair(Var=Val, VarAtom-ValStr) :-
 
 register_spell(
     conjure(interface(session_create)),
-    input(interface(session_create(session_id('SessionId')))),
-    output('SessionResult'),
+    input(conjure(interface(session_create(session_id(SessionId:atom))))),
+    output(Result:term),
     "Create a new session (delegates to session domain)",
     [],
-    implementation(conjure(interface(session_create(session_id(SessionIdValue)))), Result, (
-        magic_cast(conjure(session(create(id(SessionIdValue)))), Result)
+    implementation(conjure(interface(session_create(session_id(SessionId)))), Result, (
+        magic_cast(conjure(session(create(id(SessionId)))), Result)
     ))
 ).
 
 register_spell(
     conjure(interface(session_switch)),
-    input(interface(session_switch(session_id('SessionId')))),
-    output('SessionResult'),
+    input(conjure(interface(session_switch(session_id(SessionId:atom))))),
+    output(Result:term),
     "Switch to different session (delegates to session domain)",
     [],
-    implementation(conjure(interface(session_switch(session_id(SessionIdValue)))), Result, (
-        magic_cast(conjure(session(switch(id(SessionIdValue)))), Result)
+    implementation(conjure(interface(session_switch(session_id(SessionId)))), Result, (
+        magic_cast(conjure(session(switch(id(SessionId)))), Result)
     ))
 ).
 
 register_spell(
     conjure(interface(session_delete)),
-    input(interface(session_delete(session_id('SessionId')))),
-    output('SessionResult'),
+    input(conjure(interface(session_delete(session_id(SessionId:atom))))),
+    output(Result:term),
     "Delete a session (delegates to session domain)",
     [],
-    implementation(conjure(interface(session_delete(session_id(SessionIdValue)))), Result, (
-        magic_cast(conjure(session(delete(id(SessionIdValue)))), Result)
+    implementation(conjure(interface(session_delete(session_id(SessionId)))), Result, (
+        magic_cast(conjure(session(delete(id(SessionId)))), Result)
     ))
 ).
 
 register_spell(
     conjure(interface(session_export)),
-    input(interface(session_export(session_id('SessionId'), destination('Dest')))),
-    output('SessionResult'),
+    input(conjure(interface(session_export(session_id(SessionId:atom), destination(Dest:atom))))),
+    output(Result:term),
     "Export session to archive (delegates to session domain)",
     [],
-    implementation(conjure(interface(session_export(session_id(SessionIdValue), destination(DestValue)))), Result, (
-        magic_cast(conjure(session(export(id(SessionIdValue), destination(DestValue)))), Result)
+    implementation(conjure(interface(session_export(session_id(SessionId), destination(Dest)))), Result, (
+        magic_cast(conjure(session(export(id(SessionId), destination(Dest)))), Result)
     ))
 ).
 
 register_spell(
     conjure(interface(session_import)),
-    input(interface(session_import(archive('Archive')))),
-    output('SessionResult'),
+    input(conjure(interface(session_import(archive(Archive:atom))))),
+    output(Result:term),
     "Import session from archive (delegates to session domain)",
     [],
-    implementation(conjure(interface(session_import(archive(ArchiveValue)))), Result, (
-        magic_cast(conjure(session(import(archive(ArchiveValue)))), Result)
+    implementation(conjure(interface(session_import(archive(Archive)))), Result, (
+        magic_cast(conjure(session(import(archive(Archive)))), Result)
     ))
 ).
 
 register_spell(
     conjure(interface(session_focus_entity)),
-    input(interface(session_focus_entity(entity('Entity')))),
-    output('FocusResult'),
+    input(conjure(interface(session_focus_entity(entity(Entity:term))))),
+    output(Result:term),
     "Focus on entity by name (delegates to session domain)",
     [],
-    implementation(conjure(interface(session_focus_entity(entity(EntityValue)))), Result, (
-        magic_cast(conjure(session(focus_entity(entity(EntityValue)))), Result)
+    implementation(conjure(interface(session_focus_entity(entity(Entity)))), Result, (
+        normalize_entity_arg(Entity, NormalizedEntity),
+        magic_cast(conjure(session(focus_entity(entity(NormalizedEntity)))), Result)
     ))
 ).
 
 register_spell(
     conjure(interface(session_focus_path)),
-    input(interface(session_focus_path(path('Path')))),
-    output('FocusResult'),
+    input(conjure(interface(session_focus_path(path(Path:atom))))),
+    output(Result:term),
     "Focus on entity by path (delegates to session domain)",
     [],
-    implementation(conjure(interface(session_focus_path(path(PathValue)))), Result, (
-        magic_cast(conjure(session(focus_path(path(PathValue)))), Result)
+    implementation(conjure(interface(session_focus_path(path(Path)))), Result, (
+        magic_cast(conjure(session(focus_path(path(Path)))), Result)
     ))
 ).
 
 register_spell(
     perceive(interface(session_focused)),
-    input(interface(session_focused)),
-    output('FocusedResult'),
+    input(perceive(interface(session_focused))),
+    output(Result:term),
     "Get focused entity with structured information (delegates to session domain)",
     [],
     implementation(perceive(interface(session_focused)), Result, (
@@ -292,8 +299,8 @@ register_spell(
 
 register_spell(
     conjure(interface(session_unfocus)),
-    input(interface(session_unfocus)),
-    output('UnfocusResult'),
+    input(conjure(interface(session_unfocus))),
+    output(Result:term),
     "Clear focused entity (delegates to session domain)",
     [],
     implementation(conjure(interface(session_unfocus)), Result, (
@@ -303,8 +310,8 @@ register_spell(
 
 register_spell(
     perceive(interface(session_status)),
-    input(interface(session_status)),
-    output('StatusResult'),
+    input(perceive(interface(session_status))),
+    output(Result:term),
     "Get session status including focused entity (delegates to session domain)",
     [],
     implementation(perceive(interface(session_status)), Result, (
@@ -314,8 +321,8 @@ register_spell(
 
 register_spell(
     perceive(interface(session_context)),
-    input(interface(session_context)),
-    output(ok(session('SessionId'), focused('FocusInfo'), common_activity('Activities'))),
+    input(perceive(interface(session_context))),
+    output(Result:term),
     "Get comprehensive session context for LLM state recovery (delegates to session domain)",
     [],
     implementation(perceive(interface(session_context)), Result, (
@@ -329,23 +336,25 @@ register_spell(
 
 register_spell(
     conjure(interface(invoke_skill)),
-    input(interface(invoke_skill(entity('Entity'), skill('SkillTerm')))),
-    output('SkillResult'),
+    input(conjure(interface(invoke_skill(entity(Entity:term), skill(SkillTerm:term))))),
+    output(Result:term),
     "Invoke a skill on an entity (delegates to invoke_skill spell)",
     [],
-    implementation(conjure(interface(invoke_skill(entity(EntityValue), skill(SkillTermValue)))), Result, (
-        magic_cast(conjure(invoke_skill(entity(EntityValue), skill(SkillTermValue))), Result)
+    implementation(conjure(interface(invoke_skill(entity(EntityInput), skill(SkillTerm)))), Result, (
+        normalize_entity_arg(EntityInput, Entity),
+        magic_cast(conjure(invoke_skill(entity(Entity), skill(SkillTerm))), Result)
     ))
 ).
 
 register_spell(
     perceive(interface(skills)),
-    input(interface(skills(entity('Entity')))),
-    output('SkillsList'),
+    input(perceive(interface(skills(entity(Entity:term))))),
+    output(Result:term),
     "List all available skills for an entity (delegates to skills perception)",
     [],
-    implementation(perceive(interface(skills(entity(EntityValue)))), Result, (
-        magic_cast(perceive(skills(entity(EntityValue))), Result)
+    implementation(perceive(interface(skills(entity(EntityInput)))), Result, (
+        normalize_entity_arg(EntityInput, Entity),
+        magic_cast(perceive(skills(entity(Entity))), Result)
     ))
 ).
 
@@ -355,8 +364,8 @@ register_spell(
 
 register_spell(
     conjure(interface(init)),
-    input(interface(init(folder('Folder'), options('Options')))),
-    output('InitResult'),
+    input(conjure(interface(init(folder(Folder:atom), options(Options:term))))),
+    output(Result:term),
     "Initialize Grimoire for existing project (delegates to project domain)",
     [],
     implementation(conjure(interface(init(folder(Folder), options(Options)))), Result, (
@@ -370,34 +379,35 @@ register_spell(
 
 register_spell(
     perceive(interface(prove_it)),
-    input(interface(prove_it(entity('Entity'), type('Type'), value('Value')))),
-    output('ProofResult'),
+    input(perceive(interface(prove_it(entity(Entity:term), type(Type:term), value(Value:term))))),
+    output(Result:term),
     "Component provenance - where generated and how verified (delegates to prove_it spell)",
     [],
-    implementation(perceive(interface(prove_it(entity(EntityValue), type(TypeValue), value(ValueTerm)))), Result, (
-        magic_cast(perceive(prove_it(component(EntityValue, TypeValue, ValueTerm))), Result)
+    implementation(perceive(interface(prove_it(entity(EntityInput), type(Type), value(Value)))), Result, (
+        normalize_entity_arg(EntityInput, Entity),
+        magic_cast(perceive(prove_it(component(Entity, Type, Value))), Result)
     ))
 ).
 
 register_spell(
     perceive(interface(sauce_me)),
-    input(interface(sauce_me(spell_ctor('SpellCtor')))),
-    output('SauceResult'),
+    input(perceive(interface(sauce_me(spell_ctor(SpellCtor:term))))),
+    output(Result:term),
     "Spell metadata - source location, implementation, formats (delegates to sauce_me spell)",
     [],
-    implementation(perceive(interface(sauce_me(spell_ctor(SpellCtorValue)))), Result, (
+    implementation(perceive(interface(sauce_me(spell_ctor(SpellCtor)))), Result, (
         % Parse string to term if needed
-        (atom(SpellCtorValue)
-        -> term_string(SpellCtorTerm, SpellCtorValue)
-        ; SpellCtorTerm = SpellCtorValue),
+        (atom(SpellCtor)
+        -> term_string(SpellCtorTerm, SpellCtor)
+        ; SpellCtorTerm = SpellCtor),
         magic_cast(perceive(sauce_me(spell(SpellCtorTerm))), Result)
     ))
 ).
 
 register_spell(
     perceive(interface(system_instructions)),
-    input(interface(system_instructions)),
-    output(ok(instructions('Instructions'))),
+    input(perceive(interface(system_instructions))),
+    output(ok(instructions(Instructions:string))),
     "Get system instructions/prompt for AI agents",
     [],
     implementation(perceive(interface(system_instructions)), Result, (
@@ -411,6 +421,11 @@ register_spell(
 %% ============================================================================
 
 % Helper: Resolve entity name, handling focused_entity special case
+normalize_entity_arg(EntityInput, Entity) :-
+    (string(EntityInput) ->
+        (catch(term_string(Entity, EntityInput), _, atom_string(Entity, EntityInput)))
+    ; Entity = EntityInput).
+
 resolve_entity_name(focused_entity, ActualEntity) :- !,
     catch(
         (current_session_id(SessionId),
@@ -418,39 +433,47 @@ resolve_entity_name(focused_entity, ActualEntity) :- !,
         _,
         fail
     ).
-resolve_entity_name(Entity, Entity).
+resolve_entity_name(EntityInput, Entity) :-
+    normalize_entity_arg(EntityInput, Entity).
 
 % Add component - smart wrapper that resolves focused_entity
 register_spell(
     conjure(interface(add_component)),
-    input(interface(add_component(entity('Entity'), component_type('Type'), value('Value')))),
+    input(conjure(interface(add_component(entity(Entity:term), component_type(Type:term), value(Value:term))))),
     output(either(
-        ok(component_added(component_type('Type'), value('Value'))),
-        error(add_error('Reason'))
+        ok(component_added(component_type(Type:term), value(Value:term))),
+        error(add_error(Reason:term), Context:term)
     )),
     "Add component to entity (resolves focused_entity from session)",
     [],
-    implementation(conjure(interface(add_component(entity(EntitySpec), component_type(Type), value(Value)))), Result, (
-        (resolve_entity_name(EntitySpec, ActualEntity)
-        -> magic_cast(conjure(add_component(entity(ActualEntity), component_type(Type), value(Value))), Result)
-        ; Result = error(add_error(no_focused_entity)))
+    implementation(conjure(interface(add_component(entity(Entity), component_type(Type), value(Value)))), Result, (
+        catch(
+            (resolve_entity_name(Entity, ActualEntity)
+            -> magic_cast(conjure(add_component(entity(ActualEntity), component_type(Type), value(Value))), Result)
+            ; throw(error(no_focused_entity, context(interface(add_component), 'No focused entity')))),
+            error(Reason, Context),
+            Result = error(add_error(Reason), Context)
+        )
     ))
 ).
 
 % Remove component - smart wrapper that resolves focused_entity
 register_spell(
     conjure(interface(remove_component)),
-    input(interface(remove_component(entity('Entity'), component_type('Type'), value('Value')))),
+    input(conjure(interface(remove_component(entity(Entity:term), component_type(Type:term), value(Value:term))))),
     output(either(
-        ok(component_removed(component_type('Type'), value('Value'))),
-        error(remove_error('Reason'))
+        ok(component_removed(component_type(Type:term), value(Value:term))),
+        error(remove_error(Reason:term), Context:term)
     )),
     "Remove component from entity (resolves focused_entity from session)",
     [],
-    implementation(conjure(interface(remove_component(entity(EntitySpec), component_type(Type), value(Value)))), Result, (
-        (resolve_entity_name(EntitySpec, ActualEntity)
-        -> magic_cast(conjure(remove_component(entity(ActualEntity), component_type(Type), value(Value))), Result)
-        ; Result = error(remove_error(no_focused_entity)))
+    implementation(conjure(interface(remove_component(entity(Entity), component_type(Type), value(Value)))), Result, (
+        catch(
+            (resolve_entity_name(Entity, ActualEntity)
+            -> magic_cast(conjure(remove_component(entity(ActualEntity), component_type(Type), value(Value))), Result)
+            ; throw(error(no_focused_entity, context(interface(remove_component), 'No focused entity')))),
+            error(Reason, Context),
+            Result = error(remove_error(Reason), Context)
+        )
     ))
 ).
-

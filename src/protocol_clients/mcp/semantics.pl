@@ -19,12 +19,12 @@ docstring(protocol_client(mcp), "MCP (Model Context Protocol) client for consumi
 % MCP server registration spell
 register_spell(
     conjure(protocol_client(mcp(register))),
-    input(protocol_client(mcp(register(
-        server('Server'),
+    input(conjure(protocol_client(mcp(register(
+        server(Server:atom),
         transport('Transport'),
         command('Command')
-    )))),
-    output(either(ok(server_registered('Server')), error(mcp_registration_error('Reason')))),
+    ))))),
+    output(either(ok(server_registered(Server:atom)), error(mcp_registration_error('Reason')))),
     docstring("Register an MCP server with stdio or HTTP transport and auto-discover its available tools")
 ).
 
@@ -47,12 +47,12 @@ cast(conjure(protocol_client(mcp(register(
 % MCP tool call spell
 register_spell(
     conjure(protocol_client(mcp(call))),
-    input(protocol_client(mcp(call(
-        server('Server'),
+    input(conjure(protocol_client(mcp(call(
+        server(Server:atom),
         tool('Tool'),
         args('Args')
-    )))),
-    output(either(ok(tool_result(content('Content'), server('Server'))), error(mcp_call_error('Reason')))),
+    ))))),
+    output(either(ok(tool_result(content(Content:string), server(Server:atom))), error(mcp_call_error('Reason')))),
     docstring("Call a tool on a registered MCP server with given arguments")
 ).
 
@@ -73,7 +73,7 @@ cast(conjure(protocol_client(mcp(call(
 % List MCP tools spell
 register_spell(
     perceive(protocol_client(mcp(list_tools))),
-    input(protocol_client(mcp(list_tools(server('Server'))))),
+    input(perceive(protocol_client(mcp(list_tools(server(Server:atom)))))),
     output(either(ok(tools('Tools')), error(mcp_list_tools_error('Reason')))),
     docstring("List all tools available on a registered MCP server")
 ).
@@ -91,7 +91,7 @@ cast(perceive(protocol_client(mcp(list_tools(server(Server))))), Result) :-
 % List MCP servers spell
 register_spell(
     perceive(protocol_client(mcp(list_servers))),
-    input(protocol_client(mcp(list_servers))),
+    input(perceive(protocol_client(mcp(list_servers)))),
     output(either(ok(servers('Servers')), error(mcp_list_servers_error('Reason')))),
     docstring("List all registered MCP servers")
 ).

@@ -25,7 +25,8 @@ test(fs_structure_verification, [
     % Verify it exists
     user:please_verify(component(test_entity(fs), has(fs(structure)), fs(structure([
         file('test_file.txt'),
-        folder('test_dir', [file('nested_file.txt')])
+        file('test_dir/nested_file.txt'),
+        folder('test_dir')
     ])))).
 
 % Test fs(permissions) verification on executable script

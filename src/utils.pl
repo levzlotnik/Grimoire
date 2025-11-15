@@ -73,16 +73,14 @@ Note: File processing utilities have been moved to the fs domain.
 register_dsl_schema(
     utils,
     has(utils(tree_builder)),
-    signature(utils(tree_builder(root('Root'), relationship('Rel'), options('Options')))),
+    signature(utils(tree_builder(root(Root:entity), relationship(Rel:atom), options(Options:list(term))))),
     "Build hierarchical tree from entity relationships (pure ECS traversal, no I/O)",
     (
         component(E, has(utils(tree_builder)), utils(tree_builder(root(Root), relationship(Rel), options(Options))))
             ==> component(E, utils_tree_root, Root),
                 component(E, utils_tree_relationship, Rel),
                 (component(E, utils_tree_max_depth, MD) :- member(max_depth(MD), Options))
-            ::  ground(Root),
-                atom(Rel),
-                is_list(Options)
+            ::  ground(Root)
     )
 ).
 
@@ -90,14 +88,12 @@ register_dsl_schema(
 register_dsl_schema(
     utils,
     has(utils(validator)),
-    signature(utils(validator(rules('Rules'), on_error('ErrorMode')))),
+    signature(utils(validator(rules(Rules:list(term)), on_error(ErrorMode:atom)))),
     "Validate entity against rules with configurable error handling (pure logic, no I/O)",
     (
         component(E, has(utils(validator)), utils(validator(rules(Rules), on_error(ErrorMode))))
             ==> component(E, utils_validation_rules, Rules),
                 component(E, utils_error_handling, ErrorMode)
-            ::  is_list(Rules),
-                atom(ErrorMode)
     )
 ).
 
@@ -105,16 +101,14 @@ register_dsl_schema(
 register_dsl_schema(
     utils,
     has(utils(collection)),
-    signature(utils(collection(type('Type'), operations('Operations'), predicate('Predicate')))),
+    signature(utils(collection(type(Type:atom), operations(Operations:list(atom)), predicate(Predicate:term)))),
     "Transform collections using map/filter/reduce operations (pure data transformation, no I/O)",
     (
         component(E, has(utils(collection)), utils(collection(type(Type), operations(Operations), predicate(Predicate))))
             ==> component(E, utils_collection_type, Type),
                 component(E, utils_collection_operations, Operations),
                 component(E, utils_collection_predicate, Predicate)
-            ::  atom(Type),
-                is_list(Operations),
-                callable(Predicate)
+            ::  callable(Predicate)
     )
 ).
 
@@ -154,7 +148,7 @@ component(_, utils_collection_predicate, Predicate)
 % limitations with atomic spell domains. Use perceive(utils(entity_hierarchy(...))) instead.
 register_spell(
     perceive(utils(entity_hierarchy)),
-    input(utils(entity_hierarchy(entity('RootEntity')))),
+    input(perceive(utils(entity_hierarchy(entity(RootEntity:entity))))),
     output(either(ok(hierarchy(tree('Tree'))), error(hierarchy_error('Error')))),
     "Build hierarchical tree structure from entity child relationships (pure ECS, no I/O)",
     [],
@@ -171,7 +165,7 @@ register_spell(
 % Validation spell (conjure)
 register_spell(
     conjure(utils(validate)),
-    input(utils(validate(entity('Entity'), rules('Rules')))),
+    input(conjure(utils(validate(entity(Entity:term), rules(Rules:term))))),
     output(either(ok(validation_passed), error(validation_error('Reason')))),
     "Validate entity against rules (pure logic, no I/O)",
     [],
@@ -188,7 +182,7 @@ register_spell(
 % Transform data spell (conjure)
 register_spell(
     conjure(utils(transform)),
-    input(utils(transform(data('Data'), operation('Operation')))),
+    input(conjure(utils(transform(data(Data:term), operation(Operation:term))))),
     output(either(ok(transformed('Result')), error(transform_error('Reason')))),
     "Transform data using map/filter/reduce (pure logic, no I/O)",
     [],
@@ -244,7 +238,7 @@ apply_transformation(Data, reduce(Predicate, Initial), Result) :-
 % Perceive core dump - capture complete system state
 register_spell(
     perceive(core_dump),
-    input(core_dump),
+    input(perceive(core_dump)),
     output(ok(core_dump(verified('VerifiedOntology'), broken('BrokenOntology'), ignored('IgnoredOntology')))),
     "Capture complete system state as verified, broken, and ignored ontology",
     [],
@@ -257,7 +251,7 @@ register_spell(
 % Dump core dump to TSV file
 register_spell(
     conjure(core_dump_tsv),
-    input(core_dump_tsv(tsv_path('TsvPath'))),
+    input(conjure(core_dump_tsv(tsv_path(TsvPath:atom)))),
     output(either(ok(dumped), error('SomeTsvError'))),
     "Write current core dump to TSV file (single file with status column)",
     [],
@@ -275,7 +269,7 @@ register_spell(
 % Read core dump from TSV file
 register_spell(
     perceive(read_core_dump_tsv),
-    input(read_core_dump_tsv(tsv_path('TsvPath'))),
+    input(perceive(read_core_dump_tsv(tsv_path(TsvPath:atom)))),
     output(either(ok(core_dump(verified('VerifiedOntology'), broken('BrokenOntology'), ignored('IgnoredOntology'))), error('SomeTsvError'))),
     "Read core dump from TSV file",
     [],
@@ -361,7 +355,7 @@ read_core_dump_from_tsv(TsvPath, core_dump(verified(Verified), broken(Broken), i
          term_string(E, EStr),
          term_string(P, PStr),
          term_string(V, VStr),
-         term_string(Error, ErrorStr)),
+        term_string(Error, ErrorStr)),
         Ignored
     ).
 
@@ -379,9 +373,9 @@ entity_semantics_file(Entity, FilePath) :-
 % Add component to entity
 register_spell(
     conjure(add_component),
-    input(add_component(entity('Entity'), component_type('Type'), value('Value'))),
+    input(conjure(add_component(entity(Entity:entity), component_type(Type:term), value(Value:term)))),
     output(either(
-        ok(component_added(component_type('Type'), value('Value'))),
+        ok(component_added(component_type(Type:term), value(Value:term))),
         error(add_error('Reason'))
     )),
     "Add verified component to entity",
@@ -417,9 +411,9 @@ register_spell(
 % Remove component from entity (only fact components)
 register_spell(
     conjure(remove_component),
-    input(remove_component(entity('Entity'), component_type('Type'), value('Value'))),
+    input(conjure(remove_component(entity(Entity:entity), component_type(Type:term), value(Value:term)))),
     output(either(
-        ok(component_removed(component_type('Type'), value('Value'))),
+        ok(component_removed(component_type(Type:term), value(Value:term))),
         error(remove_error('Reason'))
     )),
     "Remove component from entity (only fact components, not derived)",
@@ -509,4 +503,3 @@ docstring(entity_hierarchy, "Build a hierarchical tree structure from entity chi
         ]),
         tree(project(backend), [])
     ]))).").
-

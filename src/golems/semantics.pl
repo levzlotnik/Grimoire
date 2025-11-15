@@ -53,10 +53,10 @@ component(E, golems_instance_available, true) :-
 
 register_spell(
     conjure(golem_task),
-    input(golem_task(golem('GolemId'), input_dict('InputDict'))),
+    input(conjure(golem_task(golem(GolemId:atom), input_dict(InputDict:term)))),
     output(either(
-        ok(golem_response(parsed_output('ParsedOutput'), messages('Messages'), golem('GolemId'), session_id('SessionId'))),
-        error(golem_execution_failed('GolemId', 'Error'))
+        ok(golem_response(parsed_output('ParsedOutput'), messages('Messages'), golem(GolemId:atom), session_id('SessionId'))),
+        error(golem_execution_failed(GolemId:atom, 'Error'))
     )),
     docstring("Execute a golem AI agent task with input dict, returning structured golem response with parsed output and messages")
 ).
@@ -74,9 +74,9 @@ cast(conjure(golem_task(golem(Id), InputDict)), Result) :-
 
 register_spell(
     conjure(thought),
-    input(thought(content('Content'))),
+    input(conjure(thought(content(Content:string)))),
     output(either(
-        ok(thought_recorded('Content')),
+        ok(thought_recorded(Content:string)),
         error(thought_logging_failed('Reason'))
     )),
     docstring("Log AI agent thought/reasoning to session database for debugging and audit trails")

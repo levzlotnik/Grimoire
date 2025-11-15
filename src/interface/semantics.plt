@@ -25,6 +25,14 @@ cast_post_hook(perceive(sauce_me(spell(Ctor))), Result, assertz(hit(perceive(sau
 % Hook for session context delegation
 cast_post_hook(perceive(session(context)), Result, assertz(hit(perceive(session(context)), Result))).
 
+cleanup_test_session(SessionId) :-
+    catch(user:magic_cast(conjure(session(delete(id(SessionId)))), _), _, true),
+    (catch(user:grimoire_data_path(DataPath), _, fail)
+    -> atomic_list_concat([DataPath, '/sessions/', SessionId], SessionDir),
+       catch(user:unload_entity(semantic(folder(SessionDir))), _, true),
+       (exists_directory(SessionDir) -> delete_directory_and_contents(SessionDir) ; true)
+    ; true).
+
 :- begin_tests(interface_spells).
 
 % === PERCEIVE SPELLS ===
@@ -48,10 +56,10 @@ test(components_spell_set) :-
     Len > 1, !.
 
 test(components_spell_empty) :-
-    % Test with a component that doesn't exist - should error
+    % Test with a component that doesn't exist - should throw type error
     catch(
         user:magic_cast(perceive(interface(components(entity(nonexistent_entity_xyz), type(foo)))), _),
-        error(existence_error(component, _), _),
+        error(type_error(entity, nonexistent_entity_xyz), _),
         true
     ), !.
 
@@ -85,10 +93,10 @@ test(sauce_me_spell, [
     cleanup(retractall(user:hit(perceive(sauce_me(spell(_))), _)))
 ]) :-
     % Test sauce_me delegation with a known spell
-    user:magic_cast(perceive(interface(sauce_me(spell_ctor(interface(component_types))))), ExternalResult),
+    user:magic_cast(perceive(interface(sauce_me(spell_ctor(perceive(interface(component_types)))))), ExternalResult),
     % Verify internal spell called with correct transformed args
     user:hit(perceive(sauce_me(spell(SpellCtor))), InternalResult),
-    assertion(SpellCtor == interface(component_types)),
+    assertion(SpellCtor == perceive(interface(component_types))),
     % Verify result passed through
     assertion(ExternalResult == InternalResult), !.
 
@@ -116,7 +124,7 @@ test(session_create_spell, [
     assertion(ExternalResult == InternalResult),
 
     % Clean up using session spell
-    user:magic_cast(conjure(session(delete(id(SessionId)))), _), !.
+    cleanup_test_session(SessionId), !.
 
 test(session_export_import_delegation, [
     cleanup((
@@ -157,7 +165,8 @@ test(session_export_import_delegation, [
     % Clean up: delete session and archive
     user:magic_cast(conjure(session(delete(id(SessionId)))), FinalDeleteResult),
     assertion(FinalDeleteResult = ok(_)),
-    delete_file(ArchivePath), !.
+    delete_file(ArchivePath),
+    cleanup_test_session(SessionId), !.
 
 test(session_context_delegation, [
     cleanup((
@@ -182,7 +191,8 @@ test(session_context_delegation, [
 
     % Cleanup
     user:magic_cast(conjure(session(delete(id(SessionId)))), DeleteResult),
-    assertion(DeleteResult = ok(_)), !.
+    assertion(DeleteResult = ok(_)),
+    cleanup_test_session(SessionId), !.
 
 % === PYTHON_MAGIC_CAST TESTS ===
 
@@ -286,13 +296,16 @@ test(interface_add_component_focused_entity) :-
     user:please_verify(component(interface_test_focused, focused_comp, focused_val)),
 
     % Cleanup
-    user:magic_cast(conjure(session(delete(id(test_interface_focused)))), _),
+    cleanup_test_session(test_interface_focused),
     (exists_file('/tmp/interface_test_focused.pl') -> delete_file('/tmp/interface_test_focused.pl') ; true), !.
 
 test(interface_add_component_no_focus_error) :-
     % Create session without focusing
     user:magic_cast(conjure(session(delete(id(test_interface_nofocus)))), DeleteResult),
-    assertion((DeleteResult = ok(_) ; DeleteResult = error(session_error(session_not_found(_))))),
+    assertion((
+        DeleteResult = ok(_)
+    ;   DeleteResult = error(session_error(session_not_found(_)), _)
+    )),
     user:magic_cast(conjure(session(create(id(test_interface_nofocus)))), CreateResult),
     assertion(CreateResult = ok(_)),
     user:magic_cast(conjure(session(switch(id(test_interface_nofocus)))), SwitchResult),
@@ -300,10 +313,10 @@ test(interface_add_component_no_focus_error) :-
 
     % Try to add with focused_entity when nothing is focused
     user:magic_cast(conjure(interface(add_component(entity(focused_entity), component_type(test), value(val)))), AddResult),
-    assertion(AddResult = error(add_error(no_focused_entity))),
+    assertion(AddResult = error(add_error(no_focused_entity), context(interface(add_component), _))),
 
     % Cleanup
-    user:magic_cast(conjure(session(delete(id(test_interface_nofocus)))), _), !.
+    cleanup_test_session(test_interface_nofocus), !.
 
 test(interface_remove_component_explicit_entity) :-
     % Create test entity file

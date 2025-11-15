@@ -471,7 +471,7 @@ validate_dev_shell_syntax(Shell) :-
 % Search for packages in nixpkgs
 register_spell(
     perceive(nix(search)),
-    input(nix(search(query('Query')))),
+    input(perceive(nix(search(query(Query:string))))),
     output(either(
         ok(search_results('Results')),
         error(nix_error('Reason'))
@@ -497,7 +497,7 @@ register_spell(
 % Search with custom flake
 register_spell(
     perceive(nix(search_flake)),
-    input(nix(search_flake(flake('Flake'), query('Query')))),
+    input(perceive(nix(search_flake(flake(Flake:stringy), query(Query:string))))),
     output(either(
         ok(search_results('Results')),
         error(nix_error('Reason'))
@@ -523,7 +523,7 @@ register_spell(
 % Run a Nix application
 register_spell(
     conjure(nix(run)),
-    input(nix(run(installable('Installable')))),
+    input(conjure(nix(run(installable(Installable:stringy))))),
     output(either(
         ok(result(stdout('StdOut'), stderr('StdErr'))),
         error(run_error(exit('ExitCode'), stderr('StdErr')))
@@ -539,7 +539,7 @@ register_spell(
 % Run with arguments
 register_spell(
     conjure(nix(run_with_args)),
-    input(nix(run_with_args(installable('Installable'), args('Args')))),
+    input(conjure(nix(run_with_args(installable(Installable:stringy), args(Args:list(stringy)))))),
     output(either(
         ok(result(stdout('StdOut'), stderr('StdErr'))),
         error(run_error(exit('ExitCode'), stderr('StdErr')))
@@ -555,7 +555,7 @@ register_spell(
 % Build a Nix target
 register_spell(
     conjure(nix(build)),
-    input(nix(build(target('Target')))),
+    input(conjure(nix(build(target(Target:stringy))))),
     output(either(
         ok(result(stdout('StdOut'), stderr('StdErr'))),
         error(build_error(exit('ExitCode'), stderr('StdErr')))
@@ -578,7 +578,7 @@ register_spell(
 % Run flake checks
 register_spell(
     conjure(nix(check)),
-    input(nix(check(target('Target')))),
+    input(conjure(nix(check(target(Target:stringy))))),
     output(either(
         ok(result(stdout('StdOut'), stderr('StdErr'))),
         error(check_error(exit('ExitCode'), stderr('StdErr')))
@@ -601,7 +601,7 @@ register_spell(
 % Store garbage collection
 register_spell(
     conjure(nix(store(gc))),
-    input(nix(store(gc))),
+    input(conjure(nix(store(gc)))),
     output(either(
         ok(result(stdout('StdOut'), stderr('StdErr'))),
         error(store_error(exit('ExitCode'), stderr('StdErr')))
@@ -617,7 +617,7 @@ register_spell(
 % Store repair
 register_spell(
     conjure(nix(store(repair))),
-    input(nix(store(repair(path('Path'))))),
+    input(conjure(nix(store(repair(path(Path:stringy)))))),
     output(either(
         ok(result(stdout('StdOut'), stderr('StdErr'))),
         error(store_error(exit('ExitCode'), stderr('StdErr')))
@@ -626,14 +626,23 @@ register_spell(
     [],
     implementation(conjure(nix(store(repair(path(Path))))), RetVal, (
         Args = ["nix", "store", "repair", Path],
-        magic_cast(conjure(shell(args(Args))), RetVal)
+        magic_cast(conjure(shell(args(Args))), ShellResult),
+        (ShellResult = ok(result(stdout(StdOut), stderr(StdErr))) ->
+            RetVal = ok(result(StdOut, StdErr))
+        ; ShellResult = error(shell_error(_, ExitCode, _StdOut, StdErr)) ->
+            RetVal = error(store_error(exit(ExitCode), stderr(StdErr)))
+        ; ShellResult = error(process_error(_, exit(ExitCode), stdout(_), stderr(StdErr)), _) ->
+            RetVal = error(store_error(exit(ExitCode), stderr(StdErr)))
+        ;
+            RetVal = error(store_error(ShellResult))
+        )
     ))
 ).
 
 % Store optimise
 register_spell(
     conjure(nix(store(optimise))),
-    input(nix(store(optimise))),
+    input(conjure(nix(store(optimise)))),
     output(either(
         ok(result(stdout('StdOut'), stderr('StdErr'))),
         error(store_error(exit('ExitCode'), stderr('StdErr')))
@@ -649,7 +658,7 @@ register_spell(
 % Why-depends query
 register_spell(
     perceive(nix(why_depends)),
-    input(nix(why_depends(pkg1('Pkg1'), pkg2('Pkg2')))),
+    input(perceive(nix(why_depends(pkg1(Pkg1:stringy), pkg2(Pkg2:stringy))))),
     output(either(
         ok(dependency_chain('Result')),
         error(nix_error('Reason'))
@@ -661,9 +670,13 @@ register_spell(
             (Args = ["nix", "why-depends", Pkg1, Pkg2],
              magic_cast(conjure(shell(args(Args))), ShellResult),
              (ShellResult = ok(result(stdout(DepResult), stderr(_))) ->
-                 Result = ok(dependency_info(DepResult))
+                 Result = ok(dependency_chain(DepResult))
+             ; ShellResult = error(shell_error(_, ExitCode, _StdOut, StdErr)) ->
+                 Result = error(nix_error(exit_code(ExitCode), stderr(StdErr)))
+             ; ShellResult = error(process_error(_, exit(ExitCode), stdout(_), stderr(StdErr)), _) ->
+                 Result = error(nix_error(exit_code(ExitCode), stderr(StdErr)))
              ;
-                 Result = ShellResult
+                 Result = error(nix_error(ShellResult))
              )),
             Error,
             Result = error(nix_error(Error))
@@ -674,7 +687,7 @@ register_spell(
 % Build log query
 register_spell(
     perceive(nix(log)),
-    input(nix(log(installable('Installable')))),
+    input(perceive(nix(log(installable(Installable:stringy))))),
     output(either(
         ok(build_log('Result')),
         error(nix_error('Reason'))
@@ -699,7 +712,7 @@ register_spell(
 % Develop environment
 register_spell(
     conjure(nix(develop)),
-    input(nix(develop(options('Options')))),
+    input(conjure(nix(develop(options(Options:term))))),
     output(either(
         ok(result(stdout('StdOut'), stderr('StdErr'))),
         error(develop_error(exit('ExitCode'), stderr('StdErr')))
@@ -726,9 +739,9 @@ register_spell(
 % Flake new - initialize from template
 register_spell(
     conjure(nix(flake(new))),
-    input(nix(flake(new(template_id('TemplateId'), dest_path('DestPath'))))),
+    input(conjure(nix(flake(new(template_id(TemplateId:atom), dest_path(DestPath:stringy)))))),
     output(either(
-        ok(template_initialized('TemplateId', 'DestPath')),
+        ok(template_initialized(TemplateId:atom, DestPath:stringy)),
         error(nix_error('Reason'))
     )),
     "Initialize a new flake from template. TemplateId: template ID (default: none), DestPath: where to create the new flake.",
@@ -751,7 +764,7 @@ register_spell(
 % Flake show - display flake metadata
 register_spell(
     perceive(nix(flake(show))),
-    input(nix(flake(show(ref('FlakeRef'))))),
+    input(perceive(nix(flake(show(ref(FlakeRef:stringy)))))),
     output(either(
         ok(flake_info(apps('Apps'), packages('Packages'), dev_shells('DevShells'))),
         error(nix_error('Reason'))
@@ -795,7 +808,7 @@ partition_flake_targets([Target|Rest], Apps, Packages, DevShells) :-
 % List Grimoire templates
 register_spell(
     perceive(nix(templates)),
-    input(nix(templates)),
+    input(perceive(nix(templates))),
     output(either(
         ok(templates('TemplateList')),
         error(nix_error('Reason'))

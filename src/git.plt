@@ -405,7 +405,7 @@ setup_git_log_test :-
     close(Stream),
     user:magic_cast(conjure(git(add(git_root(TestPath), paths(['test.txt'])))), AddResult),
     assertion(AddResult = ok(_)),
-    user:magic_cast(conjure(git(commit(git_root(TestPath), message('initial')))), CommitResult),
+    user:magic_cast(conjure(git(commit(git_root(TestPath), message("initial")))), CommitResult),
     assertion(CommitResult = ok(_)).
 
 cleanup_git_log_test :-

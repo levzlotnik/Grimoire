@@ -33,13 +33,15 @@ docstring(fs(structure),
     Format: component(Entity, has(fs(structure)), fs(structure([Items])))
 
     Items can be:
-    - file(Path) - expect a file at path
-    - folder(Path, Contents) - expect a folder with nested contents
+    - file(Path)    - expect a file at Path
+    - folder(Path)  - expect a folder at Path
+    - glob(Pattern) - expect at least one match for Pattern relative to root
 
     Example:
         component(my_project, has(fs(structure)), fs(structure([
             file("README.md"),
-            folder("src", [file("main.js"), file("utils.js")])
+            folder("src"),
+            glob("docs/**/*.md")
         ]))).
     |}).
 
@@ -64,20 +66,32 @@ docstring(fs(permissions),
 % === DSL SCHEMA REGISTRATIONS ===
 
 % Schema 1: fs(structure) - Declarative filesystem structure
+register_type(
+    fs_entry,
+    docstring("Filesystem structure entry: file(Path), folder(Path), or glob(Pattern)."),
+    checker(Entry, (
+        (Entry = file(Path), type_check(stringy, Path))
+        ; (Entry = folder(Path), type_check(stringy, Path))
+        ; (Entry = glob(Pattern), type_check(stringy, Pattern))
+    ))
+).
+
 register_dsl_schema(
     fs,
     has(fs(structure)),
-    signature(fs(structure(items('Items')))),
+    signature(fs(structure(items(Items:list(fs_entry))))),
     "Declarative filesystem structure specification with files and folders",
     (
         component(Entity, has(fs(structure)), fs(structure(Items)))
             ==> (component(Entity, fs_structure_file, file_spec(Path, Opts)) :-
                     extract_file_specs(Items, FileSpecs),
                     member(file_spec(Path, Opts), FileSpecs)),
-                (component(Entity, fs_structure_folder, folder_spec(Path, Contents)) :-
+                (component(Entity, fs_structure_folder, folder_spec(Path)) :-
                     extract_folder_specs(Items, FolderSpecs),
-                    member(folder_spec(Path, Contents), FolderSpecs))
-            ::  is_list(Items)
+                    member(folder_spec(Path), FolderSpecs)),
+                (component(Entity, fs_structure_glob, glob_spec(Pattern)) :-
+                    extract_glob_specs(Items, GlobSpecs),
+                    member(glob_spec(Pattern), GlobSpecs))
     )
 ).
 
@@ -85,7 +99,7 @@ register_dsl_schema(
 register_dsl_schema(
     fs,
     has(fs(permissions)),
-    signature(fs(permissions(path('Path'), perm_type('PermType')))),
+    signature(fs(permissions(path(Path:atom), perm_type(PermType:atom)))),
     "Declarative file permission requirements - verify executable, readable, or writable",
     (
         component(Entity, has(fs(permissions)), fs(permissions(Path, PermType)))
@@ -104,10 +118,13 @@ component(_, fs_structure_file, file_spec(Path, Opts))
        file_exists_and_valid(Path, Opts).
 
 % Leaf verification: fs_structure_folder
-component(_, fs_structure_folder, folder_spec(Path, Contents))
+component(_, fs_structure_folder, folder_spec(Path))
     :: (atom(Path) ; string(Path)),
-       is_list(Contents),
        folder_exists_and_valid(Path).
+
+component(_, fs_structure_glob, glob_spec(Pattern))
+    :: (atom(Pattern) ; string(Pattern)),
+       glob_matches_exist(Pattern).
 
 % Leaf verification: fs_permission_requirement
 component(_, fs_permission_requirement, permission_spec(Path, Type))
@@ -119,27 +136,21 @@ component(_, fs_permission_requirement, permission_spec(Path, Type))
 extract_file_specs([], []).
 extract_file_specs([file(Path)|Rest], [file_spec(Path, [])|RestSpecs]) :-
     extract_file_specs(Rest, RestSpecs).
-extract_file_specs([folder(FolderPath, Contents)|Rest], AllSpecs) :-
-    extract_file_specs(Contents, ContentSpecs),
-    % Prepend folder path to all nested file paths
-    maplist(prepend_folder_path(FolderPath), ContentSpecs, PrefixedSpecs),
-    extract_file_specs(Rest, RestSpecs),
-    append(PrefixedSpecs, RestSpecs, AllSpecs).
 extract_file_specs([_|Rest], Specs) :-
     extract_file_specs(Rest, Specs).
 
-% Helper to prepend folder path to file spec
-prepend_folder_path(FolderPath, file_spec(FilePath, Opts), file_spec(FullPath, Opts)) :-
-    atomic_list_concat([FolderPath, '/', FilePath], FullPath).
-
-% Helper to extract folder specs from structure items
+% Helpers to extract folder and glob specs
 extract_folder_specs([], []).
-extract_folder_specs([folder(Path, Contents)|Rest], [folder_spec(Path, Contents)|RestSpecs]) :-
+extract_folder_specs([folder(Path)|Rest], [folder_spec(Path)|RestSpecs]) :-
     extract_folder_specs(Rest, RestSpecs).
-extract_folder_specs([file(_)|Rest], Specs) :-
-    extract_folder_specs(Rest, Specs).
 extract_folder_specs([_|Rest], Specs) :-
     extract_folder_specs(Rest, Specs).
+
+extract_glob_specs([], []).
+extract_glob_specs([glob(Pattern)|Rest], [glob_spec(Pattern)|RestSpecs]) :-
+    extract_glob_specs(Rest, RestSpecs).
+extract_glob_specs([_|Rest], Specs) :-
+    extract_glob_specs(Rest, Specs).
 
 % === OS VERIFICATION HELPERS ===
 
@@ -155,6 +166,12 @@ folder_exists_and_valid(Path) :-
     (atom(Path) ; string(Path)),
     (exists_directory(Path) -> true
     ; throw(verification_error(fs, missing_folder(Path)))).
+
+glob_matches_exist(Pattern) :-
+    expand_file_name(Pattern, Matches),
+    (Matches \= [] ->
+        true
+    ; throw(verification_error(fs, glob_no_match(Pattern)))).
 
 % Verify file with permission
 file_exists_with_permission(Path, Type) :-
@@ -191,10 +208,10 @@ verify_permission_on_os(Path, writable) :-
 
 register_spell(
     perceive(fs(read_file)),
-    input(fs(read_file(path('Path'), start('Start'), end('End')))),
+    input(perceive(fs(read_file(path(Path:existing_file), start(Start:integer), end(End:integer))))),
     output(either(
-        ok(file_content(lines_with_numbers('ContentWithLineNumbers'))),
-        error(fs_error('Reason'))
+        ok(file_content(lines_with_numbers(ContentWithLineNumbers:list(term)))),
+        error(fs_error(Reason:term), Context:term)
     )),
     "Read file with line numbers using 1-based indexing. Supports negative line numbers (-1 = last line).",
     [],
@@ -210,9 +227,9 @@ register_spell(
                  (between(StartNum, EndNum, LineNum),
                   nth1(LineNum, AllLines, Content)),
                  ContentWithLineNumbers),
-             Result = ok(file_content(ContentWithLineNumbers))),
-            Error,
-            Result = error(fs_error(Error))
+             Result = ok(file_content(lines_with_numbers(ContentWithLineNumbers)))),
+            error(Reason, Context),
+            Result = error(fs_error(Reason), Context)
         )
     ))
 ).
@@ -227,8 +244,8 @@ resolve_line_number(Num, TotalLines, Resolved) :-
 
 register_spell(
     perceive(fs(list_files)),
-    input(fs(list_files(directory('Dir')))),
-    output(either(ok(files('FileList')), error(fs_error('Reason')))),
+    input(perceive(fs(list_files(directory(Dir:existing_folder))))),
+    output(either(ok(files(Files:list(string))), error(fs_error(Reason:term), Context:term))),
     "List all files in a directory (non-recursive)",
     [],
     implementation(perceive(fs(list_files(directory(Dir)))), Result, (
@@ -237,16 +254,16 @@ register_spell(
              exclude(=('.'), AllFiles, FilteredFiles),
              exclude(=('..'), FilteredFiles, Files),
              Result = ok(files(Files))),
-            Error,
-            Result = error(fs_error(Error))
+            error(Reason, Context),
+            Result = error(fs_error(Reason), Context)
         )
     ))
 ).
 
 register_spell(
     perceive(fs(glob_match)),
-    input(fs(glob_match(pattern('Pattern'), base('BaseDir')))),
-    output(either(ok(matched_files('FileList')), error(fs_error('Reason')))),
+    input(perceive(fs(glob_match(pattern(Pattern:string), base(BaseDir:atom))))),
+    output(either(ok(matched_files(Files:list(string))), error(fs_error(Reason:term), Context:term))),
     "Match files using glob patterns (e.g., '**/*.pl')",
     [],
     implementation(perceive(fs(glob_match(pattern(Pattern), base(BaseDir)))), Result, (
@@ -258,16 +275,16 @@ register_spell(
                  Files = Matches
              ),
              Result = ok(matched_files(Files))),
-            Error,
-            Result = error(fs_error(Error))
+            error(Reason, Context),
+            Result = error(fs_error(Reason), Context)
         )
     ))
 ).
 
 register_spell(
     perceive(fs(file_stats)),
-    input(fs(file_stats(path('Path')))),
-    output(either(ok(stats(size('Size'), modified('Time'), mode('Mode'))), error(fs_error('Reason')))),
+    input(perceive(fs(file_stats(path(Path:existing_file))))),
+    output(either(ok(stats(size(Size:integer), modified(Time:number), mode(Mode:atom))), error(fs_error(Reason:term), Context:term))),
     "Get file statistics (size, modified time, permissions)",
     [],
     implementation(perceive(fs(file_stats(path(Path)))), Result, (
@@ -277,8 +294,8 @@ register_spell(
              access_file(Path, exist),
              (access_file(Path, execute) -> Mode = executable ; Mode = regular),
              Result = ok(stats(size(Size), modified(Time), mode(Mode)))),
-            Error,
-            Result = error(fs_error(Error))
+            error(Reason, Context),
+            Result = error(fs_error(Reason), Context)
         )
     ))
 ).
@@ -287,42 +304,47 @@ register_spell(
 
 register_spell(
     conjure(fs(edit_file)),
-    input(fs(edit_file(file('Path'), edits('Edits')))),
+    input(conjure(fs(edit_file(file(Path:atom), edits(Edits:term))))),
     output(either(
-        ok(file_modified('Path')),
-        error(edit_error('Reason'))
+        ok(file_modified(Path:atom)),
+        error(edit_error(Reason:term), Context:term)
     )),
     "Edit file with specified operations. Supports insert, delete, replace, and append operations.",
     [],
     implementation(conjure(fs(edit_file(file(Path), edits(Edits)))), Result, (
-        % Handle both existing and non-existing files
-        (exists_file(Path) ->
-            read_file_to_lines(Path, Lines)
-        ;
-            Lines = []
-        ),
-        maplist(validate_edit, Edits),
-        apply_edits(Edits, Lines, NewLines),
-        write_lines_to_file(Path, NewLines),
-        Result = ok(file_modified(Path))
+        catch(
+            (% Handle both existing and non-existing files
+             (exists_file(Path) ->
+                 read_file_to_lines(Path, Lines)
+             ;
+                 Lines = []
+             ),
+             maplist(validate_edit, Edits),
+             apply_edits(Edits, Lines, NewLines),
+             write_lines_to_file(Path, NewLines),
+             Result = ok(file_modified(Path))),
+            error(Reason, Context),
+            Result = error(edit_error(Reason), Context)
+        )
     ))
 ).
 
 register_spell(
     conjure(fs(mkdir)),
-    input(fs(mkdir(path('Path'), options('Options')))),
+    input(conjure(fs(mkdir(path(Path:atom), options(Options:term))))),
     output(either(
-        ok(directory_created('Path')),
-        error(fs_error('Reason'))
+        ok(directory_created(Path:atom)),
+        error(fs_error(Reason:term), Context:term)
     )),
     "Create directory and initialize with semantics.pl file. Options: [git(auto)] (default) or [git(false)] to disable auto git-add.",
     [],
     implementation(conjure(fs(mkdir(path(Path), options(Options)))), Result, (
-        % Create directory using Prolog's make_directory_path
-        make_directory_path(Path),
-        % Initialize semantics.pl with proper module
-        directory_file_path(Path, "semantics.pl", SemanticsFile),
-        InitContent = {|string(Path, Parent)||
+        catch(
+            (% Create directory using Prolog's make_directory_path
+             make_directory_path(Path),
+             % Initialize semantics.pl with proper module
+             directory_file_path(Path, "semantics.pl", SemanticsFile),
+             InitContent = {|string(Path, Parent)||
 :- module(semantic_{Path}, [entity/1, component/3]).
 
 % Dynamic declarations for this module
@@ -332,104 +354,111 @@ register_spell(
 % This directory's entity
 entity(folder('{Path}')).
 |},
-        write_file(SemanticsFile, InitContent),
-        % Update parent semantics if exists
-        directory_file_path(Parent, _, Path),
-        directory_file_path(Parent, "semantics.pl", ParentSemantic),
-        (exists_file(ParentSemantic) ->
-            magic_cast(conjure(fs(edit_file(file(ParentSemantic), [
-                append({|string(Path, Parent)||
+             write_file(SemanticsFile, InitContent),
+             % Update parent semantics if exists
+             directory_file_path(Parent, _, Path),
+             directory_file_path(Parent, "semantics.pl", ParentSemantic),
+             (exists_file(ParentSemantic) ->
+                 magic_cast(conjure(fs(edit_file(file(ParentSemantic), [
+                     append({|string(Path, Parent)||
 entity(folder('{Parent}')).
 component(folder('{Parent}'), subfolder, folder('{Path}')).
 |})
-            ]))), _)
-        ; true),
+                 ]))), _)
+             ; true),
 
-        % Conditional git integration (default: auto)
-        option(git(GitMode), Options, auto),
-        (GitMode = false -> true
-        ; is_git_directory(Path) -> magic_cast(conjure(git(add([Path]))), _)
-        ; true),
+             % Conditional git integration (default: auto)
+             option(git(GitMode), Options, auto),
+             (GitMode = false -> true
+             ; is_git_directory(Path) -> magic_cast(conjure(git(add([Path]))), _)
+             ; true),
 
-        Result = ok(directory_created(Path))
+             Result = ok(directory_created(Path))),
+            error(Reason, Context),
+            Result = error(fs_error(Reason), Context)
+        )
     ))
 ).
 
 register_spell(
     conjure(fs(mkfile)),
-    input(fs(mkfile(path('Path'), options('Options')))),
+    input(conjure(fs(mkfile(path(Path:atom), options(Options:term))))),
     output(either(
-        ok(file_created('Path')),
-        error(fs_error('Reason'))
+        ok(file_created(Path:atom)),
+        error(fs_error(Reason:term), Context:term)
     )),
     "Create empty file. Updates parent semantics if exists. Options: [git(auto)] (default) or [git(false)] to disable auto git-add.",
     [],
     implementation(conjure(fs(mkfile(path(Path), options(Options)))), Result, (
-        % Create empty file
-        write_file(Path, ""),
-        % Update parent semantics if exists
-        directory_file_path(Parent, Name, Path),
-        directory_file_path(Parent, "semantics.pl", ParentSemantic),
-        (exists_file(ParentSemantic) ->
-            magic_cast(conjure(fs(edit_file(file(ParentSemantic), [
-                append({|string(Parent,Name)||
+        catch(
+            (% Create empty file
+             write_file(Path, ""),
+             % Update parent semantics if exists
+             directory_file_path(Parent, Name, Path),
+             directory_file_path(Parent, "semantics.pl", ParentSemantic),
+             (exists_file(ParentSemantic) ->
+                 magic_cast(conjure(fs(edit_file(file(ParentSemantic), [
+                     append({|string(Parent,Name)||
 entity(folder('{Parent}')).
 component(folder('{Parent}'), file, file('{Name}')).
 |})
-            ]))), _)
-        ; true),
+                 ]))), _)
+             ; true),
 
-        % Conditional git integration (default: auto)
-        option(git(GitMode), Options, auto),
-        (GitMode = false -> true
-        ; is_git_directory(Path) -> magic_cast(conjure(git(add([Path]))), _)
-        ; true),
+             % Conditional git integration (default: auto)
+             option(git(GitMode), Options, auto),
+             (GitMode = false -> true
+             ; is_git_directory(Path) -> magic_cast(conjure(git(add([Path]))), _)
+             ; true),
 
-        Result = ok(file_created(Path))
+             Result = ok(file_created(Path))),
+            error(Reason, Context),
+            Result = error(fs_error(Reason), Context)
+        )
     ))
 ).
 
 register_spell(
     conjure(fs(copy_file)),
-    input(fs(copy_file(source('Source'), dest('Dest')))),
-    output(either(ok(file_copied('Source', 'Dest')), error(fs_error('Reason')))),
+    input(conjure(fs(copy_file(source(Source:existing_file), dest(Dest:atom))))),
+    output(either(ok(file_copied(Source:existing_file, Dest:atom)), error(fs_error(Reason:term), Context:term))),
     "Copy file from source to destination path",
     [],
     implementation(conjure(fs(copy_file(source(Source), dest(Dest)))), Result, (
         catch(
             (copy_file(Source, Dest), Result = ok(file_copied(Source, Dest))),
-            Error,
-            Result = error(fs_error(Error))
+            error(Reason, Context),
+            Result = error(fs_error(Reason), Context)
         )
     ))
 ).
 
 register_spell(
     conjure(fs(move_file)),
-    input(fs(move_file(source('Source'), dest('Dest')))),
-    output(either(ok(file_moved('Source', 'Dest')), error(fs_error('Reason')))),
+    input(conjure(fs(move_file(source(Source:existing_file), dest(Dest:atom))))),
+    output(either(ok(file_moved(Source:existing_file, Dest:atom)), error(fs_error(Reason:term), Context:term))),
     "Move/rename file from source to destination path",
     [],
     implementation(conjure(fs(move_file(source(Source), dest(Dest)))), Result, (
         catch(
             (rename_file(Source, Dest), Result = ok(file_moved(Source, Dest))),
-            Error,
-            Result = error(fs_error(Error))
+            error(Reason, Context),
+            Result = error(fs_error(Reason), Context)
         )
     ))
 ).
 
 register_spell(
     conjure(fs(delete_file)),
-    input(fs(delete_file(path('Path')))),
-    output(either(ok(file_deleted('Path')), error(fs_error('Reason')))),
+    input(conjure(fs(delete_file(path(Path:existing_file))))),
+    output(either(ok(file_deleted(Path:existing_file)), error(fs_error(Reason:term), Context:term))),
     "Delete file at specified path",
     [],
     implementation(conjure(fs(delete_file(path(Path)))), Result, (
         catch(
             (delete_file(Path), Result = ok(file_deleted(Path))),
-            Error,
-            Result = error(fs_error(Error))
+            error(Reason, Context),
+            Result = error(fs_error(Reason), Context)
         )
     ))
 ).

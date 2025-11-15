@@ -80,13 +80,17 @@ test(mkproject_basic_creation, [cleanup(cleanup_test_project)]) :-
 
     % Test project creation
     TestProjectName = 'test_basic_project',
-    user:magic_cast(conjure(mkproject(TmpDir, TestProjectName, [git(false)])), Result), !,
+    user:magic_cast(conjure(mkproject(
+        folder_path(TmpDir),
+        project_name(TestProjectName),
+        options([git(false)])
+    )), Result), !,
 
     % Should succeed
-    assertion(Result = ok(project_created(_, TestProjectName))),
+    directory_file_path(TmpDir, TestProjectName, ProjectPath),
+    assertion(Result = ok(project_created(path(ProjectPath), name(TestProjectName)))),
     
     % Verify project directory exists
-    directory_file_path(TmpDir, TestProjectName, ProjectPath),
     assertion(exists_directory(ProjectPath)),
 
     % Verify semantics.pl was created
@@ -115,13 +119,17 @@ test(template_instantiation_rust, [cleanup(cleanup_test_project)]) :-
     % Test project creation with template
     TestProjectName = 'test_rust_project',
     catch(
-        user:magic_cast(conjure(mkproject(TmpDir, TestProjectName, [template(rust), git(false)])), Result),
+        user:magic_cast(conjure(mkproject(
+            folder_path(TmpDir),
+            project_name(TestProjectName),
+            options([template(rust), git(false)])
+        )), Result),
         Error,
         Result = error(caught_exception(Error))
     ), !,
 
     % The result should be either success or a proper error
-    (Result = ok(project_created(_, TestProjectName)) ->
+    (Result = ok(project_created(path(ProjectPath), name(TestProjectName))) ->
         (
             % Verify project directory exists
             directory_file_path(TmpDir, TestProjectName, ProjectPath),
@@ -139,8 +147,8 @@ test(template_instantiation_rust, [cleanup(cleanup_test_project)]) :-
             nb_setval(test_project_path, ProjectPath)
         )
     ;
-        % If nix templates not available, should get an error (which is expected)
-        assertion(Result = error(_))
+        % If nix templates not available or creation failed, should get an error (which is expected)
+        assertion(Result = error(_, _))
     ), !.
 
 % Test error handling for existing project
@@ -159,10 +167,14 @@ test(mkproject_existing_project, [cleanup(cleanup_test_project)]) :-
     load_entity(semantic(folder('@/src/project'))), !,
 
     % Try to create project that already exists
-    user:magic_cast(conjure(mkproject(TmpDir, TestProjectName, [git(false)])), Result), !,
+    user:magic_cast(conjure(mkproject(
+        folder_path(TmpDir),
+        project_name(TestProjectName),
+        options([git(false)])
+    )), Result), !,
 
     % Should fail with appropriate error
-    assertion(Result == error(project_already_exists(ProjectPath))),
+    assertion(Result = error(project_error(project_already_exists(ProjectPath)), _)),
 
     % Store project path for cleanup
     nb_setval(test_project_path, ProjectPath).
@@ -181,13 +193,17 @@ test(mkproject_invalid_template) :-
 
     % Try to create project with invalid template
     catch(
-        user:magic_cast(conjure(mkproject(TmpDir, 'test_project', [template(nonexistent_template), git(false)])), Result),
+        user:magic_cast(conjure(mkproject(
+            folder_path(TmpDir),
+            project_name('test_project'),
+            options([template(nonexistent_template), git(false)])
+        )), Result),
         _Error,
         Result = error(template_instantiation_failed)
     ), !,
 
     % Should fail (exact error depends on nix behavior)
-    assertion(Result = error(_)).
+    assertion(Result = error(_, _)).
 
 % Test git initialization option
 test(mkproject_with_git, [cleanup(cleanup_test_project)]) :-
@@ -201,10 +217,14 @@ test(mkproject_with_git, [cleanup(cleanup_test_project)]) :-
 
     % Test project creation with git
     TestProjectName = 'test_git_project',
-    user:magic_cast(conjure(mkproject(TmpDir, TestProjectName, [git(true)])), Result), !,
+    user:magic_cast(conjure(mkproject(
+        folder_path(TmpDir),
+        project_name(TestProjectName),
+        options([git(true)])
+    )), Result), !,
 
     % Check result - should succeed if git is available
-    (Result = ok(project_created(_, TestProjectName)) ->
+    (Result = ok(project_created(path(ProjectPath), name(TestProjectName))) ->
         (
             % Verify project directory exists
             directory_file_path(TmpDir, TestProjectName, ProjectPath),

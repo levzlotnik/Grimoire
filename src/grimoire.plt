@@ -21,22 +21,20 @@ component(E, test_data, Data)
 % Simple test spell
 register_spell(
     conjure(test_spell(simple)),
-    input(test_spell(simple(arg('Arg')))),
-    output(either(ok(result('Result')), error(test_error('Reason')))),
+    input(conjure(test_spell(simple(Data:stringy)))),
+    output(ok(result(Result:stringy))),
     "Test spell for grimoire.plt verification",
     [],
-    implementation(conjure(test_spell(simple(Arg))), Result, (
-        (string(Arg)
-        -> Result = ok(result(Arg))
-        ; Result = error(test_error(invalid_arg_type(Arg))))
+    implementation(conjure(test_spell(simple(Data))), Result, (
+        Result = ok(result(Data))
     ))
 ).
 
 % Persistent test spell
 register_spell(
     conjure(test_spell(persistent)),
-    input(test_spell(persistent(data('Data')))),
-    output(ok(saved('Data'))),
+    input(conjure(test_spell(persistent(Data:term)))),
+    output(ok(saved(Data:term))),
     "Test spell with session persistence",
     [session_persistent(true)],
     implementation(conjure(test_spell(persistent(Data))), Result, (
@@ -47,13 +45,11 @@ register_spell(
 % Query test spell
 register_spell(
     perceive(test_spell(query)),
-    input(test_spell(query(entity('Entity'), component_type('Type')))),
-    output(either(ok(value('Value')), error(not_found))),
+    input(perceive(test_spell(query(Entity:term, Type:term)))),
+    output(either(ok(value(Value:term)), error(not_found))),
     "Test spell that queries components",
     [],
     implementation(perceive(test_spell(query(Entity, Type))), Result, (
-        atom(Entity),
-        atom(Type),
         (component(Entity, Type, Value)
         -> Result = ok(value(Value))
         ; Result = error(not_found))
@@ -79,11 +75,11 @@ test(spell_generates_docstring_metadata) :-
 
 test(spell_generates_format_input_metadata) :-
     user:please_verify(component(conjure(test_spell(simple)), format_input, Input)),
-    assertion(Input = input(test_spell(simple(arg(_))))).
+    assertion(Input = "conjure(test_spell(simple(Data)))").
 
 test(spell_generates_format_output_metadata) :-
     user:please_verify(component(conjure(test_spell(simple)), format_output, Output)),
-    assertion(Output = output(either(ok(result(_)), error(test_error(_))))).
+    assertion(Output = "ok(result(Result))").
 
 test(spell_generates_spell_options_metadata) :-
     user:please_verify(component(conjure(test_spell(simple)), spell_options, Options)),
@@ -105,10 +101,10 @@ test(magic_cast_requires_registered_spell, [throws(error(existence_error(spell, 
 
 test(cast_impl_guard_forbids_direct_call) :-
     format('About to call cast_impl~n'),
-    (user:in_magic_cast ->
-        format('WARNING: in_magic_cast IS asserted before test!~n')
+    (recorded(in_magic_cast, _, _) ->
+        format('WARNING: in_magic_cast IS recorded before test!~n')
     ;
-        format('in_magic_cast NOT asserted (correct)~n')
+        format('in_magic_cast NOT recorded (correct)~n')
     ),
     catch(
         (
@@ -265,7 +261,7 @@ test(invoke_skill_executes_spell) :-
 test(invoke_skill_not_found) :-
     % Try to invoke nonexistent skill
     user:magic_cast(conjure(invoke_skill(entity(system), skill(nonexistent(skill)))), Result),
-    assertion(Result == error(skill_error(skill_not_found(system, nonexistent(skill))))).
+    assertion(Result = error(skill_error(skill_not_found(system, nonexistent(skill))), _Context)).
 
 :- end_tests(grimoire).
 

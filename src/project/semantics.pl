@@ -54,7 +54,7 @@ component(_, project_git_origin, Origin)
 
 % Verify fs structure is valid
 component(_, project_fs_structure, Structure)
-    :: is_list(Structure).
+    :: type_check(list(fs_entry), Structure).
 
 % Verify context outputs is valid
 component(_, project_context_outputs, Outputs)
@@ -65,18 +65,20 @@ component(_, project_context_outputs, Outputs)
 % Create new project from template or basic structure
 register_spell(
     conjure(mkproject),
-    input(mkproject(folder_path('FolderPath'), project_name('ProjectName'), options('Options'))),
+    input(conjure(mkproject(folder_path(FolderPath:stringy), project_name(ProjectName:atom), options(Options:list(term))))),
     output(either(
-        ok(project_created(path('ProjectPath'), name('ProjectName'))),
-        error(project_error('Reason'))
+        ok(project_created(path(ProjectPath:atom), name(ProjectName:atom))),
+        error(project_error(Reason:term), Context:term)
     )),
     "Creates a new project directory with full initialization. Options: git(bool), template(TemplateId)",
     [],
-    implementation(conjure(mkproject(FolderPath, ProjectName, Options)), RetVal, (
+    implementation(conjure(mkproject(folder_path(FolderPath), project_name(ProjectName), options(Options))), RetVal, (
         catch(
-            mkproject_impl(FolderPath, ProjectName, Options, RetVal),
-            Error,
-            RetVal = error(conjure_failed(Error))
+            (mkproject_impl(FolderPath, ProjectName, Options, ImplResult),
+             ImplResult = ok(project_created(path(ProjectPath), name(ProjectName))),
+             RetVal = ImplResult),
+            error(Reason, Context),
+            RetVal = error(project_error(Reason), Context)
         )
     ))
 ).
@@ -84,14 +86,14 @@ register_spell(
 % Validate project entity composition
 register_spell(
     perceive(project(validate)),
-    input(project(validate(entity('Entity')))),
+    input(perceive(project(validate(entity(Entity:entity))))),
     output(either(
         ok(valid),
-        error(validation_failed(domain('Domain'), reason('Reason')))
+        error(validation_failed(domain(Domain:term), reason(Reason:term)), Context:term)
     )),
     "Validates a project entity against its declared components and cross-domain requirements",
     [],
-    implementation(perceive(project(validate(Entity))), Result, (
+    implementation(perceive(project(validate(entity(Entity)))), Result, (
         catch(
             (please_verify(component(Entity, has(project(app)), _)),
              please_verify(component(Entity, project_type, _)),
@@ -104,8 +106,8 @@ register_spell(
                  please_verify(component(Entity, has(nix(flake)), _))
              ; true),
              Result = ok(valid)),
-            verification_error(Domain, Reason),
-            Result = error(validation_failed(Domain, Reason))
+            error(verification_error(Domain, Reason), Context),
+            Result = error(validation_failed(domain(Domain), reason(Reason)), Context)
         )
     ))
 ).
@@ -113,15 +115,15 @@ register_spell(
 % Query project structure information
 register_spell(
     perceive(project(structure)),
-    input(project(structure(entity('Entity')))),
+    input(perceive(project(structure(entity(Entity:entity))))),
     output(ok(project_info(
-        type('Type'),
-        sources('Sources'),
-        contexts('Contexts')
+        type(Type:atom),
+        sources(Sources:list(term)),
+        contexts(Contexts:list(term))
     ))),
     "Queries project structure, including type, source patterns, and available contexts",
     [],
-    implementation(perceive(project(structure(Entity))), Result, (
+    implementation(perceive(project(structure(entity(Entity)))), Result, (
         catch(
             (please_verify(component(Entity, project_type, Type)),
              findall(Source, component(Entity, project_fs_structure, Source), Sources),
@@ -136,18 +138,20 @@ register_spell(
 % Initialize Grimoire integration for existing project
 register_spell(
     conjure(project(init)),
-    input(project(init(folder('Folder'), options('Options')))),
+    input(conjure(project(init(folder(Folder:atom), options(Options:term))))),
     output(either(
-        ok(initialized(entity('Entity'), path('Path'), detected('Features'), skills('Skills'))),
-        error(init_error('Reason'))
+        ok(initialized(entity(Entity:entity), path(Path:atom), detected(Features:list(term)), skills(Skills:list(term)))),
+        error(init_error(Reason:term), Context:term)
     )),
     "Initialize Grimoire integration for existing project (non-invasive). Creates semantics.pl/.plt, detects git/nix infrastructure, creates 'default' session, and focuses on entity. Options: [force] to overwrite existing semantics.pl",
     [],
     implementation(conjure(project(init(folder(Folder), options(Options)))), Result, (
         catch(
-            project_init_impl(Folder, Options, Result),
-            Error,
-            Result = error(init_error(Error))
+            (project_init_impl(Folder, Options, ImplResult),
+             ImplResult = ok(initialized(entity(Entity), path(Path), detected(Features), skills(Skills))),
+             Result = ImplResult),
+            error(Reason, Context),
+            Result = error(init_error(Reason), Context)
         )
     ))
 ).
@@ -164,7 +168,7 @@ mkproject_impl(FolderPath, ProjectName, Options, RetVal) :-
 
     % Check if project already exists
     (exists_directory(ProjectPath) ->
-        RetVal = error(project_already_exists(ProjectPath))
+        throw(error(project_already_exists(ProjectPath), mkproject_impl/4))
     ;
         create_project_structure(ProjectPath, ProjectName, Options, RetVal)
     ).
@@ -182,7 +186,7 @@ create_project_structure(ProjectPath, ProjectName, Options, RetVal) :-
     (RenameResult = ok ->
         init_git_if_requested(ProjectPath, Options, RetVal, ProjectName)
     ;
-        RetVal = error(entity_renaming_failed(RenameResult))
+        throw(error(entity_renaming_failed(RenameResult), create_project_structure/4))
     ).
 
 apply_template_or_basic(ProjectPath, ProjectName, Options, Result) :-
@@ -191,7 +195,7 @@ apply_template_or_basic(ProjectPath, ProjectName, Options, Result) :-
         (TemplateResult = ok(_) ->
             rename_project_entities(ProjectPath, Template, ProjectName, Result)
         ;
-            Result = TemplateResult
+            throw(error(template_instantiation_failed(TemplateResult), apply_template_or_basic/4))
         )
     ;
         create_basic_semantics_file(ProjectPath, ProjectName),
@@ -206,7 +210,7 @@ init_git_if_requested(ProjectPath, Options, RetVal, ProjectName) :-
         (GitResult = ok(_) ->
             load_into_session_if_requested(ProjectPath, Options, RetVal, ProjectName)
         ;
-            RetVal = GitResult
+            throw(error(project_git_init_failed(GitResult), init_git_if_requested/4))
         )
     ).
 
@@ -217,17 +221,17 @@ load_into_session_if_requested(ProjectPath, Options, RetVal, ProjectName) :-
         (exists_file(SemanticsFile) ->
             magic_cast(conjure(session(load_entity(semantic(file(SemanticsFile))))), LoadResult),
             (LoadResult = ok(_) ->
-                RetVal = ok(project_created(ProjectPath, ProjectName))
+                RetVal = ok(project_created(path(ProjectPath), name(ProjectName)))
             ;
-                RetVal = error(failed_to_load_into_session(LoadResult))
+                throw(error(failed_to_load_into_session(LoadResult), load_into_session_if_requested/4))
             )
         ;
             % No semantics file to load
-            RetVal = ok(project_created(ProjectPath, ProjectName))
+            RetVal = ok(project_created(path(ProjectPath), name(ProjectName)))
         )
     ;
         % Not requested, just return success
-        RetVal = ok(project_created(ProjectPath, ProjectName))
+        RetVal = ok(project_created(path(ProjectPath), name(ProjectName)))
     ).
 
 % === HELPER PREDICATES ===

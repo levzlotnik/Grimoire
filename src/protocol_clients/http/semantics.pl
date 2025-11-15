@@ -18,11 +18,11 @@ docstring(protocol_client(http), "HTTP client for consuming external HTTP APIs w
 % HTTP service registration spell
 register_spell(
     conjure(protocol_client(http(register))),
-    input(protocol_client(http(register(
+    input(conjure(protocol_client(http(register(
         service('Service'),
         base_url('BaseUrl'),
         endpoints('Endpoints')
-    )))),
+    ))))),
     output(either(ok(service_registered('Service')), error(http_registration_error('Reason')))),
     docstring("Register an HTTP service with base URL and endpoint schemas for later invocation")
 ).
@@ -46,11 +46,11 @@ cast(conjure(protocol_client(http(register(
 % HTTP endpoint call spell
 register_spell(
     conjure(protocol_client(http(call))),
-    input(protocol_client(http(call(
+    input(conjure(protocol_client(http(call(
         service('Service'),
         endpoint('Endpoint'),
         params('Params')
-    )))),
+    ))))),
     output(either(ok(response(status('Status'), body('Body'), service('Service'))), error(http_call_error('Reason')))),
     docstring("Call a registered HTTP service endpoint with given parameters")
 ).
@@ -72,7 +72,7 @@ cast(conjure(protocol_client(http(call(
 % List services spell
 register_spell(
     perceive(protocol_client(http(list_services))),
-    input(protocol_client(http(list_services))),
+    input(perceive(protocol_client(http(list_services)))),
     output(either(ok(services('Services')), error(http_list_error('Reason')))),
     docstring("List all registered HTTP services")
 ).

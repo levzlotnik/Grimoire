@@ -28,7 +28,8 @@
     docstring/2,
     load_entity/2,          % Allow subsystems to extend entity loading
     verify/1,               % Discriminative verification predicates
-    in_please_verify/0      % Guard flag for verify/1
+    type_checker__/2,       % Type checker implementations (guarded)
+    hkt_type_checker__/2    % Higher-kinded type checker implementations (guarded)
 ], [
     discontiguous(true),
     multifile(true)
@@ -101,6 +102,24 @@ docstring(ctor,
     |}
 ).
 
+% Type system entity
+entity(type).
+docstring(type,
+    {|string(_)||
+    Global type system for runtime term validation.
+    Types are registered with checker predicates and can be used anywhere in the system via type_check/2.
+
+    Types can be:
+    - Base types: atom, string, integer, float, compound
+    - OS-validated types: existing_file, existing_folder
+    - Higher-kinded types: list(T), dict(K,V), either(Variants)
+    - Custom domain types: registered with register_type/3
+
+    Use type_check/2 to validate values against types.
+    Use in :: verification clauses for component validation.
+    |}
+).
+
 % Fact schema infrastructure
 component(component, relation_pattern, fact_schema).
 entity(fact_schema).
@@ -152,6 +171,176 @@ docstring(option,
         component(gcc, option(not_unique), include_directory)
     |}
 ).
+
+%% ============================================================================
+%% TERM EXPANSION - TYPE SYSTEM
+%% ============================================================================
+
+%! hkt_type_check(+Constraint, +Var) is det.
+%
+% Compile-time marker used in register_type/3 conditions.
+% Gets extracted by term expansion to:
+% 1. Generate tparam metadata for hkt_ctor components
+% 2. Get replaced with type_check/2 in runtime conditions
+%
+% This predicate has NO runtime implementation - it's purely a compile-time marker.
+
+%! extract_hkt_params(+Conditions, -HktChecks, -RemainingConditions) is det.
+%
+% Extract hkt_type_check/2 calls from condition list and replace with type_check/2.
+% These become type parameter metadata (with variable names).
+
+extract_hkt_params((hkt_type_check(Constraint, Var), Rest), [param(VarName, Constraint)|Params], (type_check(Constraint, Var), Remaining)) :-
+    !,
+    var_property(Var, name(VarName)),
+    extract_hkt_params(Rest, Params, Remaining).
+
+extract_hkt_params((Other, Rest), Params, (Other, Remaining)) :-
+    !,
+    extract_hkt_params(Rest, Params, Remaining).
+
+extract_hkt_params(hkt_type_check(Constraint, Var), [param(VarName, Constraint)], type_check(Constraint, Var)) :-
+    !,
+    var_property(Var, name(VarName)).
+
+extract_hkt_params(Other, [], Other).
+
+%! build_tparam_term(+TypeName, +HktParams, -TParamTerm) is det.
+%
+% Build type term with tparam annotations.
+% E.g., list + [param('T', type)] → list(tparam('T', type))
+
+build_tparam_term(TypeName, [], TypeName) :- !.
+
+build_tparam_term(TypeName, HktParams, AnnotatedTerm) :-
+    TypeName =.. [Functor|Args],
+    maplist(annotate_param(HktParams), Args, AnnotatedArgs),
+    AnnotatedTerm =.. [Functor|AnnotatedArgs].
+
+annotate_param(HktParams, Arg, tparam(VarName, Constraint)) :-
+    var(Arg),
+    var_property(Arg, name(VarName)),
+    member(param(VarName, Constraint), HktParams),
+    !.
+
+annotate_param(_, Arg, Arg).
+
+%! list_to_comma(+List, -CommaExpr) is det.
+%
+% Convert a list of terms into a comma-separated conjunction.
+% E.g., [a, b, c] -> (a, b, c)
+
+list_to_comma([X], X) :- !.
+list_to_comma([X|Xs], (X, Rest)) :-
+    list_to_comma(Xs, Rest).
+
+process_dsl_signature(signature(Pattern), FormatStr, SigParams, VarInfos) :-
+    process_signature_pattern(Pattern, Stripped, SigParams, VarInfos),
+    term_string(Stripped, FormatStr, [quoted(false)]).
+process_dsl_signature(Invalid, _, _, _) :-
+    throw(error(
+        invalid_dsl_signature(Invalid),
+        context(register_dsl_schema/5, 'Signature must be signature(Pattern) with annotated arguments'))).
+
+process_signature_pattern(Var:Type, VarName, [sig_param(VarName, Type)], [param_var(Var, Type, VarName)]) :-
+    var(Var),
+    !,
+    var_property(Var, name(VarName)).
+process_signature_pattern(Compound, Stripped, SigParams, VarInfos) :-
+    compound(Compound),
+    Compound \= (_:_),
+    !,
+    Compound =.. [Functor|Args],
+    process_signature_args(Args, StrippedArgs, SigParams, VarInfos),
+    Stripped =.. [Functor|StrippedArgs].
+process_signature_pattern(Other, Other, [], []).
+
+process_signature_args([], [], [], []).
+process_signature_args([Arg|Rest], [StrippedArg|StrippedRest], SigParams, VarInfos) :-
+    process_signature_pattern(Arg, StrippedArg, ArgSigParams, ArgVarInfos),
+    process_signature_args(Rest, StrippedRest, RestSigParams, RestVarInfos),
+    append(ArgSigParams, RestSigParams, SigParams),
+    append(ArgVarInfos, RestVarInfos, VarInfos).
+
+build_signature_type_checks(_, _, [], []).
+build_signature_type_checks(Schema, SignatureStr, [param_var(Var, Type, Name)|Rest], [Goal|RestGoals]) :-
+    term_string(Schema, SchemaStr, [quoted(false)]),
+    format(string(Message), 'Wrong type for argument `~w` in schema `~w`', [Name, SchemaStr]),
+    Context = context(dsl_schema(Schema, signature(SignatureStr)), Message),
+    Goal = type_check(Type, Var, error(type_error(Type, Var), Context)),
+    build_signature_type_checks(Schema, SignatureStr, Rest, RestGoals).
+
+prepend_goals_to_verify(VerifyClause, [], VerifyClause).
+prepend_goals_to_verify((verify(Pattern) :- Body), Goals, (verify(Pattern) :- CombinedBody)) :-
+    Goals \= [],
+    list_to_conjunction(Goals, GoalsConj),
+    CombinedBody = (GoalsConj, Body).
+
+checker_clause_metadata(ClauseTerm, Metadata) :-
+    prolog_load_context(file, File),
+    prolog_load_context(term_position, TermPos),
+    (   TermPos = '$stream_position'(_, Line, _, _, _)
+    ->  true
+    ;   Line = 0
+    ),
+    copy_term(ClauseTerm, ClauseCopy),
+    numbervars(ClauseCopy, 0, _),
+    term_string(ClauseCopy, ClauseString, [quoted(true)]),
+    Metadata = checker(source_location(File, Line), clause(ClauseString)).
+
+%! term_expansion for register_type/3 - FACT FORM (base types)
+%
+% Generates:
+% - component(type, ctor, TypeName)
+% - component(TypeName, docstring, Doc)
+% - component(TypeName, checker, checker(Var, Body))
+% - type_checker__(TypeName, Var) :- Body
+
+term_expansion(
+    register_type(TypeName, docstring(Doc), checker(Var, Body)),
+    Generated
+) :-
+    atom(TypeName),  % Base types are atoms
+    !,
+    ClauseTerm = (type_checker__(TypeName, Var) :- Body),
+    checker_clause_metadata(ClauseTerm, CheckerMetadata),
+    Generated = [
+        component(type, ctor, TypeName),
+        component(TypeName, docstring, Doc),
+        component(TypeName, checker, CheckerMetadata),
+        (type_checker__(TypeName, Var) :- Body)
+    ].
+
+%! term_expansion for register_type/3 - RULE FORM (higher-kinded types)
+%
+% Extracts hkt_type_check/2 calls to generate type parameter metadata.
+% Generates:
+% - component(type, hkt_ctor, TypeName(tparam(...))) (STATIC - compile time)
+% - component(TypeName(...), docstring, Doc) :- Conditions
+% - component(TypeName(...), checker, checker(Var, Body)) :- Conditions
+% - type_checker__(TypeName(...), Var) :- Conditions, Body
+
+term_expansion(
+    (register_type(TypeName, docstring(Doc), checker(Var, Body)) :- Conditions),
+    Generated
+) :-
+    !,
+    % Extract hkt_type_check calls and replace with type_check
+    extract_hkt_params(Conditions, HktParams, RemainingConditions),
+
+    % Build tparam-annotated term for hkt_ctor
+    build_tparam_term(TypeName, HktParams, TParamTerm),
+    ClauseTerm = (type_checker__(TypeName, Var) :- ground(TypeName), RemainingConditions, Body),
+    checker_clause_metadata(ClauseTerm, CheckerMetadata),
+
+    Generated = [
+        % hkt_ctor is STATIC - generated at compile-time
+        component(type, hkt_ctor, TParamTerm),
+        % Rest are conditional on runtime checks (hkt_type_check replaced with type_check)
+        (component(TypeName, docstring, Doc) :- ground(TypeName), RemainingConditions),
+        (component(TypeName, checker, CheckerMetadata) :- ground(TypeName), RemainingConditions),
+        (type_checker__(TypeName, Var) :- ground(TypeName), RemainingConditions, Body)
+    ].
 
 %% ============================================================================
 %% TERM EXPANSION - COMPONENT DSL
@@ -304,6 +493,7 @@ term_expansion(
 ) :-
     (atom(Doc) ; string(Doc)),  % Doc can be atom or string
     !,
+    process_dsl_signature(Signature, SignatureFormatStr, SigParams, SignatureVarInfos),
     % Use unified expansion logic - accepts all three patterns:
     % Pattern ==> Expansions :: Verifications
     % Pattern ==> Expansions
@@ -311,17 +501,19 @@ term_expansion(
     expand_component_dsl(ExpansionBody, ComponentRules, VerifyClause, _Pattern),
 
     flatten(ComponentRules, FlatRules),
+    build_signature_type_checks(Schema, SignatureFormatStr, SignatureVarInfos, SignatureChecks),
+    prepend_goals_to_verify(VerifyClause, SignatureChecks, VerifyClauseWithChecks),
 
     % Generate metadata with docstring
     Metadata = [
         component(dsl_schema, ctor, Schema),
         component(Domain, dsl_schema, Schema),
-        component(Schema, signature, Signature),
+        component(Schema, signature, signature(SignatureFormatStr, SigParams)),
         component(Schema, provided_by, Domain),
         docstring(Schema, Doc)
     ],
 
-    Generated = [[FlatRules, VerifyClause], Metadata].
+    Generated = [[FlatRules, VerifyClauseWithChecks], Metadata].
 
 docstring(register_dsl_schema,
     {|string(_)||
@@ -355,6 +547,240 @@ docstring(register_dsl_schema,
         ).
     |}
 ).
+
+%% ============================================================================
+%% TYPE_CHECK/2 - PUBLIC API WITH RECORDZ GUARDS
+%% ============================================================================
+
+%! type_check(+Type, +Term) is det.
+%
+% Public API for type checking. Validates that Term has the given Type.
+% Uses recordz/erase guards to prevent direct calls to type_checker__/2.
+%
+% @throws type_error(Type, Term) if check fails
+% @throws type_not_registered(Type) if type unknown
+
+type_check(Type, Term) :-
+    % Verify type is registered (same logic for base types and HKTs)
+    (component(type, ctor, Type), !
+    ; compound(Type),
+      Type =.. [Functor|Args],
+      length(Args, Arity),
+      length(TParams, Arity),
+      HktPattern =.. [Functor|TParams],
+      component(type, hkt_ctor, HktPattern), !
+    ; component(type, hkt_ctor, Type), !
+    ; throw(error(
+        type_not_registered(Type),
+        context(type_check/2, 'Type not registered. Use register_type/3 first.')))),
+
+    % Call checker with recordz guard
+    setup_call_cleanup(
+        recordz(in_type_check, true, InRef),
+        (type_checker__(Type, Term) -> true
+        ; (prolog_current_frame(Frame),
+           prolog_frame_attribute(Frame, goal, Goal),
+           throw(error(
+               type_error(Type, Term),
+               context(type_check/2, Goal))))),
+        erase(InRef)
+    ).
+
+%! type_check(+Type, +Term, +Error) is det.
+%
+% Type check with custom error. Catches any type_check/2 failure and throws Error instead.
+
+type_check(Type, Term, error(Exc, Context)) :-
+    catch(type_check(Type, Term), _, throw(error(Exc, Context))).
+
+%! check_or_exception(+Goal, +Error) is det.
+%
+% Execute Goal. If it fails, throw Error.
+
+check_or_exception(Goal, error(Exc, Context)) :-
+    \+ Goal, !, throw(error(Exc, Context)).
+check_or_exception(_, _).
+
+%% ============================================================================
+%% __TYPE_CHECKER/2 GUARD CLAUSE (MUST BE LAST)
+%% ============================================================================
+
+% Guard: type_checker__ can only be called from type_check (MUST BE LAST clause!)
+type_checker__(Type, _) :-
+    \+ recorded(in_type_check, _, _),
+    !,
+    throw(error(
+        direct_type_checker_forbidden(Type),
+        context(type_checker__/2, 'NEVER call type_checker__/2 directly. Use type_check/2.')
+    )).
+
+%% ============================================================================
+%% BASE TYPE REGISTRATIONS
+%% ============================================================================
+
+register_type(
+    atom,
+    docstring("Prolog atom value"),
+    checker(A, atom(A))
+).
+
+register_type(
+    string,
+    docstring("Prolog string value"),
+    checker(S, string(S))
+).
+
+register_type(
+    stringy,
+    docstring("Prolog string or atom value"),
+    checker(S, (string(S) ; atom(S)))
+).
+
+register_type(
+    integer,
+    docstring("Integer value"),
+    checker(I, integer(I))
+).
+
+register_type(
+    number,
+    docstring("Numeric value (integer or float)"),
+    checker(N, number(N))
+).
+
+register_type(
+    float,
+    docstring("Floating point value"),
+    checker(F, float(F))
+).
+
+register_type(
+    compound,
+    docstring("Compound term (functor with arguments)"),
+    checker(C, compound(C))
+).
+
+register_type(
+    type,
+    docstring("Meta-type: validates that a term is a registered type"),
+    checker(T, (
+        % T is a base type (ctor)
+        (component(type, ctor, T), !)
+        % OR T is an HKT constructor (atom matching functor of hkt_ctor)
+        ; (atom(T),
+           component(type, hkt_ctor, HktCtor),
+           functor(HktCtor, T, _),
+           !)
+        % OR T is an instantiated HKT type (compound matching hkt_ctor pattern)
+        ; (compound(T),
+           functor(T, Functor, Arity),
+           component(type, hkt_ctor, HktCtor),
+           functor(HktCtor, Functor, Arity),
+           !)
+    ))
+).
+
+%% ============================================================================
+%% OS-VALIDATED TYPES
+%% ============================================================================
+
+register_type(
+    existing_file,
+    docstring("Path to an existing file"),
+    checker(F, (
+        type_check(stringy, F, error(type_error(stringy, F), 'File path must be string or atom')),
+        check_or_exception(
+            exists_file(F),
+            error(existence_error(file, F), 'File does not exist or is not accessible')
+        )
+    ))
+).
+
+register_type(
+    existing_folder,
+    docstring("Path to an existing directory"),
+    checker(F, (
+        type_check(stringy, F, error(type_error(stringy, F), 'Directory path must be string or atom')),
+        check_or_exception(
+            exists_directory(F),
+            error(existence_error(directory, F), 'Directory does not exist or is not accessible')
+        )
+    ))
+).
+
+%% ============================================================================
+%% GRIMOIRE-SPECIFIC TYPES
+%% ============================================================================
+
+register_type(
+    entity,
+    docstring("Entity that exists in the knowledge base"),
+    checker(E, component(E, _, _))
+).
+
+register_type(
+    term,
+    docstring("Any ground Prolog term"),
+    checker(T, ground(T))
+).
+
+register_type(
+    error,
+    docstring("Prolog error term with formal and context"),
+    checker(Err, Err = error(_Formal, _Context))
+).
+
+%% ============================================================================
+%% HIGHER-KINDED TYPES
+%% ============================================================================
+
+%! list(T) - List of elements of type T
+
+register_type(
+    list(T),
+    docstring(Doc),
+    checker(L, (
+        is_list(L),
+        forall(member(Item, L), type_check(T, Item))
+    ))
+) :-
+    hkt_type_check(type, T),
+    format(string(Doc), "List of `~w`", [T]).
+
+%! dict(KeyType, ValType) - Dictionary with typed keys and values
+
+register_type(
+    dict(KeyType, ValType),
+    docstring(Doc),
+    checker(D, (
+        is_dict(D),
+        dict_pairs(D, _, Pairs),
+        forall(member(K-V, Pairs), (
+            type_check(KeyType, K),
+            type_check(ValType, V)
+        ))
+    ))
+) :-
+    hkt_type_check(type, KeyType),
+    hkt_type_check(type, ValType),
+    format(string(Doc), "Dict with keys of type `~w` and values of type `~w`", [KeyType, ValType]).
+
+%! either(Variants) - Sum type with multiple variants
+%
+% Variants must be a list of registered types.
+% Term matches if it typechecks against ANY variant.
+
+register_type(
+    either(Variants),
+    docstring(Doc),
+    checker(V, (
+        member(Variant, Variants),
+        catch(type_check(Variant, V), _, fail),
+        !  % Stop on first match
+    ))
+) :-
+    hkt_type_check(list(type), Variants),
+    format(string(Doc), "Either one of: ~w", [Variants]).
 
 %% ============================================================================
 %% COMPONENT-FETCHING please_verify/1
@@ -496,12 +922,13 @@ call_verify_with_recording(Component, Verification) :-
 
     % Call verify with in_please_verify flag
     (   catch(
-            (assertz(in_please_verify),
-             verify(Component),
-             retract(in_please_verify)),
+            setup_call_cleanup(
+                recordz(in_please_verify, true, InRef),
+                verify(Component),
+                erase(InRef)
+            ),
             Error,
-            (retract(in_please_verify),
-             throw(Error))
+            throw(Error)
         )
     ->  % Verify succeeded - check if it recorded itself
         (   recorded(verify_success, clause_ref(ClauseRef), _)
@@ -580,7 +1007,7 @@ docstring(prove_it,
 
 % Guard: verify can only be called from please_verify (MUST be LAST verify clause!)
 verify(Pattern) :-
-    \+ in_please_verify,
+    \+ recorded(in_please_verify, _, _),
     !,
     throw(error(
         direct_verify_forbidden(Pattern),
@@ -596,6 +1023,7 @@ strip_error_stack(error(Formal, context(prolog_stack(_), Message)), error(Formal
 strip_error_stack(Error, Error).
 
 core_dump(CoreDump) :-
+    writeln('DEBUG core_dump: Starting'),
     % Collect all components with their verification status
     findall(
         component(A, B, C)-R,
@@ -607,19 +1035,23 @@ core_dump(CoreDump) :-
          )),
         Ontology
     ),
+    writeln('DEBUG core_dump: findall completed'),
     % First partition: split into ignored vs non-ignored (regardless of verification)
     partition(is_component_in_ignorelist, Ontology, IgnoredAll, NonIgnored),
+    writeln('DEBUG core_dump: partition completed'),
     % Extract ignored components (strip verification result)
     findall(C-R, member(C-R, IgnoredAll), IgnoredOntology),
     % Partition non-ignored: verified vs broken
     findall(C, member(C-success, NonIgnored), VerifiedOntology),
     findall(C-E, member(C-failure(E), NonIgnored), BrokenOntology),
+    writeln('DEBUG core_dump: Building result'),
     % The core dump IS the ontology, partitioned by verification status
     CoreDump = core_dump(
         verified(VerifiedOntology),
         broken(BrokenOntology),
         ignored(IgnoredOntology)
-    ).
+    ),
+    writeln('DEBUG core_dump: Done').
 
 % Helper: Check if a component is in the core dump ignorelist
 is_component_in_ignorelist(component(Entity, ComponentType, _)-_) :-
@@ -968,4 +1400,3 @@ docstring(semantic_entity_id,
         Entity = rust_template.
     |}
 ).
-

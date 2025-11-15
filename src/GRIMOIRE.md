@@ -65,14 +65,19 @@ Domains can register declarative schemas:
 register_dsl_schema(
     fs,
     has(fs(structure)),
-    signature(fs(structure(items('Items')))),
+    signature(fs(structure(items(Items:list(fs_entry))))),
     "Declarative filesystem structure specification",
     (
         component(Entity, has(fs(structure)), fs(structure(Items)))
             ==> (component(Entity, fs_structure_file, file_spec(Path, Opts)) :-
                     extract_file_specs(Items, FileSpecs),
-                    member(file_spec(Path, Opts), FileSpecs))
-            ::  is_list(Items)
+                    member(file_spec(Path, Opts), FileSpecs)),
+                (component(Entity, fs_structure_folder, folder_spec(Path)) :-
+                    extract_folder_specs(Items, FolderSpecs),
+                    member(folder_spec(Path), FolderSpecs)),
+                (component(Entity, fs_structure_glob, glob_spec(Pattern)) :-
+                    extract_glob_specs(Items, GlobSpecs),
+                    member(glob_spec(Pattern), GlobSpecs))
     )
 ).
 ```

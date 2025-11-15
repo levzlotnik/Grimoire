@@ -121,9 +121,13 @@ test(spell_mkproject_creates_directory, [
     TestPath = '/tmp/grimoire_tests/mkproject_basic',
     (exists_directory(TestPath) -> delete_directory_and_contents(TestPath) ; true),
     make_directory_path(TestPath),
-    user:magic_cast(conjure(mkproject(TestPath, test_proj, [git(false)])), Result),
-    assertion(Result = ok(project_created(_, test_proj))),
+    user:magic_cast(conjure(mkproject(
+        folder_path(TestPath),
+        project_name(test_proj),
+        options([git(false)])
+    )), Result),
     directory_file_path(TestPath, 'test_proj', ProjectPath),
+    assertion(Result = ok(project_created(path(ProjectPath), name(test_proj)))),
     assertion(exists_directory(ProjectPath)),
     directory_file_path(ProjectPath, 'semantics.pl', SemFile),
     assertion(exists_file(SemFile)).
@@ -135,9 +139,13 @@ test(spell_mkproject_with_git, [
     TestPath = '/tmp/grimoire_tests/mkproject_git',
     (exists_directory(TestPath) -> delete_directory_and_contents(TestPath) ; true),
     make_directory_path(TestPath),
-    user:magic_cast(conjure(mkproject(TestPath, test_git_proj, [])), Result),
-    assertion(Result = ok(project_created(_, test_git_proj))),
+    user:magic_cast(conjure(mkproject(
+        folder_path(TestPath),
+        project_name(test_git_proj),
+        options([])
+    )), Result),
     directory_file_path(TestPath, 'test_git_proj', ProjectPath),
+    assertion(Result = ok(project_created(path(ProjectPath), name(test_git_proj)))),
     directory_file_path(ProjectPath, '.git', GitDir),
     assertion(exists_directory(GitDir)).
 
@@ -148,9 +156,13 @@ test(spell_mkproject_with_template, [
     TestPath = '/tmp/grimoire_tests/mkproject_template',
     (exists_directory(TestPath) -> delete_directory_and_contents(TestPath) ; true),
     make_directory_path(TestPath),
-    user:magic_cast(conjure(mkproject(TestPath, test_template, [template(python), git(false)])), Result),
-    assertion(Result = ok(project_created(_, test_template))),
+    user:magic_cast(conjure(mkproject(
+        folder_path(TestPath),
+        project_name(test_template),
+        options([template(python), git(false)])
+    )), Result),
     directory_file_path(TestPath, 'test_template', ProjectPath),
+    assertion(Result = ok(project_created(path(ProjectPath), name(test_template)))),
     directory_file_path(ProjectPath, 'flake.nix', FlakeFile),
     assertion(exists_file(FlakeFile)).
 
@@ -159,7 +171,7 @@ test(spell_project_validate, [
     setup(setup_git_test),
     cleanup(cleanup_git_test)
 ]) :-
-    user:magic_cast(perceive(project(validate(test_web_app))), Result),
+    user:magic_cast(perceive(project(validate(entity(test_web_app)))), Result),
     assertion(Result = ok(valid)).
 
 % Test project structure spell
@@ -167,7 +179,7 @@ test(spell_project_structure, [
     setup(setup_git_test),
     cleanup(cleanup_git_test)
 ]) :-
-    user:magic_cast(perceive(project(structure(test_web_app))), Result),
+    user:magic_cast(perceive(project(structure(entity(test_web_app)))), Result),
     assertion(Result = ok(project_info(type(web_service), sources(_), contexts(_)))).
 
 % === PROJECT INIT TESTS ===
@@ -243,7 +255,7 @@ test(init_fails_existing_semantics, [
     % Run init without force - should fail
     user:magic_cast(conjure(project(init(folder(TestDir), options([])))), Result),
 
-    assertion(Result = error(_)).
+    assertion(Result = error(init_error(semantics_already_exists(SemanticsPath)), _)).
 
 % Test init with force option overwrites existing
 test(init_force_overwrites) :-
@@ -379,7 +391,7 @@ init_git_in_dir(Dir) :-
     assertion(EmailResult = ok(_)),
     user:magic_cast(conjure(git(add(git_root('.'), paths(['.'])))), AddResult),
     assertion(AddResult = ok(_)),
-    user:magic_cast(conjure(git(commit(git_root('.'), message('Initial test commit')))), CommitResult),
+    user:magic_cast(conjure(git(commit(git_root('.'), message("Initial test commit")))), CommitResult),
     assertion(CommitResult = ok(_)),
     working_directory(_, OldCwd).
 
@@ -406,4 +418,3 @@ setup_test_init_dir :-
 cleanup_test_init_dir :-
     TestDir = '/tmp/grimoire_test_init',
     (exists_directory(TestDir) -> delete_directory_and_contents(TestDir) ; true).
-

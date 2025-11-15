@@ -214,25 +214,38 @@ test(spell_tables) :-
 %% ============================================================================
 
 test(spell_execute_missing_database) :-
-    user:magic_cast(conjure(db(execute(database('/nonexistent/database.db'), sql("INSERT INTO foo VALUES (1)")))), Result),
-    assertion(Result = error(db_error(database_file_not_found('/nonexistent/database.db')))).
+    catch(
+        user:magic_cast(conjure(db(execute(database('/nonexistent/database.db'), sql("INSERT INTO foo VALUES (1)")))), _Result),
+        Error,
+        true
+    ),
+    assertion(Error = error(type_error(existing_file, '/nonexistent/database.db'), _)).
 
 test(spell_query_missing_database) :-
-    user:magic_cast(perceive(db(query(database('/nonexistent/database.db'), sql("SELECT 1")))), Result),
-    assertion(Result = error(query_error(database_file_not_found('/nonexistent/database.db')))).
+    catch(
+        user:magic_cast(perceive(db(query(database('/nonexistent/database.db'), sql("SELECT 1")))), _Result),
+        Error,
+        true
+    ),
+    assertion(Error = error(type_error(existing_file, '/nonexistent/database.db'), _)).
 
 test(spell_tables_missing_database) :-
-    user:magic_cast(perceive(db(tables(database('/nonexistent/database.db')))), Result),
-    assertion(Result = error(tables_error(database_file_not_found('/nonexistent/database.db')))).
+    catch(
+        user:magic_cast(perceive(db(tables(database('/nonexistent/database.db')))), _Result),
+        Error,
+        true
+    ),
+    assertion(Error = error(type_error(existing_file, '/nonexistent/database.db'), _)).
 
 test(spell_create_already_exists, [
     setup(setup_create_exists_test),
-    cleanup(cleanup_create_exists_test),
-    throws(error(db_error(database_already_exists(_))))
+    cleanup(cleanup_create_exists_test)
 ]) :-
     TestDbPath = '/tmp/test_spell_create_exists.db',
     TestSchemaPath = '/tmp/test_spell_create_exists_schema.sql',
-    user:magic_cast(conjure(db(create(file(TestDbPath), schema(file(TestSchemaPath))))), _).
+    user:magic_cast(conjure(db(create(file(TestDbPath), schema(file(TestSchemaPath))))), Result),
+    assertion(Result = error(db_error(db_error(database_already_exists(PathStr))), context(db(create), 'Database exists'))),
+    atom_string(TestDbPath, PathStr).
 
 %% ============================================================================
 %% Test Case 12: Spell - conjure(db(write_table))

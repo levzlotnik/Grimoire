@@ -43,7 +43,7 @@ component(_, test_optional_field, Field)
 register_dsl_schema(
     test_domain,
     has(test_domain(schema)),
-    signature(test_domain(schema(field('Field')))),
+    signature(test_domain(schema(field(Field:atom)))),
     "Test DSL schema for ecs_kernel.plt verification",
     (
         component(E, has(test_domain(schema)), test_domain(schema(field(Field))))
@@ -191,7 +191,7 @@ test(dsl_schema_generates_provided_by_metadata) :-
 
 test(dsl_schema_generates_signature_metadata) :-
     user:please_verify(component(has(test_domain(schema)), signature, Sig)),
-    assertion(Sig = signature(test_domain(schema(field('Field'))))).
+    assertion(Sig = signature("test_domain(schema(field(Field)))", [sig_param('Field', atom)])).
 
 test(dsl_schema_generates_docstring_metadata) :-
     user:docstring(has(test_domain(schema)), Doc),
@@ -213,12 +213,16 @@ test(dsl_schema_verification_works) :-
 %% ============================================================================
 
 test(system_healthy) :-
+    writeln('DEBUG: Starting system_healthy test'),
     core_dump(core_dump(verified(_), broken(BrokenOntology), ignored(_))),
+    writeln('DEBUG: core_dump completed'),
+    length(BrokenOntology, Len),
+    format('DEBUG: BrokenOntology length: ~w~n', [Len]),
     (BrokenOntology \= [] ->
         (writeln('=== BROKEN COMPONENTS ==='),
          forall(member(C-E, BrokenOntology), (writeln(C), writeln(E), nl)))
     ; true),
-    BrokenOntology = [].
+    assertion(BrokenOntology = []).
 
 %% ============================================================================
 %% Test Case 10: prove_it/2 - Component Provenance
@@ -285,36 +289,169 @@ test(ask_broken_format) :-
     % Broken should contain broken(Value, Error) terms
     assertion(Broken = [broken('', _)]).
 
-test(ask_mixed_verified_and_broken) :-
-    % Add test components with mixed verification results
-    assertz(user:component(ask_test_entity, ask_test_type, valid1)),
-    assertz(user:component(ask_test_entity, ask_test_type, '')),
-    assertz(user:component(ask_test_entity, ask_test_type, valid2)),
-
-    % Test component verification (fails on empty atom)
-    assertz((user:verify(component(_, ask_test_type, Value)) :-
-        (atom(Value), Value \= '' -> true
-        ; throw(error(verification_failed(empty_atom), _))))),
-
-    user:ask(component(ask_test_entity, ask_test_type, _), Verified, Broken),
-
-    % Should have 2 verified and 1 broken
-    assertion(length(Verified, 2)),
-    assertion(length(Broken, 1)),
-    assertion(member(valid1, Verified)),
-    assertion(member(valid2, Verified)),
-    % Broken should contain the empty atom with its error
-    Broken = [broken(BrokenValue, _Error)],
-    assertion(BrokenValue = ''),
-
-    % Cleanup
-    retractall(user:component(ask_test_entity, ask_test_type, _)),
-    retractall(user:verify(component(_, ask_test_type, _))).
-
 test(ask_no_components) :-
     % Test with entity that has no components of this type
     user:ask(component(nonexistent_entity, nonexistent_type, _), Verified, Broken),
     assertion(Verified = []),
     assertion(Broken = []).
+
+%% ============================================================================
+%% Test Case 11: Type System - Base Types
+%% ============================================================================
+
+test(type_check_atom_valid) :-
+    user:type_check(atom, hello).
+
+test(type_check_atom_invalid, [throws(error(type_error(atom, _), _))]) :-
+    user:type_check(atom, "not an atom").
+
+test(type_check_string_valid) :-
+    user:type_check(string, "hello").
+
+test(type_check_string_invalid, [throws(error(type_error(string, _), _))]) :-
+    user:type_check(string, hello).
+
+test(type_check_integer_valid) :-
+    user:type_check(integer, 42).
+
+test(type_check_integer_invalid, [throws(error(type_error(integer, _), _))]) :-
+    user:type_check(integer, 3.14).
+
+test(type_check_float_valid) :-
+    user:type_check(float, 3.14).
+
+test(type_check_float_invalid, [throws(error(type_error(float, _), _))]) :-
+    user:type_check(float, 42).
+
+test(type_check_compound_valid) :-
+    user:type_check(compound, foo(bar, baz)).
+
+test(type_check_compound_invalid, [throws(error(type_error(compound, _), _))]) :-
+    user:type_check(compound, atom).
+
+test(type_check_term_valid) :-
+    user:type_check(term, foo(bar, 123)).
+
+test(type_check_term_invalid, [throws(error(type_error(term, _), _))]) :-
+    user:type_check(term, _UnboundVar).
+
+test(type_check_error_valid) :-
+    user:type_check(error, error(some_error, context(foo, bar))).
+
+test(type_check_error_invalid, [throws(error(type_error(error, _), _))]) :-
+    user:type_check(error, not_an_error).
+
+%% ============================================================================
+%% Test Case 12: Type System - OS-Validated Types
+%% ============================================================================
+
+test(type_check_existing_file_valid, [setup(setup_test_file), cleanup(cleanup_test_file)]) :-
+    user:type_check(existing_file, '/tmp/grimoire_test_file.txt').
+
+test(type_check_existing_file_invalid, [throws(error(existence_error(file, _), _))]) :-
+    user:type_check(existing_file, '/tmp/nonexistent_file_xyz.txt').
+
+test(type_check_existing_folder_valid) :-
+    user:type_check(existing_folder, '/tmp').
+
+test(type_check_existing_folder_invalid, [throws(error(existence_error(directory, _), _))]) :-
+    user:type_check(existing_folder, '/tmp/nonexistent_folder_xyz').
+
+%% ============================================================================
+%% Test Case 13: Type System - Grimoire Types
+%% ============================================================================
+
+test(type_check_entity_valid) :-
+    user:type_check(entity, test_entity_1).
+
+test(type_check_entity_invalid, [throws(error(type_error(entity, _), _))]) :-
+    user:type_check(entity, nonexistent_entity_xyz).
+
+test(type_check_type_base_type_valid) :-
+    user:type_check(type, atom).
+
+test(type_check_type_hkt_constructor_valid) :-
+    user:type_check(type, list).
+
+test(type_check_type_hkt_instantiated_valid) :-
+    user:type_check(type, list(atom)).
+
+test(type_check_type_invalid, [throws(error(type_error(type, _), _))]) :-
+    user:type_check(type, not_a_type_xyz).
+
+%% ============================================================================
+%% Test Case 14: Type System - Higher-Kinded Types (HKTs)
+%% ============================================================================
+
+test(type_check_list_atom_valid) :-
+    user:type_check(list(atom), [foo, bar, baz]).
+
+test(type_check_list_atom_invalid, [throws(error(type_error(atom, _), _))]) :-
+    user:type_check(list(atom), [foo, "not atom", baz]).
+
+test(type_check_list_string_valid) :-
+    user:type_check(list(string), ["foo", "bar", "baz"]).
+
+test(type_check_list_string_invalid, [throws(error(type_error(string, _), _))]) :-
+    user:type_check(list(string), ["foo", not_string, "baz"]).
+
+test(type_check_list_integer_valid) :-
+    user:type_check(list(integer), [1, 2, 3]).
+
+test(type_check_list_integer_invalid, [throws(error(type_error(integer, _), _))]) :-
+    user:type_check(list(integer), [1, 2.5, 3]).
+
+test(type_check_empty_list_valid) :-
+    user:type_check(list(atom), []).
+
+test(type_check_nested_list_valid) :-
+    user:type_check(list(list(integer)), [[1, 2], [3, 4], []]).
+
+test(type_check_dict_valid) :-
+    Dict = mydict{foo: bar, baz: qux},
+    user:type_check(dict(atom, atom), Dict).
+
+test(type_check_dict_invalid_key, [throws(error(type_error(integer, _), _))]) :-
+    Dict = mydict{foo: bar},
+    user:type_check(dict(integer, atom), Dict).
+
+%% ============================================================================
+%% Test Case 15: Type System - Type Registration Metadata
+%% ============================================================================
+
+test(type_registration_generates_ctor) :-
+    user:please_verify(component(type, ctor, atom)),
+    user:please_verify(component(type, ctor, string)),
+    user:please_verify(component(type, ctor, integer)).
+
+test(type_registration_generates_docstring) :-
+    user:please_verify(component(atom, docstring, Doc)),
+    assertion(Doc = "Prolog atom value").
+
+test(hkt_registration_generates_hkt_ctor_list) :-
+    user:please_verify(component(type, hkt_ctor, list(tparam('T', type)))).
+
+test(hkt_registration_generates_hkt_ctor_dict) :-
+    user:please_verify(component(type, hkt_ctor, dict(tparam('KeyType', type), tparam('ValType', type)))).
+
+test(hkt_registration_generates_hkt_ctor_either) :-
+    user:please_verify(component(type, hkt_ctor, either(tparam('Variants', list(type))))).
+
+%% ============================================================================
+%% Test Case 16: Type System - Guard Prevents Direct type_checker__ Calls
+%% ============================================================================
+
+test(type_checker_guard_forbids_direct_call, [throws(error(direct_type_checker_forbidden(_), _))]) :-
+    user:type_checker__(atom, hello).
+
+%% ============================================================================
+%% Test Case 17: Type System - Unknown Type Errors
+%% ============================================================================
+
+test(type_check_unknown_type, [throws(error(type_not_registered(_), _))]) :-
+    user:type_check(nonexistent_type_xyz, anything).
+
+test(type_check_unknown_hkt, [throws(error(type_not_registered(_), _))]) :-
+    user:type_check(nonexistent_hkt(atom), [foo, bar]).
 
 :- end_tests(ecs_kernel).

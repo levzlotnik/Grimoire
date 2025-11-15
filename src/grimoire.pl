@@ -26,8 +26,8 @@ it_is_what_it_is :- !.
 %% ============================================================================
 
 :- dynamic([
-    cast_impl/2,          % Spell implementations (guarded)
-    in_magic_cast/0       % Guard flag for cast_impl/2
+    cast_impl/2,                    % Spell implementations (guarded)
+    codegened_spell_typechecker__/1  % Codegen type checkers for spells
 ], [
     discontiguous(true),
     multifile(true)
@@ -42,11 +42,134 @@ it_is_what_it_is :- !.
 ]).
 
 %% ============================================================================
+%% TYPE REGISTRATIONS
+%% ============================================================================
+
+% Register sig_param type for signature parameters
+register_type(
+    sig_param,
+    docstring("Signature parameter with name and type"),
+    checker(P, (
+        P = sig_param(PName, Type),
+        type_check(atom, PName),
+        type_check(type, Type)
+    ))
+).
+
+% Register global spell type that dispatches to codegen checkers
+register_type(
+    spell,
+    docstring("A type for spells that can be magic_casted"),
+    checker(SpellTerm, codegened_spell_typechecker__(SpellTerm))
+).
+
+register_type(
+    spell_ctor,
+    docstring("Spell identifier term"),
+    checker(SpellCtor, (
+        SpellCtor =.. [SpellType|SpellId],
+        component(spell, ctor, SpellType),
+        component(SpellType, ctor, SpellId)
+    ))
+).
+
+%% ============================================================================
+%% SPELL ENTITY
+%% ============================================================================
+
+entity(spell).
+component(spell, ctor, conjure).
+component(spell, ctor, perceive).
+
+entity(conjure).
+component(conjure, docstring, "Conjuration spells that modify system state").
+
+entity(perceive).
+component(perceive, docstring, "Perception spells that query system state").
+
+%% ============================================================================
+%% SIGNATURE PROCESSING HELPERS
+%% ============================================================================
+
+%! process_annotated_pattern(+Pattern, -FormatStr, -SigParams) is det.
+%
+% Process annotated pattern: convert variables to atom names, extract sig_params.
+% Example: conjure(test(echo(msg(Message:string))))
+%       -> "conjure(test(echo(msg(Message))))", [sig_param('Message', string)]
+
+process_annotated_pattern(Pattern, FormatStr, SigParams) :-
+    process_pattern_helper(Pattern, StrippedPattern, SigParams),
+    term_string(StrippedPattern, FormatStr, [quoted(false)]).
+
+%! process_pattern_helper(+Pattern, -Stripped, -SigParams) is det.
+%
+% Walk pattern, convert Var:Type to atom name, collect sig_params.
+
+process_pattern_helper(Var:Type, VarName, [sig_param(VarName, Type)]) :-
+    var(Var),
+    !,
+    var_property(Var, name(VarName)).
+
+process_pattern_helper(Compound, StrippedCompound, SigParams) :-
+    compound(Compound),
+    Compound \= (_:_),
+    !,
+    Compound =.. [Functor|Args],
+    maplist(process_pattern_helper, Args, StrippedArgs, SigParamsLists),
+    append(SigParamsLists, SigParams),
+    StrippedCompound =.. [Functor|StrippedArgs].
+
+process_pattern_helper(Other, Other, []).
+
+%! codegen_typechecker(+FormatStr, +SigParams, -CodegenClause) is det.
+%
+% Generate typechecker clause using string formatting and term_string parsing.
+
+codegen_typechecker(FormatStr, [], CodegenClause) :-
+    !,
+    % No type checks - just pattern match and cut
+    format(string(ClauseStr),
+        "codegened_spell_typechecker__(SpellTerm) :- SpellTerm = ~w, !",
+        [FormatStr]),
+    term_string(CodegenClause, ClauseStr, [quoted(false)]).
+
+codegen_typechecker(FormatStr, SigParams, CodegenClause) :-
+    % Build type checker goals string - pass FormatStr to each param
+    maplist(sig_param_to_type_check_str(FormatStr), SigParams, TypeCheckStrs),
+    atomic_list_concat(TypeCheckStrs, ', ', TypeCheckersStr),
+
+    % Format full clause as string
+    format(string(ClauseStr),
+        "codegened_spell_typechecker__(SpellTerm) :- SpellTerm = ~w, !, ~w",
+        [FormatStr, TypeCheckersStr]),
+
+    % Parse string to clause
+    term_string(CodegenClause, ClauseStr, [quoted(false)]).
+
+%! sig_param_to_type_check_str(+SpellInputFormat, +SigParam, -TypeCheckStr) is det.
+%
+% Convert sig_param('Message', string) to type_check call with spell context.
+
+sig_param_to_type_check_str(SpellInputFormat, sig_param(VarName, Type), TypeCheckStr) :-
+    TypeCheckStr = {|string(SpellInputFormat, VarName, Type)||
+        type_check(
+            {Type}, {VarName},
+            error(
+                type_error({Type}, {VarName}),
+                context(
+                    spell(SpellTerm),
+                    'Wrong type for argument `{VarName}` while casting `{SpellInputFormat}`'
+                )
+            )
+        )
+    |}.
+
+%% ============================================================================
 %% TERM EXPANSION - SPELL REGISTRATION
 %% ============================================================================
 
 term_expansion(
-    register_spell(SpellSig, Input, Output, Doc, Options, implementation(SpellPattern, Result, Impl)),
+    register_spell(SpellSig, input(InputPattern), output(OutputPattern), Doc, Options, implementation(SpellPattern, Result, Impl)),
     Generated
 ) :-
     % Extract spell information from CONSTRUCTOR (no variables!)
@@ -67,18 +190,43 @@ term_expansion(
     % Convert implementation to atom for easier introspection
     term_string(implementation(SpellPattern, Result, Impl), ImplAtom),
 
+    % Process patterns: convert vars to atoms, extract sig_params
+    process_annotated_pattern(InputPattern, InputFormatStr, InputSigParams),
+    process_annotated_pattern(OutputPattern, OutputFormatStr, OutputSigParams),
+
+    % Generate codegen typechecker clause (always, even for empty SigParams)
+    codegen_typechecker(InputFormatStr, InputSigParams, CodegenClause),
+
     % Generate metadata components using SpellSig (constructor)
     Components = [
         component(SpellType, ctor, SpellGroundTerm),
         component(SpellSig, docstring, Doc),
-        component(SpellSig, format_input, Input),
-        component(SpellSig, format_output, Output),
+        component(SpellSig, input_signature, signature(InputFormatStr, InputSigParams)),
+        component(SpellSig, output_signature, signature(OutputFormatStr, OutputSigParams)),
         component(SpellSig, spell_options, Options),
         component(SpellSig, source_location, source_location(File, Line)),
         component(SpellSig, implementation, ImplAtom)
     ],
 
-    Generated = [CastImpl | Components].
+    Generated = [CodegenClause, CastImpl | Components].
+
+%% ============================================================================
+%% SIGNATURE COMPONENT EXPANSIONS
+%% ============================================================================
+
+% Expand input_signature into format_input and params_input
+component(SpellCtor, input_signature, signature(SigFormat, ParamsList))
+    ==> component(SpellCtor, format_input, SigFormat),
+        component(SpellCtor, params_input, ParamsList)
+    :: type_check(string, SigFormat),
+       type_check(list(sig_param), ParamsList).
+
+% Expand output_signature into format_output and params_output
+component(SpellCtor, output_signature, signature(SigFormat, ParamsList))
+    ==> component(SpellCtor, format_output, SigFormat),
+        component(SpellCtor, params_output, ParamsList)
+    :: type_check(string, SigFormat),
+       type_check(list(sig_param), ParamsList).
 
 %% ============================================================================
 %% SPELL SIGNATURE MATCHING
@@ -118,16 +266,19 @@ is_matching_signature(SpellGroundTerm, SpellSig) :-
     is_matching_signature(InnerValTerm, InnerValSpellSig).
 
 %% ============================================================================
-%% TYPE-CHECKED magic_cast/2
+%% TYPE-CHECKED magic_cast/3
 %% ============================================================================
 
 magic_cast(SpellTerm, Result) :-
+    magic_cast(SpellTerm, Result, []).
+
+magic_cast(SpellTerm, Result, Options) :-
     % 1. Input must be fully grounded
     (ground(SpellTerm)
     -> true
     ; throw(error(
         instantiation_error(SpellTerm),
-        context(magic_cast/2, 'Spell term must be fully grounded')))
+        context(magic_cast/3, 'Spell term must be fully grounded')))
     ),
 
     % 2. Find matching registered spell signature
@@ -135,7 +286,7 @@ magic_cast(SpellTerm, Result) :-
     -> true
     ; throw(error(
         existence_error(spell, SpellTerm),
-        context(magic_cast/2, 'Spell not registered')))
+        context(magic_cast/3, 'Spell not registered')))
     ),
 
     % 3. Check spell has metadata (should always be true if step 2 passed)
@@ -143,45 +294,57 @@ magic_cast(SpellTerm, Result) :-
     -> true
     ; throw(error(
         existence_error(spell, SpellSig),
-        context(magic_cast/2, 'Spell not registered')))
+        context(magic_cast/3, 'Spell not registered')))
     ),
 
-    % 4. Execute with hooks and guards
+    option(throw_on_type_error(ThrowTypeError), Options, true),
+
+    % 4. TYPE CHECK SPELL (dispatches to codegen checker)
+    catch(type_check(spell, SpellTerm), TypeError, true),
+    (   var(TypeError)
+    ->  true
+    ;   handle_magic_cast_type_error(ThrowTypeError, TypeError, SpellTerm, Result),
+        !
+    ),
+
+    % 5. Execute with hooks and guards
     setup_call_cleanup(
-        assertz(in_magic_cast),
+        recordz(in_magic_cast, true, InRef),
         (
             cast_pre_hooks(SpellTerm),
             cast_impl(SpellTerm, Result),
             cast_post_hooks(SpellTerm, Result)
         ),
-        retract(in_magic_cast)
+        erase(InRef)
     ),
 
-    % 5. Validate result is grounded
+    % 6. Validate result is grounded
     (ground(Result)
     -> true
     ; throw(error(
         instantiation_error(Result),
-        context(magic_cast/2, 'Spell returned ungrounded result')))
+        context(magic_cast/3, 'Spell returned ungrounded result')))
     ),
 
-    % 6. Commit - no backtracking after successful spell execution
+    % 7. Commit - no backtracking after successful spell execution
     !.
 
 % Guard: cast_impl can only be called from magic_cast
 cast_impl(SpellTerm, _) :-
-    \+ in_magic_cast,
+    \+ recorded(in_magic_cast, _, _),
     !,
     throw(error(
         direct_cast_forbidden(SpellTerm),
-        context(cast_impl/2, 'NEVER call cast_impl/2 directly. Use magic_cast/2.')
+        context(cast_impl/2, 'NEVER call cast_impl/2 directly. Use magic_cast/3 (or magic_cast/2).')
     )).
 
 docstring(magic_cast,
     {|string(_)||
     Execute a spell with full type checking, hooks, and guards.
 
-    Format: magic_cast(SpellTerm, Result)
+    Formats:
+      magic_cast(SpellTerm, Result)
+      magic_cast(SpellTerm, Result, Options)
 
     Guarantees:
     1. SpellTerm must be fully grounded (no unbound variables)
@@ -191,8 +354,11 @@ docstring(magic_cast,
     5. Post-hook executes after spell
     6. Result must be fully grounded
 
+    Options (all optional):
+      - throw_on_type_error(Bool) [default true]
+
     Guards:
-    - cast_impl/2 can ONLY be called from magic_cast/2
+    - cast_impl/2 can ONLY be called from magic_cast/3
     - Attempting to call cast_impl/2 directly throws error
 
     Use Cases:
@@ -210,8 +376,16 @@ docstring(magic_cast,
             magic_cast(conjure(git(init(Name))), GitResult),
             magic_cast(conjure(nix(flake(new(Name)))), NixResult),
             Result = ok(project_created(Name)).
+
+        % Soft type errors (capture instead of throwing)
+        magic_cast(Spell, Result, [throw_on_type_error(false)]).
     |}
 ).
+
+handle_magic_cast_type_error(true, Error, _SpellTerm, _Result) :-
+    throw(Error).
+handle_magic_cast_type_error(false, Error, SpellTerm, Result) :-
+    Result = error(spell_type_error(SpellTerm, Error)).
 
 %% ============================================================================
 %% HOOK SYSTEM
@@ -411,7 +585,7 @@ entity(conjure(Spell)) :-
 
 register_spell(
     conjure(it_is_what_it_is),
-    input(it_is_what_it_is),
+    input(conjure(it_is_what_it_is)),
     output(ok(it_is_what_it_is)),
     "It is what it is.",
     [],
@@ -423,8 +597,8 @@ register_spell(
 
 register_spell(
     perceive(search_regex),
-    input(search_regex(content('ContentWithLineNumbers'), pattern('Pattern'))),
-    output(either(ok(search_results('MatchedLines')), error(grimoire_error('Reason')))),
+    input(perceive(search_regex(content(ContentWithLineNumbers:list(compound)), pattern(Pattern:string)))),
+    output(either(ok(search_results(MatchedLines:list(compound))), error(grimoire_error(Reason:error)))),
     "Search content using regular expressions. Searches through content with line numbers to find pattern matches.",
     [],
     implementation(perceive(search_regex(content(ContentWithLineNumbers), pattern(Pattern))), Result, (
@@ -432,47 +606,62 @@ register_spell(
             (findall(line(Num, Line),
                 (member(line(Num, Line), ContentWithLineNumbers),
                  re_match(Pattern, Line)),
-                FoundContent),
-             Result = ok(search_results(FoundContent))),
-            Error,
-            Result = error(grimoire_error(Error))
+                MatchedLines),
+             Result = ok(search_results(MatchedLines))),
+            Reason,
+            Result = error(grimoire_error(Reason))
         )
     ))
 ).
 
 register_spell(
     conjure(executable_program),
-    input(executable_program(program('Program'), args('Args'))),
+    input(conjure(executable_program(
+        program(Program:stringy),
+        args(Args:list(stringy))
+    ))),
     output(either(
-        ok(result(stdout('StdOut'), stderr('StdErr'))),
-        error(process_error(program('Program'), exit('ExitCode'), stdout('StdOut'), stderr('StdErr')))
+        ok(result(stdout(Stdout:string), stderr(Stderr:string))),
+        error(process_error(
+            program(Program:stringy),
+            exit(ExitCode:integer),
+            stdout(Stdout:string),
+            stderr(Stderr:string)
+        ), Context:term)
     )),
     "Execute a program with arguments. Returns stdout and stderr on success or error details on failure.",
     [],
     implementation(conjure(executable_program(program(Program), args(Args))), RetVal, (
-        setup_call_cleanup(
-            process_create(
-                path(Program),
-                Args,
-                [stdout(pipe(Out)), stderr(pipe(Err)), process(PID)]
+        catch(
+            (setup_call_cleanup(
+                process_create(
+                    path(Program),
+                    Args,
+                    [stdout(pipe(Out)), stderr(pipe(Err)), process(PID)]
+                ),
+                (read_string(Out, _, Stdout),
+                 read_string(Err, _, Stderr),
+                 process_wait(PID, exit(ExitCode))),
+                (close(Out), close(Err))
             ),
-            (read_string(Out, _, Stdout),
-             read_string(Err, _, Stderr),
-             process_wait(PID, exit(ExitCode))),
-            (close(Out), close(Err))
-        ),
-        (ExitCode = 0 ->
-            RetVal = ok(result(stdout(Stdout), stderr(Stderr)))
-        ;
-            RetVal = error(process_error(program(Program), exit(ExitCode), stdout(Stdout), stderr(Stderr)))
+            (ExitCode = 0 ->
+                RetVal = ok(result(stdout(Stdout), stderr(Stderr)))
+            ;
+                RetVal = error(process_error(program(Program), exit(ExitCode), stdout(Stdout), stderr(Stderr)), context(exit_code_non_zero))
+            )),
+            error(Reason, Context),
+            RetVal = error(process_error(program(Program), exit(-1), stdout(""), stderr(format_error(Reason))), Context)
         )
     ))
 ).
 
 register_spell(
     conjure(executable_program_interactive),
-    input(executable_program_interactive(program('Program'), args('Args'))),
-    output(ok(completion_message('Message'))),
+    input(conjure(executable_program_interactive(
+        program(Program:stringy),
+        args(Args:list(stringy))
+    ))),
+    output(ok(completed)),
     "Execute a program interactively with stdin/stdout/stderr passed through. Returns completion message.",
     [],
     implementation(conjure(executable_program_interactive(program(Program), args(Args))), RetVal, (
@@ -485,32 +674,29 @@ register_spell(
             true,
             true
         ),
-        RetVal = ok(completion_message("Interactive program completed"))
+        RetVal = ok(completed)
     ))
 ).
 
 register_spell(
     conjure(shell),
-    input(shell(args('Args'))),
-    output(either(
-        ok(result(stdout('StdOut'), stderr('StdErr'))),
-        error(shell_error(args('Args'), exit('ExitCode'), stdout('StdOut'), stderr('StdErr')))
-    )),
-    "Execute shell command with arguments. Returns stdout and stderr on success or error details on failure.",
+    input(conjure(shell(args(Args:list(stringy))))),
+    output(Result:term),
+    "Execute shell command with arguments. Delegates to executable_program. Returns stdout and stderr on success or error details on failure.",
     [],
-    implementation(conjure(shell(args(Args))), RetVal, (
+    implementation(conjure(shell(args(Args))), Result, (
         join_args(Args, JoinedArgs),
         magic_cast(
             conjure(executable_program(program(sh), args(["-c", JoinedArgs]))),
-            RetVal
+            Result
         )
     ))
 ).
 
 register_spell(
     conjure(shell_interactive),
-    input(shell_interactive(args('Args'))),
-    output(ok(completion_message('Message'))),
+    input(conjure(shell_interactive(args(Args:list(string))))),
+    output(ok(completed)),
     "Execute shell command interactively with stdin/stdout/stderr passed through. Returns completion message.",
     [],
     implementation(conjure(shell_interactive(args(Args))), RetVal, (
@@ -546,17 +732,6 @@ docstring(cast,
       - cast(ritual([mkdir('dir'), mkfile('dir/file')]), Result)
     |}).
 
-register_spell(
-    conjure(ritual),
-    input(ritual(operations(list('Spells')))),
-    output(ok(results(list('Results')))),
-    "Cast multiple spells as an atomic ritual (transaction). All spells must succeed or all fail together.",
-    [],
-    implementation(conjure(ritual(operations(list(Operations)))), RetVal, (
-        maplist(magic_cast, Operations, Results),
-        RetVal = ok(results(list(Results)))
-    ))
-).
 
 % NOTE: write_file/2, read_file_to_lines/2, and write_lines_to_file/2
 % have been migrated to fs.pl (filesystem domain)
@@ -577,23 +752,28 @@ docstring(list_mounted_semantics,
 % Prove component provenance - show where it comes from and how it's verified
 register_spell(
     perceive(prove_it),
-    input(prove_it(component('Entity', 'ComponentType', 'Value'))),
+    input(perceive(prove_it(component(Entity:entity, ComponentType:term, Value:term)))),
     output(either(
         ok(qed(
-            component('Entity', 'ComponentType', 'Value'),
-            generated_by('Generation'),
-            discriminated_by('Verification')
+            component(Entity:entity, ComponentType:term, Value:term),
+            generated_by(Generation:term),
+            discriminated_by(Verification:term)
         )),
-        error(sus('Reason'))
+        error(sus(Reason:term), Context:term)
     )),
     "Trace component provenance: where it was generated (fact or derivation) and how it's verified. Returns qed(...) on success, sus(...) when something's off.",
     [],
     implementation(perceive(prove_it(component(Entity, ComponentType, Value))), Result, (
         catch(
             (prove_it(component(Entity, ComponentType, Value), Proof),
+             Proof = qed(
+                component(Entity, ComponentType, Value),
+                generated_by(Generation),
+                discriminated_by(Verification)
+             ),
              Result = ok(Proof)),
-            error(sus(Reason), _Context),
-            Result = error(sus(Reason))
+            error(sus(Reason), Context),
+            Result = error(sus(Reason), Context)
         )
     ))
 ).
@@ -601,35 +781,35 @@ register_spell(
 % Spell sauce - show complete spell metadata including source location
 register_spell(
     perceive(sauce_me),
-    input(sauce_me(spell('SpellConstructor'))),
+    input(perceive(sauce_me(spell(SpellConstructor:term)))),
     output(either(
         ok(magic_sauce(
-            spell('SpellConstructor'),
-            registered_at('Location'),
-            implementation('ImplText'),
-            input_format('Input'),
-            output_format('Output'),
-            docstring('Doc'),
-            options('Options')
+            spell(SpellConstructor:term),
+            RegisteredAt:term,
+            Implementation:term,
+            InputFormat:term,
+            OutputFormat:term,
+            Docstring:term,
+            Options:term
         )),
-        error(tragic_sauce('Reason'))
+        error(tragic_sauce(Reason:term), Context:term)
     )),
     "Show complete spell metadata: where registered, implementation source, formats, docs, options. Returns the magic_sauce on success, tragic_sauce when not found.",
     [],
     implementation(perceive(sauce_me(spell(SpellCtor))), Result, (
         catch(
-            (extract_spell_sauce(SpellCtor, sauce(Loc, Impl, Input, Output, Doc, Opts)),
+            (extract_spell_sauce(SpellCtor, sauce(RegisteredAt, Implementation, InputFormat, OutputFormat, Docstring, Options)),
              Result = ok(magic_sauce(
                 spell(SpellCtor),
-                Loc,
-                Impl,
-                Input,
-                Output,
-                Doc,
-                Opts
+                RegisteredAt,
+                Implementation,
+                InputFormat,
+                OutputFormat,
+                Docstring,
+                Options
              ))),
-            Error,
-            Result = error(tragic_sauce(Error))
+            error(Reason, Context),
+            Result = error(tragic_sauce(Reason), Context)
         )
     ))
 ).
@@ -815,7 +995,7 @@ extract_spell_sauce(SpellCtor, Sauce) :-
 % Perceive all entities in the system
 register_spell(
     perceive(entities),
-    input(entities),
+    input(perceive(entities)),
     output(entity_list('Entities')),
     "List all entities in the system. Returns a list of all registered entities.",
     [],
@@ -837,29 +1017,34 @@ register_spell(
 % Invoke skill on entity - resolves skill component to spell and casts it
 register_spell(
     conjure(invoke_skill),
-    input(invoke_skill(entity('Entity'), skill('SkillTerm'))),
+    input(conjure(invoke_skill(entity(Entity:entity), skill(SkillTerm:term)))),
     output(either(
-        ok(skill_result('Result')),
-        error(skill_error('Reason'))
+        ok(skill_result(SpellResult:term)),
+        error(skill_error(Reason:term), Context:term)
     )),
     "Invoke a skill on an entity. Skills are derived from entity components and represent available operations. The skill term is resolved to a spell term which is then cast.",
     [],
     implementation(conjure(invoke_skill(entity(Entity), skill(SkillTerm))), Result, (
-        % Skill component should map to a spell term
-        (catch(please_verify(component(Entity, skill(SkillTerm), SpellTerm)), _, fail)
-        -> (magic_cast(SpellTerm, SpellResult),
-            Result = ok(skill_result(SpellResult)))
-        ;  Result = error(skill_error(skill_not_found(Entity, SkillTerm))))
+        catch(
+            % Skill component should map to a spell term
+            (catch(please_verify(component(Entity, skill(SkillTerm), SpellTerm)), _, fail)
+            -> (magic_cast(SpellTerm, SpellResult),
+                Result = ok(skill_result(SpellResult)))
+            ;  Result = error(skill_error(skill_not_found(Entity, SkillTerm)), context(invoke_skill, 'Skill not found'))
+            ),
+            error(Reason, Context),
+            Result = error(skill_error(Reason), Context)
+        )
     ))
 ).
 
 % List all skills available on an entity
 register_spell(
     perceive(skills),
-    input(skills(entity('Entity'))),
+    input(perceive(skills(entity(Entity:entity)))),
     output(either(
-        ok(skills_list('Skills')),
-        error(skill_error('Reason'))
+        ok(skills_list(Skills:term)),
+        error(skill_error(Reason:term), Context:term)
     )),
     "List all available skills for an entity. Skills are operations derived from entity structure (e.g., nix packages become build skills).",
     [],
@@ -871,8 +1056,8 @@ register_spell(
                 Skills
              ),
              Result = ok(skills_list(Skills))),
-            Error,
-            Result = error(skill_error(Error))
+            error(Reason, Context),
+            Result = error(skill_error(Reason), Context)
         )
     ))
 ).
@@ -893,5 +1078,3 @@ register_spell(
 % Temporarily disabled - will re-enable after fixing
 % :- load_entity(semantic(folder("@/src/golems"))).
 % :- load_entity(semantic(folder("@/src/protocol_clients"))).
-
-

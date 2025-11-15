@@ -83,12 +83,14 @@ component(E, git_repository_root, Root) :-
 % Auto-detect current branch from git
 component(Entity, git_repository_current_branch, CurrentBranch) :-
     component(Entity, git_repository_root, Root),
+    git_root_ready(Root),
     magic_cast(perceive(git(current_branch(git_root(Root)))), Result),
     Result = ok(current_branch(CurrentBranch)).
 
 % Auto-detect working status from git
 component(Entity, git_repository_working_status, WorkingStatus) :-
     component(Entity, git_repository_root, Root),
+    git_root_ready(Root),
     magic_cast(perceive(git(status(git_root(Root)))), Result),
     Result = ok(status_info(branch(_), working_status(WorkingStatus), files(_))).
 
@@ -100,6 +102,11 @@ component(_, git_repository_root, Root)
     :: exists_directory(Root),
        atomic_list_concat([Root, '/.git'], GitDir),
        exists_directory(GitDir).
+
+git_root_ready(Root) :-
+    exists_directory(Root),
+    atomic_list_concat([Root, '/.git'], GitDir),
+    exists_directory(GitDir).
 
 % === PARSING HELPERS FOR STRUCTURED OUTPUTS ===
 
@@ -185,17 +192,17 @@ git_args(in(git_root(Root), ls_files)) --> ["-C", Root, "ls-files"].
 % Clone repository
 register_spell(
     conjure(git(clone)),
-    input(git(clone(url('Url'), path('Path')))),
-    output(either(ok(cloned(url('Url'), path('Path'))), error(git_error('Reason')))),
+    input(conjure(git(clone(url(Url:string), path(Path:string))))),
+    output(either(ok(cloned(url(Url:string), path(Path:string))), error(git_error(Reason:term), Context:term))),
     "Clone a repository into a new directory",
     [],
     implementation(conjure(git(clone(url(Url), path(Path)))), Result, (
         phrase(git_args(clone(Url, Path)), Args),
         magic_cast(conjure(executable_program(program(git), args(Args))), ExecResult),
-        (ExecResult = ok(result(stdout(_), stderr(_))) ->
+        (ExecResult = ok(result(stdout(_Stdout), stderr(_Stderr))) ->
             Result = ok(cloned(url(Url), path(Path)))
-        ; ExecResult = error(E) ->
-            Result = error(git_error(E))
+        ; ExecResult = error(Reason, Context) ->
+            Result = error(git_error(Reason), Context)
         )
     ))
 ).
@@ -203,17 +210,17 @@ register_spell(
 % Initialize repository
 register_spell(
     conjure(git(init)),
-    input(git(init(path('Path')))),
-    output(either(ok(initialized(path('Path'))), error(git_error('Reason')))),
+    input(conjure(git(init(path(Path:existing_folder))))),
+    output(either(ok(initialized(path(Path:existing_folder))), error(git_error(Reason:term), Context:term))),
     "Create an empty Git repository at the specified path",
     [],
     implementation(conjure(git(init(path(Path)))), Result, (
         phrase(git_args(init(Path)), Args),
         magic_cast(conjure(executable_program(program(git), args(Args))), ExecResult),
-        (ExecResult = ok(result(stdout(_), stderr(_))) ->
+        (ExecResult = ok(result(stdout(_Stdout), stderr(_Stderr))) ->
             Result = ok(initialized(path(Path)))
-        ; ExecResult = error(E) ->
-            Result = error(git_error(E))
+        ; ExecResult = error(Reason, Context) ->
+            Result = error(git_error(Reason), Context)
         )
     ))
 ).
@@ -221,18 +228,18 @@ register_spell(
 % Add files to staging area
 register_spell(
     conjure(git(add)),
-    input(git(add(git_root('Root'), paths('Paths')))),
-    output(either(ok(staged(files('Files'))), error(git_error('Reason')))),
+    input(conjure(git(add(git_root(Root:existing_folder), paths(Paths:term))))),
+    output(either(ok(staged(files(Files:term))), error(git_error(Reason:term), Context:term))),
     "Add file(s) to the staging area in the given repository. Paths can be a list of files or all_tracked",
     [],
     implementation(conjure(git(add(git_root(Root), paths(Paths)))), Result, (
         phrase(git_args(in(git_root(Root), add(Paths))), Args),
         magic_cast(conjure(executable_program(program(git), args(Args))), ExecResult),
-        (ExecResult = ok(result(stdout(_), stderr(_))) ->
+        (ExecResult = ok(result(stdout(_Stdout), stderr(_Stderr))) ->
             (is_list(Paths) -> Files = Paths ; Files = all_tracked),
             Result = ok(staged(files(Files)))
-        ; ExecResult = error(E) ->
-            Result = error(git_error(E))
+        ; ExecResult = error(Reason, Context) ->
+            Result = error(git_error(Reason), Context)
         )
     ))
 ).
@@ -240,18 +247,18 @@ register_spell(
 % Commit changes
 register_spell(
     conjure(git(commit)),
-    input(git(commit(git_root('Root'), message('Message')))),
-    output(either(ok(committed(hash('Hash'))), error(git_error('Reason')))),
+    input(conjure(git(commit(git_root(Root:existing_folder), message(Message:string))))),
+    output(either(ok(committed(hash(Hash:string))), error(git_error(Reason:term), Context:term))),
     "Record changes to the repository with the given commit message",
     [],
     implementation(conjure(git(commit(git_root(Root), message(Message)))), Result, (
         phrase(git_args(in(git_root(Root), commit(Message))), Args),
         magic_cast(conjure(executable_program(program(git), args(Args))), ExecResult),
-        (ExecResult = ok(result(stdout(Stdout), stderr(_))) ->
+        (ExecResult = ok(result(stdout(Stdout), stderr(_Stderr))) ->
             parse_commit_hash(Stdout, Hash),
             Result = ok(committed(hash(Hash)))
-        ; ExecResult = error(E) ->
-            Result = error(git_error(E))
+        ; ExecResult = error(Reason, Context) ->
+            Result = error(git_error(Reason), Context)
         )
     ))
 ).
@@ -259,17 +266,17 @@ register_spell(
 % Push to remote
 register_spell(
     conjure(git(push)),
-    input(git(push(remote('Remote'), branch('Branch')))),
-    output(either(ok(pushed(remote('Remote'), branch('Branch'))), error(git_error('Reason')))),
+    input(conjure(git(push(remote(Remote:atom), branch(Branch:atom))))),
+    output(either(ok(pushed(remote(Remote:atom), branch(Branch:atom))), error(git_error(Reason:term), Context:term))),
     "Update remote refs along with associated objects",
     [],
     implementation(conjure(git(push(remote(Remote), branch(Branch)))), Result, (
         phrase(git_args(push(Remote, Branch)), Args),
         magic_cast(conjure(executable_program(program(git), args(Args))), ExecResult),
-        (ExecResult = ok(result(stdout(_), stderr(_))) ->
+        (ExecResult = ok(result(stdout(_Stdout), stderr(_Stderr))) ->
             Result = ok(pushed(remote(Remote), branch(Branch)))
-        ; ExecResult = error(E) ->
-            Result = error(git_error(E))
+        ; ExecResult = error(Reason, Context) ->
+            Result = error(git_error(Reason), Context)
         )
     ))
 ).
@@ -277,17 +284,17 @@ register_spell(
 % Pull from remote
 register_spell(
     conjure(git(pull)),
-    input(git(pull(remote('Remote'), branch('Branch')))),
-    output(either(ok(pulled(remote('Remote'), branch('Branch'))), error(git_error('Reason')))),
+    input(conjure(git(pull(remote(Remote:atom), branch(Branch:atom))))),
+    output(either(ok(pulled(remote(Remote:atom), branch(Branch:atom))), error(git_error(Reason:term), Context:term))),
     "Fetch from and integrate with another repository or branch",
     [],
     implementation(conjure(git(pull(remote(Remote), branch(Branch)))), Result, (
         phrase(git_args(pull(Remote, Branch)), Args),
         magic_cast(conjure(executable_program(program(git), args(Args))), ExecResult),
-        (ExecResult = ok(result(stdout(_), stderr(_))) ->
+        (ExecResult = ok(result(stdout(_Stdout), stderr(_Stderr))) ->
             Result = ok(pulled(remote(Remote), branch(Branch)))
-        ; ExecResult = error(E) ->
-            Result = error(git_error(E))
+        ; ExecResult = error(Reason, Context) ->
+            Result = error(git_error(Reason), Context)
         )
     ))
 ).
@@ -295,17 +302,17 @@ register_spell(
 % Checkout branch
 register_spell(
     conjure(git(checkout)),
-    input(git(checkout(branch('Branch')))),
-    output(either(ok(checked_out(branch('Branch'))), error(git_error('Reason')))),
+    input(conjure(git(checkout(branch(Branch:atom))))),
+    output(either(ok(checked_out(branch(Branch:atom))), error(git_error(Reason:term), Context:term))),
     "Switch branches or restore working tree files",
     [],
     implementation(conjure(git(checkout(branch(Branch)))), Result, (
         phrase(git_args(checkout(Branch)), Args),
         magic_cast(conjure(executable_program(program(git), args(Args))), ExecResult),
-        (ExecResult = ok(result(stdout(_), stderr(_))) ->
+        (ExecResult = ok(result(stdout(_Stdout), stderr(_Stderr))) ->
             Result = ok(checked_out(branch(Branch)))
-        ; ExecResult = error(E) ->
-            Result = error(git_error(E))
+        ; ExecResult = error(Reason, Context) ->
+            Result = error(git_error(Reason), Context)
         )
     ))
 ).
@@ -313,17 +320,17 @@ register_spell(
 % Reset HEAD
 register_spell(
     conjure(git(reset)),
-    input(git(reset(args('Args')))),
-    output(either(ok(reset(args('Args'))), error(git_error('Reason')))),
+    input(conjure(git(reset(args(Args:term))))),
+    output(either(ok(reset(args(Args:term))), error(git_error(Reason:term), Context:term))),
     "Reset current HEAD to the specified state",
     [],
     implementation(conjure(git(reset(args(Args)))), Result, (
         phrase(git_args(reset(Args)), GitArgs),
         magic_cast(conjure(executable_program(program(git), args(GitArgs))), ExecResult),
-        (ExecResult = ok(result(stdout(_), stderr(_))) ->
+        (ExecResult = ok(result(stdout(_Stdout), stderr(_Stderr))) ->
             Result = ok(reset(args(Args)))
-        ; ExecResult = error(E) ->
-            Result = error(git_error(E))
+        ; ExecResult = error(Reason, Context) ->
+            Result = error(git_error(Reason), Context)
         )
     ))
 ).
@@ -331,17 +338,17 @@ register_spell(
 % Merge branches
 register_spell(
     conjure(git(merge)),
-    input(git(merge(args('Args')))),
-    output(either(ok(merged(args('Args'))), error(git_error('Reason')))),
+    input(conjure(git(merge(args(Args:term))))),
+    output(either(ok(merged(args(Args:term))), error(git_error(Reason:term), Context:term))),
     "Join two or more development histories together",
     [],
     implementation(conjure(git(merge(args(Args)))), Result, (
         phrase(git_args(merge(Args)), GitArgs),
         magic_cast(conjure(executable_program(program(git), args(GitArgs))), ExecResult),
-        (ExecResult = ok(result(stdout(_), stderr(_))) ->
+        (ExecResult = ok(result(stdout(_Stdout), stderr(_Stderr))) ->
             Result = ok(merged(args(Args)))
-        ; ExecResult = error(E) ->
-            Result = error(git_error(E))
+        ; ExecResult = error(Reason, Context) ->
+            Result = error(git_error(Reason), Context)
         )
     ))
 ).
@@ -349,17 +356,17 @@ register_spell(
 % Configure git
 register_spell(
     conjure(git(config)),
-    input(git(config(git_root('Root'), args('Args')))),
-    output(either(ok(config_output('Output')), error(git_error('Reason')))),
+    input(conjure(git(config(git_root(Root:existing_folder), args(Args:term))))),
+    output(either(ok(config_output(Output:string)), error(git_error(Reason:term), Context:term))),
     "Get and set repository or global git configuration options",
     [],
     implementation(conjure(git(config(git_root(Root), args(Args)))), Result, (
         phrase(git_args(in(git_root(Root), config(Args))), GitArgs),
         magic_cast(conjure(executable_program(program(git), args(GitArgs))), ExecResult),
-        (ExecResult = ok(result(stdout(Output), stderr(_))) ->
+        (ExecResult = ok(result(stdout(Output), stderr(_Stderr))) ->
             Result = ok(config_output(Output))
-        ; ExecResult = error(E) ->
-            Result = error(git_error(E))
+        ; ExecResult = error(Reason, Context) ->
+            Result = error(git_error(Reason), Context)
         )
     ))
 ).
@@ -367,17 +374,17 @@ register_spell(
 % Manage remotes
 register_spell(
     conjure(git(remote)),
-    input(git(remote(args('Args')))),
-    output(either(ok(remote_output('Output')), error(git_error('Reason')))),
+    input(conjure(git(remote(args(Args:term))))),
+    output(either(ok(remote_output(Output:string)), error(git_error(Reason:term), Context:term))),
     "Manage set of tracked repositories",
     [],
     implementation(conjure(git(remote(args(Args)))), Result, (
         phrase(git_args(remote(Args)), GitArgs),
         magic_cast(conjure(executable_program(program(git), args(GitArgs))), ExecResult),
-        (ExecResult = ok(result(stdout(Output), stderr(_))) ->
+        (ExecResult = ok(result(stdout(Output), stderr(_Stderr))) ->
             Result = ok(remote_output(Output))
-        ; ExecResult = error(E) ->
-            Result = error(git_error(E))
+        ; ExecResult = error(Reason, Context) ->
+            Result = error(git_error(Reason), Context)
         )
     ))
 ).
@@ -387,17 +394,17 @@ register_spell(
 % Show diff
 register_spell(
     perceive(git(diff)),
-    input(git(diff(git_root('Root')))),
-    output(either(ok(diff_output('Output')), error(git_error('Reason')))),
+    input(perceive(git(diff(git_root(Root:existing_folder))))),
+    output(either(ok(diff_output(Output:string)), error(git_error(Reason:term), Context:term))),
     "Show changes between commits, commit and working tree, etc.",
     [],
     implementation(perceive(git(diff(git_root(Root)))), Result, (
         phrase(git_args(in(git_root(Root), diff)), Args),
         magic_cast(conjure(executable_program(program(git), args(Args))), ExecResult),
-        (ExecResult = ok(result(stdout(Output), stderr(_))) ->
+        (ExecResult = ok(result(stdout(Output), stderr(_Stderr))) ->
             Result = ok(diff_output(Output))
-        ; ExecResult = error(E) ->
-            Result = error(git_error(E))
+        ; ExecResult = error(Reason, Context) ->
+            Result = error(git_error(Reason), Context)
         )
     ))
 ).
@@ -405,17 +412,17 @@ register_spell(
 % Show log
 register_spell(
     perceive(git(log)),
-    input(git(log(git_root('Root')))),
-    output(either(ok(log_output('Output')), error(git_error('Reason')))),
+    input(perceive(git(log(git_root(Root:existing_folder))))),
+    output(either(ok(log_output(Output:string)), error(git_error(Reason:term), Context:term))),
     "Show the commit logs",
     [],
     implementation(perceive(git(log(git_root(Root)))), Result, (
         phrase(git_args(in(git_root(Root), log)), Args),
         magic_cast(conjure(executable_program(program(git), args(Args))), ExecResult),
-        (ExecResult = ok(result(stdout(Output), stderr(_))) ->
+        (ExecResult = ok(result(stdout(Output), stderr(_Stderr))) ->
             Result = ok(log_output(Output))
-        ; ExecResult = error(E) ->
-            Result = error(git_error(E))
+        ; ExecResult = error(Reason, Context) ->
+            Result = error(git_error(Reason), Context)
         )
     ))
 ).
@@ -423,22 +430,22 @@ register_spell(
 % List branches
 register_spell(
     perceive(git(branch)),
-    input(git(branch(git_root('Root'), operation('Operation')))),
-    output(either(ok(branches('Branches')), error(git_error('Reason')))),
+    input(perceive(git(branch(git_root(Root:existing_folder), operation(Operation:term))))),
+    output(either(ok(branches(Branches:term)), error(git_error(Reason:term), Context:term))),
     "List or manage git branches",
     [],
     implementation(perceive(git(branch(git_root(Root), operation(Operation)))), Result, (
         phrase(git_args(in(git_root(Root), branch(Operation))), Args),
         magic_cast(conjure(executable_program(program(git), args(Args))), ExecResult),
-        (ExecResult = ok(result(stdout(Output), stderr(_))) ->
+        (ExecResult = ok(result(stdout(Output), stderr(_Stderr))) ->
             (Operation = list ->
                 parse_branch_list(Output, Branches),
                 Result = ok(branches(Branches))
             ;
                 Result = ok(branches(Output))
             )
-        ; ExecResult = error(E) ->
-            Result = error(git_error(E))
+        ; ExecResult = error(Reason, Context) ->
+            Result = error(git_error(Reason), Context)
         )
     ))
 ).
@@ -446,17 +453,17 @@ register_spell(
 % Parse revision
 register_spell(
     perceive(git(rev_parse)),
-    input(git(rev_parse(args('Args')))),
-    output(either(ok(rev_parse_output('Output')), error(git_error('Reason')))),
+    input(perceive(git(rev_parse(args(Args:term))))),
+    output(either(ok(rev_parse_output(Output:string)), error(git_error(Reason:term), Context:term))),
     "Parse and verify Git revision/object names",
     [],
     implementation(perceive(git(rev_parse(args(Args)))), Result, (
         phrase(git_args(rev_parse(Args)), GitArgs),
         magic_cast(conjure(executable_program(program(git), args(GitArgs))), ExecResult),
-        (ExecResult = ok(result(stdout(Output), stderr(_))) ->
+        (ExecResult = ok(result(stdout(Output), stderr(_Stderr))) ->
             Result = ok(rev_parse_output(Output))
-        ; ExecResult = error(E) ->
-            Result = error(git_error(E))
+        ; ExecResult = error(Reason, Context) ->
+            Result = error(git_error(Reason), Context)
         )
     ))
 ).
@@ -464,18 +471,18 @@ register_spell(
 % List tracked files
 register_spell(
     perceive(git(ls_files)),
-    input(git(ls_files(git_root('Root')))),
-    output(either(ok(tracked_files('Files')), error(git_error('Reason')))),
+    input(perceive(git(ls_files(git_root(Root:existing_folder))))),
+    output(either(ok(tracked_files(Lines:list(string))), error(git_error(Reason:term), Context:term))),
     "List all files tracked by git in the specified directory",
     [],
     implementation(perceive(git(ls_files(git_root(Root)))), Result, (
         phrase(git_args(in(git_root(Root), ls_files)), Args),
         magic_cast(conjure(executable_program(program(git), args(Args))), ExecResult),
-        (ExecResult = ok(result(stdout(Stdout), stderr(_))) ->
+        (ExecResult = ok(result(stdout(Stdout), stderr(_Stderr))) ->
             string_lines(Stdout, Lines),
             Result = ok(tracked_files(Lines))
-        ; ExecResult = error(E) ->
-            Result = error(git_error(E))
+        ; ExecResult = error(Reason, Context) ->
+            Result = error(git_error(Reason), Context)
         )
     ))
 ).
@@ -483,8 +490,8 @@ register_spell(
 % Get repository status
 register_spell(
     perceive(git(status)),
-    input(git(status(git_root('Root')))),
-    output(ok(status_info(branch('Branch'), working_status('Status'), files('Files')))),
+    input(perceive(git(status(git_root(Root:existing_folder))))),
+    output(either(ok(status_info(branch(Branch:atom), working_status(WorkingStatus:atom), files(Files:list(term)))), error(git_error(Reason:term), Context:term))),
     "Query git repository status including current branch, working tree status, and file changes",
     [],
     implementation(perceive(git(status(git_root(Root)))), Result, (
@@ -503,7 +510,7 @@ register_spell(
              % Get working tree status - need a separate status spell for porcelain
              phrase(git_args(in(git_root(Root), status(['--porcelain']))), StatusArgs),
              magic_cast(conjure(executable_program(program(git), args(StatusArgs))), StatusExecResult),
-             (StatusExecResult = ok(result(stdout(StatusOutput), stderr(_))) ->
+             (StatusExecResult = ok(result(stdout(StatusOutput), stderr(_Stderr))) ->
                  (StatusOutput = "" ->
                      WorkingStatus = clean,
                      Files = []
@@ -511,14 +518,14 @@ register_spell(
                      WorkingStatus = dirty,
                      parse_git_status_output(StatusOutput, Files)
                  )
-             ; StatusExecResult = error(_) ->
+             ; StatusExecResult = error(_Reason, _Context) ->
                  WorkingStatus = unknown,
                  Files = []
              ),
              Result = ok(status_info(branch(Branch), working_status(WorkingStatus), files(Files)))
             ),
-            Error,
-            Result = error(git_error(Error))
+            error(Reason, Context),
+            Result = error(git_error(Reason), Context)
         )
     ))
 ).
@@ -526,8 +533,8 @@ register_spell(
 % Get current branch
 register_spell(
     perceive(git(current_branch)),
-    input(git(current_branch(git_root('Root')))),
-    output(ok(current_branch('Branch'))),
+    input(perceive(git(current_branch(git_root(Root:existing_folder))))),
+    output(either(ok(current_branch(Branch:atom)), error(git_error(Reason:term), Context:term))),
     "Get the current git branch name for the repository at the specified root",
     [],
     implementation(perceive(git(current_branch(git_root(Root)))), Result, (
@@ -544,8 +551,8 @@ register_spell(
              ),
              Result = ok(current_branch(Branch))
             ),
-            Error,
-            Result = error(git_error(Error))
+            error(Reason, Context),
+            Result = error(git_error(Reason), Context)
         )
     ))
 ).
