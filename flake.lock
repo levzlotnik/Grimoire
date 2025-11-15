@@ -26,15 +26,14 @@
         ]
       },
       "locked": {
-        "lastModified": 1,
-        "narHash": "sha256-ral72QsiNEiPfm/J3OJaPInFF29N2W7ehVJKPMn4ERc=",
         "path": "./src/golems",
         "type": "path"
       },
       "original": {
         "path": "./src/golems",
         "type": "path"
-      }
+      },
+      "parent": []
     },
     "grimoire-py": {
       "inputs": {
@@ -47,15 +46,14 @@
         ]
       },
       "locked": {
-        "lastModified": 1,
-        "narHash": "sha256-0QP6iCkX75oNkhEOgPkk6FyqHywWzSV5fAZrforw/7Q=",
         "path": "./src/interface/api",
         "type": "path"
       },
       "original": {
         "path": "./src/interface/api",
         "type": "path"
-      }
+      },
+      "parent": []
     },
     "grimoire-templates": {
       "locked": {

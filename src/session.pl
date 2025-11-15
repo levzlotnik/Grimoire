@@ -4,6 +4,7 @@
 :- use_module(library(pcre)).
 :- use_module(library(readutil)).
 :- use_module(library(http/json)).
+:- use_module(library(filesex)).
 
 :- multifile(cast_post_hook/3).
 
@@ -177,7 +178,7 @@ register_spell(
              atomic_list_concat([SessionsDir, '/', SessionId], SessionPath),
 
              % Ensure sessions directory exists
-             (exists_directory(SessionsDir) -> true ; make_directory(SessionsDir)),
+             make_directory_path(SessionsDir),
 
              % Check if session already exists
              (exists_directory(SessionPath)
